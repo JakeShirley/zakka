@@ -6,11 +6,12 @@
   "scripts": {
     "build": "pnpm -w run generate:changelog && tsc -p tsconfig.json && vite build",
     "dev": "pnpm -w run generate:changelog && vite --host 127.0.0.1",
+    "e2e": "pnpm -w run generate:changelog && playwright test --config playwright.e2e.config.ts",
     "preview": "vite preview --host 127.0.0.1",
     "screenshots": "pnpm -w run generate:changelog && pnpm --filter @zakka/editor-core build && pnpm --filter @zakka/api-contract build && pnpm screenshots:capture",
     "screenshots:capture": "playwright test --config playwright.screenshots.config.ts",
     "test": "vitest run src",
-    "typecheck": "pnpm -w run generate:changelog && tsc -p tsconfig.json --noEmit"
+    "typecheck": "pnpm -w run generate:changelog && tsc -p tsconfig.json --noEmit && tsc -p e2e/tsconfig.json"
   },
   "dependencies": {
     "@fluentui/react-components": "^9.73.8",

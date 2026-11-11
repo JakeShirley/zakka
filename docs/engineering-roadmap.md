@@ -399,7 +399,7 @@ Keep this table current as scripts are added.
 | `pnpm test` | `Done` | Run unit and integration tests. |
 | `pnpm build` | `Done` | Build all apps/packages. |
 | `pnpm openapi:check` | `Done` | Validate OpenAPI output. |
-| `pnpm e2e` | `Not started` | Run Playwright browser tests. |
+| `pnpm e2e` | `Done` | Run Playwright user journeys against a real API with an isolated data directory. Updated 2026-11-10. |
 | `docker build .` | `Blocked` | Build production container image; local Docker CLI was unavailable in this environment, and `.github/workflows/container.yml` performs the build/smoke test in CI. |
 | `docker compose up` | `Not started` | Start local containerized app with persistent volumes. |
 
