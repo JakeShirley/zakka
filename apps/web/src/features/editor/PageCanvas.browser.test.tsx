@@ -249,18 +249,20 @@ describe("photo handles", () => {
   });
 
   test("the zoom slider sits inside large photos and moves outside small ones, away from the toolbar", async () => {
-    const { layer } = await renderCanvas({
+    const { layer, probe } = await renderCanvas({
       layers: [
         photoLayer(),
         photoLayer({ id: "low", x: 200, y: 1500, width: 240, height: 180 }),
         photoLayer({ id: "high", x: 1400, y: 100, width: 240, height: 180 }),
+        photoLayer({ id: "flipped", x: 1700, y: 1650, width: 240, height: 180, rotation: 180 }),
+        // Stacked above "low" and just under it, so it overlaps the outside slider but not the photo.
+        createStickerLayer({ id: "neighbor", x: 0, y: 1700, width: 880, height: 250 }),
       ],
       selectedLayerIds: ["photo"],
     });
-    const zoomSlider = (layerId: string) =>
-      layerElement(layerId).querySelector<HTMLElement>(".transform-scale-slider");
+    const zoomSlider = () => document.querySelector<HTMLElement>(".transform-scale-slider");
     const rects = (layerId: string) => {
-      const slider = zoomSlider(layerId);
+      const slider = zoomSlider();
       const frame = layerElement(layerId).querySelector(".canvas-selection-frame");
       const tools = document.querySelector(".selected-layer-tools");
       if (!slider || !frame || !tools)
@@ -271,22 +273,29 @@ describe("photo handles", () => {
         tools: tools.getBoundingClientRect(),
       };
     };
-    await expect.poll(() => zoomSlider("photo")?.dataset.placement).toBe("inside");
+    await expect.poll(() => zoomSlider()?.dataset.placement).toBe("inside");
 
     await layerHitbox("low").click();
-    await expect.poll(() => zoomSlider("low")?.dataset.placement).toBe("below");
+    await expect.poll(() => zoomSlider()?.dataset.placement).toBe("below");
     const low = rects("low");
     expect(low.slider.top).toBeGreaterThan(low.frame.bottom);
     expect(low.tools.bottom).toBeLessThan(low.frame.top);
+    await page.getByRole("button", { name: "Zoom photo in" }).click();
+    expect(probe.selectedLayerIds).toEqual(["low"]);
+    expect(layer("low", "photo").photoTransform.scale).toBe(1.1);
 
     await layerHitbox("high").click();
-    await expect.poll(() => zoomSlider("high")?.dataset.placement).toBe("above");
+    await expect.poll(() => zoomSlider()?.dataset.placement).toBe("above");
     const high = rects("high");
     expect(high.slider.bottom).toBeLessThan(high.frame.top);
     expect(high.tools.top).toBeGreaterThan(high.frame.bottom);
 
-    await page.getByRole("button", { name: "Zoom photo in" }).click();
-    expect(layer("high", "photo").photoTransform.scale).toBe(1.1);
+    // Upside down, the layer's local "above" is physically below, away from the toolbar.
+    await layerHitbox("flipped").click();
+    await expect.poll(() => zoomSlider()?.dataset.placement).toBe("above");
+    const flipped = rects("flipped");
+    expect(flipped.slider.top).toBeGreaterThan(flipped.frame.bottom);
+    expect(flipped.tools.bottom).toBeLessThan(flipped.frame.top);
   });
 
   test("Width fills the page width, centered, preserving the photo aspect ratio", async () => {

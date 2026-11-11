@@ -2105,6 +2105,13 @@ textarea:focus-visible {
   pointer-events: none;
 }
 
+.canvas-layer-controls {
+  position: absolute;
+  display: block;
+  transform-origin: center;
+  pointer-events: none;
+}
+
 .canvas-layer-content {
   position: absolute;
   inset: 0;

@@ -187,9 +187,24 @@ const PHOTO_SCALE_MAX = 5;
 const PHOTO_SCALE_STEP = 0.1;
 /** Gap kept between the zoom pill and the photo edges or pan handle; mirrors the CSS `bottom` inset. */
 const PHOTO_SCALE_SLIDER_INSET = 10;
+/** Mirrors the `.transform-pan-handle` CSS size. */
+const PHOTO_PAN_HANDLE_SIZE = 36;
 
 const clampPhotoScale = (value: number): number =>
   Math.min(PHOTO_SCALE_MAX, Math.max(PHOTO_SCALE_MIN, Math.round(value * 10) / 10));
+
+/**
+ * The slider is laid out in the photo's rotated box, so a mostly upside-down photo needs the
+ * opposite local side to end up physically away from the layer toolbar.
+ */
+const getPhotoScaleSliderOutsidePlacement = (
+  rotationDegrees: number,
+  toolbarPlacement: "above" | "below",
+): "above" | "below" => {
+  const awayFromToolbar = toolbarPlacement === "below" ? "above" : "below";
+  if (Math.cos((rotationDegrees * Math.PI) / 180) >= 0) return awayFromToolbar;
+  return awayFromToolbar === "above" ? "below" : "above";
+};
 
 function PhotoScaleSlider({
   layer,
@@ -214,8 +229,7 @@ function PhotoScaleSlider({
     const frame = slider?.parentElement;
     if (!slider || !frame) return;
     const updatePlacement = () => {
-      const panHandle = frame.querySelector<HTMLElement>(".transform-pan-handle");
-      const panHandleHalfHeight = (panHandle?.offsetHeight ?? 0) / 2;
+      const panHandleHalfHeight = PHOTO_PAN_HANDLE_SIZE / 2;
       const frameWidth = frame.clientWidth;
       const frameHeight = frame.clientHeight;
       // Layout sizes (not bounding rects) so the check ignores layer rotation.
@@ -488,6 +502,14 @@ export function PageCanvas({
     selectedSelectionFrame && selectedSelectionFrame.y > document.canvas.height * 0.16
       ? "above"
       : "below";
+  const selectedPhotoLayer = selectedLayer?.kind === "photo" ? selectedLayer : null;
+  const getLayerBoxStyle = (layer: PageLayer): CSSProperties => ({
+    left: `${(layer.x / document.canvas.width) * 100}%`,
+    top: `${(layer.y / document.canvas.height) * 100}%`,
+    width: `${(layer.width / document.canvas.width) * 100}%`,
+    height: `${(layer.height / document.canvas.height) * 100}%`,
+    transform: `rotate(${layer.rotation}deg)`,
+  });
   const selectedLayerMenuHalfWidth = selectedLayer
     ? selectedLayer.kind === "text"
       ? 248
@@ -1084,13 +1106,9 @@ export function PageCanvas({
         const isGroupSelected =
           !isPreview && isMultiSelected && selectedLayerIds.includes(layer.id);
         const layerStyle: CSSProperties = {
-          left: `${(layer.x / document.canvas.width) * 100}%`,
-          top: `${(layer.y / document.canvas.height) * 100}%`,
-          width: `${(layer.width / document.canvas.width) * 100}%`,
-          height: `${(layer.height / document.canvas.height) * 100}%`,
+          ...getLayerBoxStyle(layer),
           zIndex: layerIndex + 1,
           opacity: layer.opacity,
-          transform: `rotate(${layer.rotation}deg)`,
         };
         const selectionFrame = getLayerSelectionFrame(layer);
         const selectionFrameStyle: CSSProperties = {
@@ -1237,25 +1255,6 @@ export function PageCanvas({
                       <HandLeftRegular />
                     </button>
                   ) : null}
-                  {layer.kind === "photo" ? (
-                    <PhotoScaleSlider
-                      layer={layer}
-                      outsidePlacement={selectedLayerMenuPlacement === "below" ? "above" : "below"}
-                      onChange={(scale) => {
-                        const nextPhotoTransform = { ...layer.photoTransform, scale };
-                        const clampedOffset = clampPhotoPanOffset(
-                          { ...layer, photoTransform: nextPhotoTransform },
-                          {
-                            offsetX: layer.photoTransform.offsetX,
-                            offsetY: layer.photoTransform.offsetY,
-                          },
-                        );
-                        changeLayer(layer.id, {
-                          photoTransform: { ...nextPhotoTransform, ...clampedOffset },
-                        } as Partial<PageLayer>);
-                      }}
-                    />
-                  ) : null}
                 </>
               ) : null}
               {isInlineEditingText ? (
@@ -1295,6 +1294,41 @@ export function PageCanvas({
           </div>
         );
       })}
+      {selectedPhotoLayer && !selectedPhotoLayer.locked ? (
+        // Rendered above every layer so neighbouring hitboxes can't steal clicks when the slider
+        // sits outside a small photo; the box mirrors the layer's geometry and rotation.
+        <div
+          className="canvas-layer-controls"
+          data-layer-id={selectedPhotoLayer.id}
+          style={{
+            ...getLayerBoxStyle(selectedPhotoLayer),
+            zIndex: displayedInteractiveLayers.length + 1,
+            opacity: selectedPhotoLayer.opacity,
+          }}
+        >
+          <PhotoScaleSlider
+            layer={selectedPhotoLayer}
+            outsidePlacement={getPhotoScaleSliderOutsidePlacement(
+              selectedPhotoLayer.rotation,
+              selectedLayerMenuPlacement,
+            )}
+            onChange={(scale) => {
+              const layer = selectedPhotoLayer;
+              const nextPhotoTransform = { ...layer.photoTransform, scale };
+              const clampedOffset = clampPhotoPanOffset(
+                { ...layer, photoTransform: nextPhotoTransform },
+                {
+                  offsetX: layer.photoTransform.offsetX,
+                  offsetY: layer.photoTransform.offsetY,
+                },
+              );
+              changeLayer(layer.id, {
+                photoTransform: { ...nextPhotoTransform, ...clampedOffset },
+              } as Partial<PageLayer>);
+            }}
+          />
+        </div>
+      ) : null}
       {isMultiSelected && multiSelectionBoundingBox ? (
         <div
           className="canvas-group-selection"
