@@ -2059,6 +2059,13 @@ textarea:focus-visible {
   height: 100%;
 }
 
+.canvas-layer-stack {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
 .canvas-layer {
   position: absolute;
   z-index: 1;
@@ -2067,6 +2074,7 @@ textarea:focus-visible {
   padding: 0;
   color: inherit;
   background: transparent;
+  pointer-events: auto;
   transform-origin: center;
   user-select: none;
 }

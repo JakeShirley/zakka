@@ -1099,236 +1099,243 @@ export function PageCanvas({
         dangerouslySetInnerHTML={{ __html: renderedSvg }}
         ref={renderSurfaceRef}
       />
-      {displayedInteractiveLayers.map((interactiveLayer, layerIndex) => {
-        const { layer } = interactiveLayer;
-        const isPreview = interactiveLayer.kind === "preview";
-        const isSelected = !isPreview && layer.id === primarySelectedLayerId;
-        const isGroupSelected =
-          !isPreview && isMultiSelected && selectedLayerIds.includes(layer.id);
-        const layerStyle: CSSProperties = {
-          ...getLayerBoxStyle(layer),
-          zIndex: layerIndex + 1,
-          opacity: layer.opacity,
-        };
-        const selectionFrame = getLayerSelectionFrame(layer);
-        const selectionFrameStyle: CSSProperties = {
-          left: `${((selectionFrame.x - layer.x) / layer.width) * 100}%`,
-          top: `${((selectionFrame.y - layer.y) / layer.height) * 100}%`,
-          width: `${(selectionFrame.width / layer.width) * 100}%`,
-          height: `${(selectionFrame.height / layer.height) * 100}%`,
-          transform: `rotate(${selectionFrame.rotation}deg)`,
-        };
-        const layerLabel = `${formatLayerKindLabel(layer.kind)} layer`;
-        const isInlineEditingText = editingTextLayerId === layer.id && layer.kind === "text";
-        return (
-          <div
-            key={isPreview ? `${interactiveLayer.sourcePageId}:${layer.id}` : layer.id}
-            className="canvas-layer"
-            data-kind={layer.kind}
-            data-layer-id={layer.id}
-            data-locked={layer.locked}
-            data-preview={isPreview}
-            data-selected={isSelected}
-            data-group-selected={isGroupSelected}
-            data-transforming={
-              activeTransform?.layerId === layer.id ||
-              activeGroupTransform?.layerIds.includes(layer.id)
-            }
-            style={layerStyle}
-          >
-            <button
-              type="button"
-              aria-label={`${layerLabel}${isPreview ? " from adjacent page" : ""}`}
-              className="canvas-layer-hitbox"
-              onClick={(event) => {
-                if (interactiveLayer.kind === "preview") {
-                  onSelectPreviewLayer?.(interactiveLayer.sourcePageId, layer.id);
-                  return;
-                }
+      {/* Bounds layer hitboxes and their controls to one stacking tier below the toolbar and menus. */}
+      <div className="canvas-layer-stack">
+        {displayedInteractiveLayers.map((interactiveLayer, layerIndex) => {
+          const { layer } = interactiveLayer;
+          const isPreview = interactiveLayer.kind === "preview";
+          const isSelected = !isPreview && layer.id === primarySelectedLayerId;
+          const isGroupSelected =
+            !isPreview && isMultiSelected && selectedLayerIds.includes(layer.id);
+          const layerStyle: CSSProperties = {
+            ...getLayerBoxStyle(layer),
+            zIndex: layerIndex + 1,
+            opacity: layer.opacity,
+          };
+          const selectionFrame = getLayerSelectionFrame(layer);
+          const selectionFrameStyle: CSSProperties = {
+            left: `${((selectionFrame.x - layer.x) / layer.width) * 100}%`,
+            top: `${((selectionFrame.y - layer.y) / layer.height) * 100}%`,
+            width: `${(selectionFrame.width / layer.width) * 100}%`,
+            height: `${(selectionFrame.height / layer.height) * 100}%`,
+            transform: `rotate(${selectionFrame.rotation}deg)`,
+          };
+          const layerLabel = `${formatLayerKindLabel(layer.kind)} layer`;
+          const isInlineEditingText = editingTextLayerId === layer.id && layer.kind === "text";
+          return (
+            <div
+              key={isPreview ? `${interactiveLayer.sourcePageId}:${layer.id}` : layer.id}
+              className="canvas-layer"
+              data-kind={layer.kind}
+              data-layer-id={layer.id}
+              data-locked={layer.locked}
+              data-preview={isPreview}
+              data-selected={isSelected}
+              data-group-selected={isGroupSelected}
+              data-transforming={
+                activeTransform?.layerId === layer.id ||
+                activeGroupTransform?.layerIds.includes(layer.id)
+              }
+              style={layerStyle}
+            >
+              <button
+                type="button"
+                aria-label={`${layerLabel}${isPreview ? " from adjacent page" : ""}`}
+                className="canvas-layer-hitbox"
+                onClick={(event) => {
+                  if (interactiveLayer.kind === "preview") {
+                    onSelectPreviewLayer?.(interactiveLayer.sourcePageId, layer.id);
+                    return;
+                  }
 
-                if (suppressNextClickRef.current) {
-                  suppressNextClickRef.current = false;
-                  return;
-                }
+                  if (suppressNextClickRef.current) {
+                    suppressNextClickRef.current = false;
+                    return;
+                  }
 
-                if (event.shiftKey && event.detail > 0) {
-                  return;
-                }
+                  if (event.shiftKey && event.detail > 0) {
+                    return;
+                  }
 
-                onSelectLayer(layer.id, { additive: event.shiftKey });
-              }}
-              onContextMenu={(event) => {
-                if (interactiveLayer.kind === "preview") {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  closeContextMenu();
-                  onSelectPreviewLayer?.(interactiveLayer.sourcePageId, layer.id);
-                  return;
-                }
+                  onSelectLayer(layer.id, { additive: event.shiftKey });
+                }}
+                onContextMenu={(event) => {
+                  if (interactiveLayer.kind === "preview") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeContextMenu();
+                    onSelectPreviewLayer?.(interactiveLayer.sourcePageId, layer.id);
+                    return;
+                  }
 
-                openContextMenu(event, layer);
-              }}
-              onDoubleClick={(event) => {
-                if (interactiveLayer.kind === "preview") return;
-                if (layer.kind === "text" && !layer.locked) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  beginInlineTextEdit(layer);
-                  return;
-                }
-                openLayerEditor(event, layer);
-              }}
-              onPointerDown={(event) => {
-                if (interactiveLayer.kind === "preview") {
-                  selectPreviewLayer(event, interactiveLayer);
-                  return;
-                }
+                  openContextMenu(event, layer);
+                }}
+                onDoubleClick={(event) => {
+                  if (interactiveLayer.kind === "preview") return;
+                  if (layer.kind === "text" && !layer.locked) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    beginInlineTextEdit(layer);
+                    return;
+                  }
+                  openLayerEditor(event, layer);
+                }}
+                onPointerDown={(event) => {
+                  if (interactiveLayer.kind === "preview") {
+                    selectPreviewLayer(event, interactiveLayer);
+                    return;
+                  }
 
-                if (event.shiftKey) {
-                  if (event.button !== 0) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  closeContextMenu();
-                  onSelectLayer(layer.id, { additive: true });
-                  return;
-                }
+                  if (event.shiftKey) {
+                    if (event.button !== 0) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeContextMenu();
+                    onSelectLayer(layer.id, { additive: true });
+                    return;
+                  }
 
-                if (isMultiSelected && selectedLayerIds.includes(layer.id)) {
-                  startGroupTransform(event, "move");
-                  return;
-                }
+                  if (isMultiSelected && selectedLayerIds.includes(layer.id)) {
+                    startGroupTransform(event, "move");
+                    return;
+                  }
 
-                startTransform(event, layer, "move");
-              }}
-            />
-            <div className="canvas-selection-frame" style={selectionFrameStyle}>
-              <span className="canvas-layer-content" />
-              {isSelected && !layer.locked ? (
-                <>
-                  {isInlineEditingText ? null : (
-                    <button
-                      type="button"
-                      aria-label="Rotate layer"
-                      className="transform-rotate-handle"
-                      title="Rotate"
-                      onPointerDown={(event) => startTransform(event, layer, "rotate")}
-                    >
-                      <ArrowClockwiseRegular />
-                    </button>
-                  )}
-                  {resizeHandles.map(({ handle, label }) => {
-                    const photoLabel = layer.kind === "photo" ? photoHandleLabels[handle] : null;
-                    const handleLabel = photoLabel ?? label;
-                    return (
+                  startTransform(event, layer, "move");
+                }}
+              />
+              <div className="canvas-selection-frame" style={selectionFrameStyle}>
+                <span className="canvas-layer-content" />
+                {isSelected && !layer.locked ? (
+                  <>
+                    {isInlineEditingText ? null : (
                       <button
                         type="button"
-                        aria-label={handleLabel}
-                        className="transform-resize-handle"
-                        data-handle={handle}
-                        data-kind={layer.kind}
-                        data-role={handle.length === 2 ? "scale" : "crop"}
-                        key={handle}
-                        title={handleLabel}
-                        onPointerDown={(event) => startTransform(event, layer, "resize", handle)}
-                      />
-                    );
-                  })}
-                  {layer.kind === "photo" ? (
-                    <button
-                      type="button"
-                      aria-label="Click and drag to adjust photo"
-                      className="transform-pan-handle"
-                      title="Click and drag to adjust photo"
-                      onPointerDown={(event) => {
-                        setPanPreviewLayerId(null);
-                        startTransform(event, layer, "pan");
-                      }}
-                      onPointerEnter={() => setPanPreviewLayerId(layer.id)}
-                      onPointerLeave={() => {
-                        setPanPreviewLayerId((current) => (current === layer.id ? null : current));
-                      }}
-                      onFocus={() => setPanPreviewLayerId(layer.id)}
-                      onBlur={() => {
-                        setPanPreviewLayerId((current) => (current === layer.id ? null : current));
-                      }}
-                    >
-                      <HandLeftRegular />
-                    </button>
-                  ) : null}
-                </>
-              ) : null}
-              {isInlineEditingText ? (
-                <RichTextEditor
-                  ref={inlineTextEditorRef}
-                  ariaLabel="Edit text"
-                  className="canvas-inline-text-editor"
-                  spellCheck
-                  value={layer.text}
-                  style={{
-                    color: layer.color,
-                    fontFamily: `"${layer.fontFamily}", sans-serif`,
-                    fontSize: `calc(${layer.fontSize / document.canvas.width} * 100cqi)`,
-                    textAlign: layer.align,
-                  }}
-                  onBlur={(event) => {
-                    const next = event.relatedTarget as Node | null;
-                    if (next && canvasRef.current?.contains(next)) return;
-                    setEditingTextLayerId(null);
-                  }}
-                  onChange={(text) =>
-                    changeLayer(layer.id, {
-                      text,
-                    } as Partial<PageLayer>)
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      event.stopPropagation();
+                        aria-label="Rotate layer"
+                        className="transform-rotate-handle"
+                        title="Rotate"
+                        onPointerDown={(event) => startTransform(event, layer, "rotate")}
+                      >
+                        <ArrowClockwiseRegular />
+                      </button>
+                    )}
+                    {resizeHandles.map(({ handle, label }) => {
+                      const photoLabel = layer.kind === "photo" ? photoHandleLabels[handle] : null;
+                      const handleLabel = photoLabel ?? label;
+                      return (
+                        <button
+                          type="button"
+                          aria-label={handleLabel}
+                          className="transform-resize-handle"
+                          data-handle={handle}
+                          data-kind={layer.kind}
+                          data-role={handle.length === 2 ? "scale" : "crop"}
+                          key={handle}
+                          title={handleLabel}
+                          onPointerDown={(event) => startTransform(event, layer, "resize", handle)}
+                        />
+                      );
+                    })}
+                    {layer.kind === "photo" ? (
+                      <button
+                        type="button"
+                        aria-label="Click and drag to adjust photo"
+                        className="transform-pan-handle"
+                        title="Click and drag to adjust photo"
+                        onPointerDown={(event) => {
+                          setPanPreviewLayerId(null);
+                          startTransform(event, layer, "pan");
+                        }}
+                        onPointerEnter={() => setPanPreviewLayerId(layer.id)}
+                        onPointerLeave={() => {
+                          setPanPreviewLayerId((current) =>
+                            current === layer.id ? null : current,
+                          );
+                        }}
+                        onFocus={() => setPanPreviewLayerId(layer.id)}
+                        onBlur={() => {
+                          setPanPreviewLayerId((current) =>
+                            current === layer.id ? null : current,
+                          );
+                        }}
+                      >
+                        <HandLeftRegular />
+                      </button>
+                    ) : null}
+                  </>
+                ) : null}
+                {isInlineEditingText ? (
+                  <RichTextEditor
+                    ref={inlineTextEditorRef}
+                    ariaLabel="Edit text"
+                    className="canvas-inline-text-editor"
+                    spellCheck
+                    value={layer.text}
+                    style={{
+                      color: layer.color,
+                      fontFamily: `"${layer.fontFamily}", sans-serif`,
+                      fontSize: `calc(${layer.fontSize / document.canvas.width} * 100cqi)`,
+                      textAlign: layer.align,
+                    }}
+                    onBlur={(event) => {
+                      const next = event.relatedTarget as Node | null;
+                      if (next && canvasRef.current?.contains(next)) return;
                       setEditingTextLayerId(null);
+                    }}
+                    onChange={(text) =>
+                      changeLayer(layer.id, {
+                        text,
+                      } as Partial<PageLayer>)
                     }
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                />
-              ) : null}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setEditingTextLayerId(null);
+                      }
+                    }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                  />
+                ) : null}
+              </div>
             </div>
-          </div>
-        );
-      })}
-      {selectedPhotoLayer && !selectedPhotoLayer.locked ? (
-        // Rendered above every layer so neighbouring hitboxes can't steal clicks when the slider
-        // sits outside a small photo; the box mirrors the layer's geometry and rotation.
-        <div
-          className="canvas-layer-controls"
-          data-layer-id={selectedPhotoLayer.id}
-          style={{
-            ...getLayerBoxStyle(selectedPhotoLayer),
-            zIndex: displayedInteractiveLayers.length + 1,
-            opacity: selectedPhotoLayer.opacity,
-          }}
-        >
-          <PhotoScaleSlider
-            layer={selectedPhotoLayer}
-            outsidePlacement={getPhotoScaleSliderOutsidePlacement(
-              selectedPhotoLayer.rotation,
-              selectedLayerMenuPlacement,
-            )}
-            onChange={(scale) => {
-              const layer = selectedPhotoLayer;
-              const nextPhotoTransform = { ...layer.photoTransform, scale };
-              const clampedOffset = clampPhotoPanOffset(
-                { ...layer, photoTransform: nextPhotoTransform },
-                {
-                  offsetX: layer.photoTransform.offsetX,
-                  offsetY: layer.photoTransform.offsetY,
-                },
-              );
-              changeLayer(layer.id, {
-                photoTransform: { ...nextPhotoTransform, ...clampedOffset },
-              } as Partial<PageLayer>);
+          );
+        })}
+        {selectedPhotoLayer && !selectedPhotoLayer.locked ? (
+          // Rendered above every layer so neighbouring hitboxes can't steal clicks when the slider
+          // sits outside a small photo; the box mirrors the layer's geometry and rotation.
+          <div
+            className="canvas-layer-controls"
+            data-layer-id={selectedPhotoLayer.id}
+            style={{
+              ...getLayerBoxStyle(selectedPhotoLayer),
+              zIndex: displayedInteractiveLayers.length + 1,
+              opacity: selectedPhotoLayer.opacity,
             }}
-          />
-        </div>
-      ) : null}
+          >
+            <PhotoScaleSlider
+              layer={selectedPhotoLayer}
+              outsidePlacement={getPhotoScaleSliderOutsidePlacement(
+                selectedPhotoLayer.rotation,
+                selectedLayerMenuPlacement,
+              )}
+              onChange={(scale) => {
+                const layer = selectedPhotoLayer;
+                const nextPhotoTransform = { ...layer.photoTransform, scale };
+                const clampedOffset = clampPhotoPanOffset(
+                  { ...layer, photoTransform: nextPhotoTransform },
+                  {
+                    offsetX: layer.photoTransform.offsetX,
+                    offsetY: layer.photoTransform.offsetY,
+                  },
+                );
+                changeLayer(layer.id, {
+                  photoTransform: { ...nextPhotoTransform, ...clampedOffset },
+                } as Partial<PageLayer>);
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
       {isMultiSelected && multiSelectionBoundingBox ? (
         <div
           className="canvas-group-selection"

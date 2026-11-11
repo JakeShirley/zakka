@@ -298,6 +298,33 @@ describe("photo handles", () => {
     expect(flipped.tools.bottom).toBeLessThan(flipped.frame.top);
   });
 
+  test("the layer menu stays above a bottom-stacked photo's zoom slider in a many-layer page", async () => {
+    const fillers = Array.from({ length: 30 }, (_, index) =>
+      createStickerLayer({ id: `filler-${index}`, x: 1700, y: 1700, width: 100, height: 100 }),
+    );
+    const { probe } = await renderCanvas({
+      layers: [photoLayer({ id: "small", x: 200, y: 1500, width: 240, height: 180 }), ...fillers],
+      selectedLayerIds: ["small"],
+    });
+    const slider = document.querySelector<HTMLElement>(".transform-scale-slider");
+    await expect.poll(() => slider?.dataset.placement).toBe("below");
+
+    // Open the menu just above the slider so its first item lands over it.
+    await layerHitbox("small").click({ button: "right", position: { x: 12, y: 56 } });
+    const edit = page
+      .getByRole("menu", { name: "Photo layer actions" })
+      .getByRole("menuitem", { name: "Edit" });
+    const sliderRect = slider?.getBoundingClientRect();
+    const itemRect = edit.element().getBoundingClientRect();
+    if (!sliderRect) throw new Error("Expected the zoom slider");
+    const itemCenterY = (itemRect.top + itemRect.bottom) / 2;
+    expect(itemCenterY).toBeGreaterThan(sliderRect.top);
+    expect(itemCenterY).toBeLessThan(sliderRect.bottom);
+    await edit.click();
+
+    expect(probe.activeSelectionPanel).toBe("edit");
+  });
+
   test("Width fills the page width, centered, preserving the photo aspect ratio", async () => {
     const { layer } = await renderCanvas({ layers: [photoLayer()], selectedLayerIds: ["photo"] });
 
