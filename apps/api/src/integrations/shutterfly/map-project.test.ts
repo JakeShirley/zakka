@@ -222,6 +222,30 @@ describe("mapShutterflyProject", () => {
   });
 });
 
+describe("photo-well references", () => {
+  it("places photos whose image reference comes only from the project's photo well", () => {
+    const withoutAssetIds = structuredClone(project);
+
+    for (const category of withoutAssetIds.surfaceCategories) {
+      for (const surface of category.surfaces) {
+        for (const item of surface.surfaceData.layeredItems) {
+          if (item.type === "photo") {
+            delete item.content.userData.assetId;
+          }
+        }
+      }
+    }
+
+    const references = collectShutterflyProjectReferences(withoutAssetIds);
+    const book = mapShutterflyProject(withoutAssetIds, resolvers);
+
+    expect(references.photos).toEqual([{ mediaId: "9000000000000001", imageId: "img-cover" }]);
+    expect(layerOfKind(findPage(book, "Page 2").document.layers, "photo").assetId).toBe(
+      "asset_9000000000000001",
+    );
+  });
+});
+
 describe("escapeShutterflyText", () => {
   it("keeps Markdown-like characters literal when Zakka renders the text", () => {
     const caption = "Our *favorite* trip_2024 `beach` [day] <3";

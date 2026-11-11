@@ -422,7 +422,7 @@ const mapItemToPlacement = (
     case "photo": {
       const mediaId = photoMediaId(item);
 
-      if (!mediaId || !assetId) {
+      if (!mediaId) {
         return;
       }
 
