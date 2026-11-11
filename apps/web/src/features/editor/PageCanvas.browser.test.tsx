@@ -248,6 +248,47 @@ describe("photo handles", () => {
     await expect.element(page.getByRole("button", { name: "Zoom photo out" })).toBeEnabled();
   });
 
+  test("the zoom slider sits inside large photos and moves outside small ones, away from the toolbar", async () => {
+    const { layer } = await renderCanvas({
+      layers: [
+        photoLayer(),
+        photoLayer({ id: "low", x: 200, y: 1500, width: 240, height: 180 }),
+        photoLayer({ id: "high", x: 1400, y: 100, width: 240, height: 180 }),
+      ],
+      selectedLayerIds: ["photo"],
+    });
+    const zoomSlider = (layerId: string) =>
+      layerElement(layerId).querySelector<HTMLElement>(".transform-scale-slider");
+    const rects = (layerId: string) => {
+      const slider = zoomSlider(layerId);
+      const frame = layerElement(layerId).querySelector(".canvas-selection-frame");
+      const tools = document.querySelector(".selected-layer-tools");
+      if (!slider || !frame || !tools)
+        throw new Error(`Expected ${layerId} slider, frame, and tools`);
+      return {
+        frame: frame.getBoundingClientRect(),
+        slider: slider.getBoundingClientRect(),
+        tools: tools.getBoundingClientRect(),
+      };
+    };
+    await expect.poll(() => zoomSlider("photo")?.dataset.placement).toBe("inside");
+
+    await layerHitbox("low").click();
+    await expect.poll(() => zoomSlider("low")?.dataset.placement).toBe("below");
+    const low = rects("low");
+    expect(low.slider.top).toBeGreaterThan(low.frame.bottom);
+    expect(low.tools.bottom).toBeLessThan(low.frame.top);
+
+    await layerHitbox("high").click();
+    await expect.poll(() => zoomSlider("high")?.dataset.placement).toBe("above");
+    const high = rects("high");
+    expect(high.slider.bottom).toBeLessThan(high.frame.top);
+    expect(high.tools.top).toBeGreaterThan(high.frame.bottom);
+
+    await page.getByRole("button", { name: "Zoom photo in" }).click();
+    expect(layer("high", "photo").photoTransform.scale).toBe(1.1);
+  });
+
   test("Width fills the page width, centered, preserving the photo aspect ratio", async () => {
     const { layer } = await renderCanvas({ layers: [photoLayer()], selectedLayerIds: ["photo"] });
 

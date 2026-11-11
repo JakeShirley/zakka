@@ -185,25 +185,60 @@ export type SelectLayerOptions = { additive?: boolean };
 const PHOTO_SCALE_MIN = 1;
 const PHOTO_SCALE_MAX = 5;
 const PHOTO_SCALE_STEP = 0.1;
+/** Gap kept between the zoom pill and the photo edges or pan handle; mirrors the CSS `bottom` inset. */
+const PHOTO_SCALE_SLIDER_INSET = 10;
 
 const clampPhotoScale = (value: number): number =>
   Math.min(PHOTO_SCALE_MAX, Math.max(PHOTO_SCALE_MIN, Math.round(value * 10) / 10));
 
 function PhotoScaleSlider({
   layer,
+  outsidePlacement,
   onChange,
 }: {
   layer: PhotoLayer;
+  /** Side of the frame to use when the photo is too small to hold the slider (opposite the layer toolbar). */
+  outsidePlacement: "above" | "below";
   onChange: (scale: number) => void;
 }) {
   const scale = layer.photoTransform.scale;
+  const sliderRef = useRef<HTMLDivElement>(null);
+  const [fitsInside, setFitsInside] = useState(true);
   const commit = (next: number) => {
     const clamped = clampPhotoScale(next);
     if (clamped !== scale) onChange(clamped);
   };
 
+  useLayoutEffect(() => {
+    const slider = sliderRef.current;
+    const frame = slider?.parentElement;
+    if (!slider || !frame) return;
+    const updatePlacement = () => {
+      const panHandle = frame.querySelector<HTMLElement>(".transform-pan-handle");
+      const panHandleHalfHeight = (panHandle?.offsetHeight ?? 0) / 2;
+      const frameWidth = frame.clientWidth;
+      const frameHeight = frame.clientHeight;
+      // Layout sizes (not bounding rects) so the check ignores layer rotation.
+      const fitsWidth = slider.offsetWidth + PHOTO_SCALE_SLIDER_INSET * 2 <= frameWidth;
+      const fitsHeight =
+        frameHeight / 2 + panHandleHalfHeight + PHOTO_SCALE_SLIDER_INSET <=
+        frameHeight - PHOTO_SCALE_SLIDER_INSET - slider.offsetHeight;
+      setFitsInside(fitsWidth && fitsHeight);
+    };
+    updatePlacement();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(updatePlacement);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <div className="transform-scale-slider" onPointerDown={(event) => event.stopPropagation()}>
+    <div
+      className="transform-scale-slider"
+      data-placement={fitsInside ? "inside" : outsidePlacement}
+      ref={sliderRef}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
       <button
         type="button"
         aria-label="Zoom photo out"
@@ -1205,6 +1240,7 @@ export function PageCanvas({
                   {layer.kind === "photo" ? (
                     <PhotoScaleSlider
                       layer={layer}
+                      outsidePlacement={selectedLayerMenuPlacement === "below" ? "above" : "below"}
                       onChange={(scale) => {
                         const nextPhotoTransform = { ...layer.photoTransform, scale };
                         const clampedOffset = clampPhotoPanOffset(
