@@ -94,6 +94,14 @@ import {
   customWashiTapeListRoute,
   customWashiTapePatchRoute,
   customWashiTapeResponseSchema,
+  shutterflyConnectionResponseSchema,
+  shutterflyConnectionRoute,
+  shutterflyConnectRoute,
+  shutterflyDisconnectRoute,
+  shutterflyImportResponseSchema,
+  shutterflyProjectImportRoute,
+  shutterflyProjectListResponseSchema,
+  shutterflyProjectListRoute,
 } from "@zakka/api-contract";
 import {
   createBookSpreads,
@@ -146,6 +154,14 @@ import type {
   SessionRecord,
 } from "./persistence/schema.js";
 import { readStaticAsset } from "./static.js";
+import { CredentialDecryptError } from "./integrations/credential-cipher.js";
+import { ShutterflyAuthError, ShutterflyRequestError } from "./integrations/shutterfly/client.js";
+import {
+  type ShutterflyIntegration,
+  ShutterflyInvalidTokenError,
+  ShutterflyNotConnectedError,
+  ShutterflyProjectNotSupportedError,
+} from "./integrations/shutterfly/service.js";
 import { CustomStickerUploadError, createCustomStickerFromUpload } from "./custom-stickers.js";
 
 type ApiBindings = {
@@ -178,6 +194,8 @@ export type CreateAppOptions = {
   sessionCookieSecure?: boolean;
   sessionTtlMs?: number;
   staticAssetsDir?: string;
+  /** Present only when SHUTTERFLY_API_KEY is configured. */
+  shutterfly?: ShutterflyIntegration;
 };
 
 type ApiContext = Context<ApiBindings>;
@@ -655,6 +673,7 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     repositories: createOptions.repositories,
     sessionCookieSecure: createOptions.sessionCookieSecure,
     sessionTtlMs: createOptions.sessionTtlMs ?? defaultSessionTtlMs,
+    shutterfly: createOptions.shutterfly,
     staticAssetsDir: createOptions.staticAssetsDir,
     storage: createOptions.storage,
   };
@@ -2753,6 +2772,217 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
       "content-length": String(buffer.byteLength),
       "content-type": contentType,
     });
+  });
+
+  const toShutterflyErrorResponse = (context: ApiContext, error: unknown) => {
+    if (error instanceof ShutterflyInvalidTokenError) {
+      return context.json(
+        createErrorResponse(context, "shutterfly_token_invalid", error.message),
+        400,
+      );
+    }
+
+    if (error instanceof ShutterflyProjectNotSupportedError) {
+      return context.json(
+        createErrorResponse(context, "shutterfly_project_unsupported", error.message),
+        400,
+      );
+    }
+
+    if (error instanceof ShutterflyNotConnectedError) {
+      return context.json(
+        createErrorResponse(context, "shutterfly_not_connected", error.message),
+        409,
+      );
+    }
+
+    if (error instanceof ShutterflyAuthError || error instanceof CredentialDecryptError) {
+      return context.json(
+        createErrorResponse(
+          context,
+          "shutterfly_reconnect_required",
+          "Shutterfly sign-in expired. Reconnect your Shutterfly account in Settings.",
+        ),
+        409,
+      );
+    }
+
+    if (error instanceof ShutterflyRequestError) {
+      return error.status === 404
+        ? context.json(
+            createErrorResponse(
+              context,
+              "shutterfly_project_not_found",
+              "Shutterfly project not found",
+            ),
+            404,
+          )
+        : context.json(createErrorResponse(context, "shutterfly_unavailable", error.message), 502);
+    }
+
+    throw error;
+  };
+
+  const requireShutterfly = (context: ApiContext) => {
+    if (!options.repositories) {
+      return {
+        response: context.json(
+          createErrorResponse(context, "integrations_unavailable", "Integrations are unavailable"),
+          500,
+        ),
+      } as const;
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return {
+        response: context.json(
+          createErrorResponse(context, "not_authenticated", "Authentication is required"),
+          401,
+        ),
+      } as const;
+    }
+
+    if (!options.shutterfly) {
+      return {
+        response: context.json(
+          createErrorResponse(
+            context,
+            "shutterfly_not_configured",
+            "Shutterfly import is not configured on this server",
+          ),
+          503,
+        ),
+      } as const;
+    }
+
+    return { accountId: authSession.account.id, shutterfly: options.shutterfly } as const;
+  };
+
+  app.openapi(shutterflyConnectionRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "integrations_unavailable", "Integrations are unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const status = options.shutterfly?.getStatus(authSession.account.id) ?? {
+      connected: false,
+      email: null,
+      connectedAt: null,
+    };
+
+    return context.json(
+      shutterflyConnectionResponseSchema.parse({
+        configured: options.shutterfly !== undefined,
+        ...status,
+      }),
+      200,
+    );
+  });
+
+  app.openapi(shutterflyConnectRoute, async (context) => {
+    const required = requireShutterfly(context);
+
+    if ("response" in required) {
+      return required.response;
+    }
+
+    try {
+      const status = await required.shutterfly.connect(
+        required.accountId,
+        context.req.valid("json").refreshToken,
+      );
+
+      return context.json(
+        shutterflyConnectionResponseSchema.parse({ configured: true, ...status }),
+        200,
+      );
+    } catch (error) {
+      if (error instanceof ShutterflyAuthError) {
+        return context.json(
+          createErrorResponse(
+            context,
+            "shutterfly_token_invalid",
+            "Shutterfly did not accept that refresh token. Copy a fresh one and try again.",
+          ),
+          400,
+        );
+      }
+
+      return toShutterflyErrorResponse(context, error);
+    }
+  });
+
+  app.openapi(shutterflyDisconnectRoute, (context) => {
+    const required = requireShutterfly(context);
+
+    if ("response" in required) {
+      return required.response;
+    }
+
+    required.shutterfly.disconnect(required.accountId);
+
+    return context.body(null, 204);
+  });
+
+  app.openapi(shutterflyProjectListRoute, async (context) => {
+    const required = requireShutterfly(context);
+
+    if ("response" in required) {
+      return required.response;
+    }
+
+    try {
+      const projects = await required.shutterfly.listProjects(required.accountId);
+
+      return context.json(shutterflyProjectListResponseSchema.parse({ projects }), 200);
+    } catch (error) {
+      return toShutterflyErrorResponse(context, error);
+    }
+  });
+
+  app.openapi(shutterflyProjectImportRoute, async (context) => {
+    const required = requireShutterfly(context);
+
+    if ("response" in required) {
+      return required.response;
+    }
+
+    if (!options.storage || !options.repositories) {
+      return context.json(
+        createErrorResponse(context, "assets_unavailable", "Asset storage is unavailable"),
+        500,
+      );
+    }
+
+    try {
+      const result = await required.shutterfly.importProject(
+        required.accountId,
+        context.req.valid("param").projectId,
+      );
+
+      return context.json(
+        shutterflyImportResponseSchema.parse({
+          book: toBookResponse(result.book, options.repositories),
+          warnings: result.warnings,
+        }),
+        201,
+      );
+    } catch (error) {
+      return toShutterflyErrorResponse(context, error);
+    }
   });
 
   app.doc("/api/v1/openapi.json", {

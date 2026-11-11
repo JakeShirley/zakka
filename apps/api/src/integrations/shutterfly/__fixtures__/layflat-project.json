@@ -1,0 +1,1111 @@
+{
+  "_id": "1000000000001",
+  "projectName": "Fixture Layflat Book",
+  "productCategory": "Books",
+  "projectType": {
+    "group": "books",
+    "name": "8x8 Deluxe Layflat Photo Book",
+    "version": "1"
+  },
+  "projectMetadata": [
+    {
+      "name": "orientation",
+      "metadataType": "Fulfillment",
+      "value": "landscape"
+    },
+    {
+      "name": "PAGE_COUNT",
+      "metadataType": "Fulfillment",
+      "value": "34"
+    }
+  ],
+  "updateDate": "2026-05-21T14:59:17.820-0700",
+  "photoWell": [
+    {
+      "id": "9000000000000001",
+      "source": "shutterfly",
+      "assetRef": "imageID=img-cover&DATA=data-cover",
+      "width": 2400,
+      "height": 2400
+    },
+    {
+      "id": "9000000000000002",
+      "source": "shutterfly",
+      "assetRef": "imageID=img-two&DATA=data-two",
+      "width": 2400,
+      "height": 2400
+    },
+    {
+      "id": "9000000000000003",
+      "source": "shutterfly",
+      "assetRef": "imageID=img-three&DATA=data-three",
+      "width": 2400,
+      "height": 2400
+    }
+  ],
+  "surfaceCategories": [
+    {
+      "categoryName": "coverSpread",
+      "surfaces": [
+        {
+          "surfaceNumber": "0",
+          "surfaceMetadata": [
+            {
+              "name": "designId",
+              "metadataType": "Builder",
+              "value": "D_251398"
+            },
+            {
+              "name": "designSurfaceId",
+              "metadataType": "Builder",
+              "value": "DA_4182191"
+            },
+            {
+              "name": "designGroupId",
+              "metadataType": "Builder",
+              "value": "DG_46034"
+            },
+            {
+              "name": "designCategoryId",
+              "metadataType": "Builder",
+              "value": "Native Full DesignCategory"
+            },
+            {
+              "name": "orientation",
+              "metadataType": "Fulfillment",
+              "value": "landscape"
+            }
+          ],
+          "surfaceData": {
+            "pageDetails": {
+              "width": 5441.1,
+              "height": 2910,
+              "dpi": 300,
+              "minDpi": 0
+            },
+            "layeredItems": [
+              {
+                "type": "background",
+                "container": {
+                  "x": 2936.1,
+                  "y": 0,
+                  "w": 2505,
+                  "h": 2910,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "SolidColor",
+                  "userData": {
+                    "assetId": "DA_592",
+                    "fill": "#FFFFFF"
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "soildColor",
+                    "metadataType": "Renderer",
+                    "value": "CMYK(0,0,0,0)"
+                  },
+                  {
+                    "name": "parentSurfaceType",
+                    "metadataType": "Builder",
+                    "value": "front"
+                  },
+                  {
+                    "name": "designAssetId",
+                    "metadataType": "Builder",
+                    "value": "DA_592"
+                  },
+                  {
+                    "name": "designAssetCategoryId",
+                    "metadataType": "Builder",
+                    "value": "color"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "original_add"
+                  }
+                ],
+                "date": 0
+              },
+              {
+                "type": "background",
+                "container": {
+                  "x": 2505,
+                  "y": 0,
+                  "w": 431.1,
+                  "h": 2910,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "SolidColor",
+                  "userData": {
+                    "assetId": "DA_592",
+                    "fill": "#FFFFFF"
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "soildColor",
+                    "metadataType": "Renderer",
+                    "value": "CMYK(0,0,0,0)"
+                  },
+                  {
+                    "name": "parentSurfaceType",
+                    "metadataType": "Builder",
+                    "value": "spine"
+                  },
+                  {
+                    "name": "designAssetId",
+                    "metadataType": "Builder",
+                    "value": "DA_592"
+                  },
+                  {
+                    "name": "designAssetCategoryId",
+                    "metadataType": "Builder",
+                    "value": "color"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "original_add"
+                  }
+                ],
+                "date": 0
+              },
+              {
+                "type": "background",
+                "container": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 2505,
+                  "h": 2910,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "SolidColor",
+                  "userData": {
+                    "assetId": "DA_592",
+                    "fill": "#FFFFFF"
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "soildColor",
+                    "metadataType": "Renderer",
+                    "value": "CMYK(0,0,0,0)"
+                  },
+                  {
+                    "name": "parentSurfaceType",
+                    "metadataType": "Builder",
+                    "value": "back"
+                  },
+                  {
+                    "name": "designAssetId",
+                    "metadataType": "Builder",
+                    "value": "DA_592"
+                  },
+                  {
+                    "name": "designAssetCategoryId",
+                    "metadataType": "Builder",
+                    "value": "color"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "original_add"
+                  }
+                ],
+                "date": 0
+              },
+              {
+                "type": "photo",
+                "container": {
+                  "x": 3111.1987,
+                  "y": 474.375,
+                  "w": 1796.3712,
+                  "h": 1796.3712,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "UserPhoto",
+                  "userData": {
+                    "w": 1836.3712,
+                    "h": 1836.3712,
+                    "x": 3111.1987,
+                    "y": 474.375,
+                    "rot": 0,
+                    "assetId": "imageID=img-cover&DATA=data-cover",
+                    "mediaId": "9000000000000001",
+                    "locationSpec": "fixture.JPG"
+                  }
+                },
+                "border": {
+                  "contentType": "SolidColorBorder",
+                  "userData": {
+                    "borderColor": "#231F20",
+                    "borderOverlap": 20,
+                    "borderWidthPixels": 40
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "designAssetCategoryId",
+                    "metadataType": "Builder",
+                    "value": "unavailable"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "new_edit"
+                  },
+                  {
+                    "name": "reportingMediaSource",
+                    "metadataType": "Reporting",
+                    "value": "shutterfly"
+                  }
+                ],
+                "date": 0
+              },
+              {
+                "type": "embellishment",
+                "container": {
+                  "x": 2312.4675,
+                  "y": 1046.9175,
+                  "w": 816.165,
+                  "h": 816.165,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "Embellishment",
+                  "userData": {
+                    "w": 816.165,
+                    "h": 816.165,
+                    "x": 2312.4675,
+                    "y": 1046.9175,
+                    "rot": 0,
+                    "assetId": "DA_22741",
+                    "isMetallic": true
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "spotColor",
+                    "metadataType": "Renderer",
+                    "value": "CL 4713 SILVER"
+                  },
+                  {
+                    "name": "designAssetId",
+                    "metadataType": "Builder",
+                    "value": "DA_22741"
+                  },
+                  {
+                    "name": "designAssetCategoryId",
+                    "metadataType": "Builder",
+                    "value": "embellishment"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "new_add"
+                  }
+                ],
+                "date": 0
+              },
+              {
+                "type": "text",
+                "textBoxType": "SpineText",
+                "container": {
+                  "x": 2763.3,
+                  "y": 354.99,
+                  "w": 2199.99,
+                  "h": 85.5,
+                  "rot": 90
+                },
+                "content": {
+                  "contentType": "UserText",
+                  "userData": {
+                    "assetId": "DA_46610",
+                    "fontSize": 12,
+                    "fontColor": "#FFFFFF",
+                    "alignmentAnchor": "5",
+                    "linesOfText": [],
+                    "userEditedText": false,
+                    "isCustomDesigned": false,
+                    "fullText": ""
+                  },
+                  "textClass": "Body"
+                },
+                "layerMetadata": [
+                  {
+                    "name": "fontColor",
+                    "metadataType": "Renderer",
+                    "value": "CMYK(0,0,0,0)"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "original_add"
+                  }
+                ],
+                "date": 0
+              },
+              {
+                "type": "text",
+                "container": {
+                  "x": 1627.3423,
+                  "y": 1600.5,
+                  "w": 2176.44,
+                  "h": 582,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "UserText",
+                  "userData": {
+                    "assetId": "DA_46669",
+                    "fontSize": 24,
+                    "fontColor": "#000000",
+                    "alignmentAnchor": "5",
+                    "linesOfText": [],
+                    "userEditedText": false,
+                    "isCustomDesigned": true,
+                    "fullText": ""
+                  },
+                  "textClass": "body"
+                },
+                "layerMetadata": [
+                  {
+                    "name": "fontColor",
+                    "metadataType": "Renderer",
+                    "value": "CMYK(0,0,0,100)"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "new_edit"
+                  }
+                ],
+                "date": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "categoryName": "inside",
+      "surfaces": [
+        {
+          "surfaceNumber": 0,
+          "surfaceMetadata": [
+            {
+              "name": "designId",
+              "metadataType": "Builder",
+              "value": "D_251398"
+            },
+            {
+              "name": "designGroupId",
+              "metadataType": "Builder",
+              "value": "DG_46034"
+            },
+            {
+              "name": "designCategoryId",
+              "metadataType": "Builder",
+              "value": "Native Full DesignCategory"
+            },
+            {
+              "name": "renderingSurfaceType",
+              "metadataType": "Renderer",
+              "value": "right"
+            },
+            {
+              "name": "orientation",
+              "metadataType": "Fulfillment",
+              "value": "landscape"
+            }
+          ],
+          "surfaceData": {
+            "pageDetails": {
+              "width": 2385,
+              "height": 2385,
+              "dpi": 300,
+              "minDpi": 0
+            },
+            "layeredItems": [
+              {
+                "content": {
+                  "contentType": "SolidColor",
+                  "userData": {
+                    "fill": "#FFFFFF",
+                    "assetId": "DA_592"
+                  }
+                },
+                "container": {
+                  "w": 2385,
+                  "h": 2385,
+                  "x": 0,
+                  "y": 0,
+                  "rot": 0
+                },
+                "layerMetadata": [
+                  {
+                    "name": "solidColor",
+                    "value": "CMYK(0,0,0,0)",
+                    "metadataType": "Renderer"
+                  },
+                  {
+                    "name": "designAssetId",
+                    "value": "DA_592",
+                    "metadataType": "Builder"
+                  },
+                  {
+                    "name": "designAssetCategoryId",
+                    "value": "color",
+                    "metadataType": "Builder"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "value": "original_add",
+                    "metadataType": "Reporting"
+                  }
+                ],
+                "type": "background"
+              },
+              {
+                "content": {
+                  "contentType": "UserText",
+                  "userData": {
+                    "assetId": "DA_46646",
+                    "fontSize": 46,
+                    "fontColor": "#cb2585",
+                    "alignmentAnchor": "5",
+                    "linesOfText": [
+                      {
+                        "x": 87.54698495484057,
+                        "y": 302.1333213912116,
+                        "userLineFeed": false,
+                        "text": "Test test box"
+                      }
+                    ],
+                    "fullText": "Test test box",
+                    "isCustomDesigned": true,
+                    "userEditedText": true
+                  }
+                },
+                "container": {
+                  "w": 954,
+                  "h": 477,
+                  "x": 715.4999994000004,
+                  "y": 445.94999999999993,
+                  "rot": 0
+                },
+                "layerMetadata": [
+                  {
+                    "name": "fontColor",
+                    "value": "CMYK(16,95,0,0)",
+                    "metadataType": "Renderer"
+                  },
+                  {
+                    "name": "colorSwatch",
+                    "value": "#cb2585",
+                    "metadataType": "Reporting"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "value": "new_edit",
+                    "metadataType": "Reporting"
+                  }
+                ],
+                "type": "text"
+              },
+              {
+                "content": {
+                  "contentType": "Embellishment",
+                  "userData": {
+                    "assetId": "DA_893",
+                    "w": 1444.6380000000001,
+                    "h": 888.9660000000001,
+                    "x": 536.9791,
+                    "y": 1018.9735,
+                    "rot": 0
+                  }
+                },
+                "container": {
+                  "w": 1444.6380000000001,
+                  "h": 888.9660000000001,
+                  "x": 536.9791,
+                  "y": 1018.9735,
+                  "rot": 0
+                },
+                "layerMetadata": [
+                  {
+                    "name": "designAssetId",
+                    "value": "DA_893",
+                    "metadataType": "Builder"
+                  },
+                  {
+                    "name": "designAssetCategoryId",
+                    "value": "WELLFILTER",
+                    "metadataType": "Builder"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "value": "new_edit",
+                    "metadataType": "Reporting"
+                  }
+                ],
+                "type": "embellishment"
+              }
+            ]
+          }
+        },
+        {
+          "surfaceNumber": "1",
+          "surfaceMetadata": [
+            {
+              "name": "pairedSurfaceType",
+              "metadataType": "Builder",
+              "value": "left"
+            },
+            {
+              "name": "designId",
+              "metadataType": "Builder",
+              "value": "D_251398"
+            },
+            {
+              "name": "designGroupId",
+              "metadataType": "Builder",
+              "value": "DG_46034"
+            },
+            {
+              "name": "designCategoryId",
+              "metadataType": "Builder",
+              "value": "Native Full DesignCategory"
+            },
+            {
+              "name": "renderingSurfaceType",
+              "metadataType": "Renderer",
+              "value": "spread"
+            },
+            {
+              "name": "orientation",
+              "metadataType": "Fulfillment",
+              "value": "landscape"
+            }
+          ],
+          "surfaceData": {
+            "pageDetails": {
+              "width": 4710,
+              "height": 2385,
+              "dpi": 300,
+              "minDpi": 0
+            },
+            "layeredItems": [
+              {
+                "type": "background",
+                "container": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 2355,
+                  "h": 2385,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "SolidColor",
+                  "userData": {
+                    "assetId": "DA_592",
+                    "fill": "#FFFFFF"
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "soildColor",
+                    "metadataType": "Renderer",
+                    "value": "CMYK(0,0,0,0)"
+                  },
+                  {
+                    "name": "designAssetId",
+                    "metadataType": "Builder",
+                    "value": "DA_592"
+                  },
+                  {
+                    "name": "designAssetCategoryId",
+                    "metadataType": "Builder",
+                    "value": "color"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "original_add"
+                  }
+                ],
+                "date": 0
+              },
+              {
+                "type": "background",
+                "container": {
+                  "x": 2355,
+                  "y": 0,
+                  "w": 2355,
+                  "h": 2385,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "SolidColor",
+                  "userData": {
+                    "assetId": "DA_592",
+                    "fill": "#FFFFFF"
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "soildColor",
+                    "metadataType": "Renderer",
+                    "value": "CMYK(0,0,0,0)"
+                  },
+                  {
+                    "name": "pairLayerIndex",
+                    "metadataType": "Builder",
+                    "value": "1"
+                  },
+                  {
+                    "name": "designAssetId",
+                    "metadataType": "Builder",
+                    "value": "DA_592"
+                  },
+                  {
+                    "name": "designAssetCategoryId",
+                    "metadataType": "Builder",
+                    "value": "color"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "original_add"
+                  }
+                ],
+                "date": 0
+              },
+              {
+                "type": "photo",
+                "container": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 4710,
+                  "h": 2385,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "UserPhoto",
+                  "userData": {
+                    "w": 4710,
+                    "h": 4710,
+                    "x": 0,
+                    "y": -1119.3248,
+                    "rot": 0,
+                    "assetId": "imageID=img-cover&DATA=data-cover",
+                    "mediaId": "9000000000000001",
+                    "locationSpec": "fixture.JPG"
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "pairLayerIndex",
+                    "metadataType": "Builder",
+                    "value": "2"
+                  },
+                  {
+                    "name": "designAssetCategoryId",
+                    "metadataType": "Builder",
+                    "value": "unavailable"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "original_edit"
+                  },
+                  {
+                    "name": "reportingMediaSource",
+                    "metadataType": "Reporting",
+                    "value": "shutterfly"
+                  }
+                ],
+                "date": 0
+              }
+            ]
+          }
+        },
+        {
+          "surfaceNumber": "3",
+          "surfaceMetadata": [
+            {
+              "name": "designId",
+              "metadataType": "Builder",
+              "value": "D_251398"
+            },
+            {
+              "name": "designSurfaceId",
+              "metadataType": "Builder",
+              "value": "DA_4181642"
+            },
+            {
+              "name": "designGroupId",
+              "metadataType": "Builder",
+              "value": "DG_46034"
+            },
+            {
+              "name": "designCategoryId",
+              "metadataType": "Builder",
+              "value": "Native Full DesignCategory"
+            },
+            {
+              "name": "renderingSurfaceType",
+              "metadataType": "Renderer",
+              "value": "left"
+            },
+            {
+              "name": "orientation",
+              "metadataType": "Fulfillment",
+              "value": "landscape"
+            }
+          ],
+          "surfaceData": {
+            "pageDetails": {
+              "width": 2385,
+              "height": 2385,
+              "dpi": 300,
+              "minDpi": 0
+            },
+            "layeredItems": [
+              {
+                "type": "background",
+                "container": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 2385,
+                  "h": 2385,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "SolidColor",
+                  "userData": {
+                    "assetId": "DA_592",
+                    "fill": "#FFFFFF"
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "soildColor",
+                    "metadataType": "Renderer",
+                    "value": "CMYK(0,0,0,0)"
+                  },
+                  {
+                    "name": "designAssetId",
+                    "metadataType": "Builder",
+                    "value": "DA_592"
+                  },
+                  {
+                    "name": "designAssetCategoryId",
+                    "metadataType": "Builder",
+                    "value": "color"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "original_add"
+                  }
+                ],
+                "date": 0
+              }
+            ]
+          }
+        },
+        {
+          "surfaceNumber": "19",
+          "surfaceMetadata": [
+            {
+              "name": "designSurfaceId",
+              "metadataType": "Builder",
+              "value": "Native Full Design"
+            },
+            {
+              "name": "designGroupId",
+              "metadataType": "Builder",
+              "value": "Native Full DesignGroup"
+            },
+            {
+              "name": "designCategoryId",
+              "metadataType": "Builder",
+              "value": "Native Full DesignCategory"
+            },
+            {
+              "name": "renderingSurfaceType",
+              "metadataType": "Renderer",
+              "value": "left"
+            },
+            {
+              "name": "orientation",
+              "metadataType": "Fulfillment",
+              "value": "landscape"
+            }
+          ],
+          "surfaceData": {
+            "pageDetails": {
+              "width": 2385,
+              "height": 2385,
+              "dpi": 300,
+              "minDpi": 0
+            },
+            "layeredItems": [
+              {
+                "type": "background",
+                "container": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 2385,
+                  "h": 2385,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "SolidColor",
+                  "userData": {
+                    "fill": "#FFFFFF"
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "designAssetId",
+                    "metadataType": "Builder",
+                    "value": "default"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "original_add"
+                  }
+                ],
+                "date": 0
+              },
+              {
+                "type": "photo",
+                "container": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 2385,
+                  "h": 2385,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "UserPhoto",
+                  "userData": {
+                    "w": 0,
+                    "h": 0,
+                    "x": 0,
+                    "y": 0,
+                    "rot": 0
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "original_add"
+                  }
+                ],
+                "date": 0
+              }
+            ]
+          }
+        },
+        {
+          "surfaceNumber": "29",
+          "surfaceMetadata": [
+            {
+              "name": "designSurfaceId",
+              "metadataType": "Builder",
+              "value": "Native Full Design"
+            },
+            {
+              "name": "designGroupId",
+              "metadataType": "Builder",
+              "value": "Native Full DesignGroup"
+            },
+            {
+              "name": "designCategoryId",
+              "metadataType": "Builder",
+              "value": "Native Full DesignCategory"
+            },
+            {
+              "name": "renderingSurfaceType",
+              "metadataType": "Renderer",
+              "value": "left"
+            },
+            {
+              "name": "orientation",
+              "metadataType": "Fulfillment",
+              "value": "landscape"
+            }
+          ],
+          "surfaceData": {
+            "pageDetails": {
+              "width": 2385,
+              "height": 2385,
+              "dpi": 300,
+              "minDpi": 0
+            },
+            "layeredItems": [
+              {
+                "type": "background",
+                "container": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 2385,
+                  "h": 2385,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "SolidColor",
+                  "userData": {
+                    "fill": "#FFFFFF"
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "designAssetId",
+                    "metadataType": "Builder",
+                    "value": "default"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "original_add"
+                  }
+                ],
+                "date": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "categoryName": "logo",
+      "surfaces": [
+        {
+          "surfaceNumber": "-7",
+          "surfaceMetadata": [
+            {
+              "name": "designId",
+              "metadataType": "Builder",
+              "value": "D_251398"
+            },
+            {
+              "name": "designSurfaceId",
+              "metadataType": "Builder",
+              "value": "DA_1439665"
+            },
+            {
+              "name": "designGroupId",
+              "metadataType": "Builder",
+              "value": "DG_46034"
+            },
+            {
+              "name": "designCategoryId",
+              "metadataType": "Builder",
+              "value": "Native Full DesignCategory"
+            },
+            {
+              "name": "renderingSurfaceType",
+              "metadataType": "Renderer",
+              "value": "left"
+            },
+            {
+              "name": "orientation",
+              "metadataType": "Fulfillment",
+              "value": "landscape"
+            }
+          ],
+          "surfaceData": {
+            "pageDetails": {
+              "width": 2385,
+              "height": 2385,
+              "dpi": 300,
+              "minDpi": 0
+            },
+            "layeredItems": [
+              {
+                "type": "background",
+                "container": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 2385,
+                  "h": 2385,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "SolidColor",
+                  "userData": {
+                    "fill": "#FFFFFF"
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "designAssetId",
+                    "metadataType": "Builder",
+                    "value": "default"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "original_add"
+                  }
+                ],
+                "date": 0
+              },
+              {
+                "type": "logo",
+                "container": {
+                  "x": 892.5,
+                  "y": 1998.15,
+                  "w": 600,
+                  "h": 202.74,
+                  "rot": 0
+                },
+                "content": {
+                  "contentType": "Logo",
+                  "userData": {
+                    "w": 600,
+                    "h": 202.74,
+                    "x": 892.5,
+                    "y": 1998.15,
+                    "rot": 0,
+                    "assetId": "DA_1439630"
+                  }
+                },
+                "layerMetadata": [
+                  {
+                    "name": "designAssetId",
+                    "metadataType": "Builder",
+                    "value": "DA_1439630"
+                  },
+                  {
+                    "name": "designAssetCategoryId",
+                    "metadataType": "Builder",
+                    "value": "unavailable"
+                  },
+                  {
+                    "name": "designAssetOperation",
+                    "metadataType": "Reporting",
+                    "value": "original_add"
+                  }
+                ],
+                "date": 0
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

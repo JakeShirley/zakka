@@ -586,6 +586,32 @@ const localImageFiles = [
   createLocalPngFile("ocean-blue.png", { blue: 210, green: 128, red: 50 }),
 ];
 
+const shutterflyConnection = {
+  configured: true,
+  connected: true,
+  email: "maker@example.com",
+  connectedAt: "2026-05-17T12:00:00.000Z",
+};
+
+const shutterflyProjects = [
+  {
+    id: "1219497168070",
+    name: "Summer at the Lake",
+    productName: "8x8 Deluxe Layflat Photo Book",
+    thumbnailUrl: null,
+    pageCount: 34,
+    updatedAt: "2026-05-21T21:59:17.820Z",
+  },
+  {
+    id: "1219497168071",
+    name: "Grandma's 80th",
+    productName: "11x8 Custom Hard Cover Photo Book",
+    thumbnailUrl: null,
+    pageCount: 20,
+    updatedAt: "2026-04-02T18:30:00.000Z",
+  },
+];
+
 const scenarios: ScreenshotScenario[] = [
   {
     authenticated: false,
@@ -784,6 +810,47 @@ const scenarios: ScreenshotScenario[] = [
     waitFor: async (page) => {
       await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
       await expect(page.getByLabel("Account").getByText(account.primaryEmail)).toBeVisible();
+    },
+  },
+  {
+    name: "books-shutterfly-import",
+    path: "/books",
+    prepare: async (page) => {
+      const importButton = page.getByRole("button", { name: "Import from Shutterfly" });
+
+      if (!(await isVisible(importButton))) {
+        return;
+      }
+
+      await importButton.click();
+      await expect(page.getByRole("list", { name: "Shutterfly projects" })).toBeVisible();
+    },
+    waitFor: async (page) => {
+      await expect(page.locator(".topbar h2", { hasText: "Books" })).toBeVisible();
+      await expect(page.getByText("Family Yearbook")).toBeVisible();
+    },
+  },
+  {
+    name: "settings-integrations",
+    path: "/settings",
+    prepare: async (page) => {
+      const integrationsTab = page.getByRole("tab", { name: "Integrations" });
+
+      if (!(await isVisible(integrationsTab))) {
+        return;
+      }
+
+      // Show the first-run connection instructions rather than the connected state.
+      await page.route("**/api/v1/integrations/shutterfly", (route) =>
+        route.fulfill({
+          json: { ...shutterflyConnection, connected: false, email: null, connectedAt: null },
+        }),
+      );
+      await integrationsTab.click();
+      await expect(page.getByRole("button", { name: "Connect Shutterfly" })).toBeVisible();
+    },
+    waitFor: async (page) => {
+      await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
     },
   },
   {
@@ -1048,6 +1115,16 @@ async function installMockApi(page: Page, authenticated: boolean) {
       const level = url.searchParams.get("level") ?? "info";
 
       await route.fulfill({ json: { level, logs: serverLogs } });
+      return;
+    }
+
+    if (pathName === "/api/v1/integrations/shutterfly") {
+      await route.fulfill({ json: shutterflyConnection });
+      return;
+    }
+
+    if (pathName === "/api/v1/integrations/shutterfly/projects") {
+      await route.fulfill({ json: { projects: shutterflyProjects } });
       return;
     }
 

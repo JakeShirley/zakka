@@ -33,7 +33,12 @@ import {
   type ExportFormat,
   type ExportJobRecord,
   type ExportPreset,
+  type ExternalMediaLinkRecord,
   exportJobs,
+  externalMediaLinks,
+  type IntegrationConnectionRecord,
+  type IntegrationProvider,
+  integrationConnections,
   type PageRecord,
   pages,
   type SessionRecord,
@@ -1548,6 +1553,156 @@ export class ExportJobRepository {
   }
 }
 
+export class IntegrationRepository {
+  constructor(
+    private readonly db: AppDatabase,
+    private readonly clock: RepositoryClock = defaultClock,
+  ) {}
+
+  findConnection(
+    accountId: string,
+    provider: IntegrationProvider,
+  ): IntegrationConnectionRecord | null {
+    return (
+      this.db
+        .select()
+        .from(integrationConnections)
+        .where(
+          and(
+            eq(integrationConnections.accountId, accountId),
+            eq(integrationConnections.provider, provider),
+          ),
+        )
+        .get() ?? null
+    );
+  }
+
+  upsertConnection(input: {
+    accountId: string;
+    provider: IntegrationProvider;
+    externalAccountId: string;
+    externalEmail: string | null;
+    encryptedCredentials: string;
+  }): IntegrationConnectionRecord {
+    const timestamp = now(this.clock);
+    const existing = this.findConnection(input.accountId, input.provider);
+
+    if (existing) {
+      const next: IntegrationConnectionRecord = {
+        ...existing,
+        externalAccountId: input.externalAccountId,
+        externalEmail: input.externalEmail,
+        encryptedCredentials: input.encryptedCredentials,
+        updatedAt: timestamp,
+      };
+
+      this.db
+        .update(integrationConnections)
+        .set({
+          externalAccountId: next.externalAccountId,
+          externalEmail: next.externalEmail,
+          encryptedCredentials: next.encryptedCredentials,
+          updatedAt: timestamp,
+        })
+        .where(eq(integrationConnections.id, existing.id))
+        .run();
+
+      return next;
+    }
+
+    const record: IntegrationConnectionRecord = {
+      id: createInternalId("integrationConnection"),
+      accountId: input.accountId,
+      provider: input.provider,
+      externalAccountId: input.externalAccountId,
+      externalEmail: input.externalEmail,
+      encryptedCredentials: input.encryptedCredentials,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    this.db.insert(integrationConnections).values(record).run();
+
+    return record;
+  }
+
+  deleteConnection(accountId: string, provider: IntegrationProvider): boolean {
+    const result = this.db
+      .delete(integrationConnections)
+      .where(
+        and(
+          eq(integrationConnections.accountId, accountId),
+          eq(integrationConnections.provider, provider),
+        ),
+      )
+      .run();
+
+    return result.changes > 0;
+  }
+
+  findMediaLink(
+    accountId: string,
+    provider: IntegrationProvider,
+    externalId: string,
+  ): ExternalMediaLinkRecord | null {
+    return (
+      this.db
+        .select()
+        .from(externalMediaLinks)
+        .where(
+          and(
+            eq(externalMediaLinks.accountId, accountId),
+            eq(externalMediaLinks.provider, provider),
+            eq(externalMediaLinks.externalId, externalId),
+          ),
+        )
+        .get() ?? null
+    );
+  }
+
+  createMediaLink(
+    input: {
+      accountId: string;
+      provider: IntegrationProvider;
+      externalId: string;
+    } & (
+      | { assetId: string; customStickerId?: never }
+      | { assetId?: never; customStickerId: string }
+    ),
+  ): ExternalMediaLinkRecord {
+    const timestamp = now(this.clock);
+    const record: ExternalMediaLinkRecord = {
+      id: createInternalId("externalMediaLink"),
+      accountId: input.accountId,
+      provider: input.provider,
+      externalId: input.externalId,
+      assetId: input.assetId ?? null,
+      customStickerId: input.customStickerId ?? null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    this.db
+      .insert(externalMediaLinks)
+      .values(record)
+      .onConflictDoUpdate({
+        target: [
+          externalMediaLinks.accountId,
+          externalMediaLinks.provider,
+          externalMediaLinks.externalId,
+        ],
+        set: {
+          assetId: record.assetId,
+          customStickerId: record.customStickerId,
+          updatedAt: timestamp,
+        },
+      })
+      .run();
+
+    return record;
+  }
+}
+
 export const createRepositories = (
   db: AppDatabase,
   options: { clock?: RepositoryClock; pageDocuments?: PageDocumentStore } = {},
@@ -1566,6 +1721,7 @@ export const createRepositories = (
     pages: new PageRepository(db, clock, pageDocuments),
     books: new BookRepository(db, clock, pageDocuments),
     exports: new ExportJobRepository(db, clock),
+    integrations: new IntegrationRepository(db, clock),
   };
 };
 

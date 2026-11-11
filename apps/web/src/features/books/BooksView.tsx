@@ -1,12 +1,13 @@
 import { Button } from "@fluentui/react-components";
-import { AddRegular } from "@fluentui/react-icons";
-import { useEffect, useState } from "react";
+import { AddRegular, ArrowDownloadRegular } from "@fluentui/react-icons";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { apiClient } from "../../apiClient";
 import { Panel, WorkspaceHeader } from "../../components/layout";
 import { getErrorMessage } from "../../lib/errors";
 import type { BookSummary } from "../../types";
+import { ShutterflyImportModal } from "./ShutterflyImportModal";
 import {
   commonBookPageSizes,
   defaultBookPageSize,
@@ -21,33 +22,36 @@ export function BooksView() {
   const [isCreating, setIsCreating] = useState(false);
   const [newBookPageSizeKey, setNewBookPageSizeKey] = useState<string>(defaultBookPageSize.key);
   const [error, setError] = useState<string | null>(null);
+  const [isShutterflyImportOpen, setIsShutterflyImportOpen] = useState(false);
+
+  const loadBooks = useCallback(async (isCurrent: () => boolean = () => true) => {
+    try {
+      const bookResponse = await apiClient.listBooks();
+
+      if (isCurrent()) {
+        setBooks(bookResponse.books);
+        setError(null);
+      }
+    } catch (loadError: unknown) {
+      if (isCurrent()) {
+        setError(getErrorMessage(loadError));
+      }
+    } finally {
+      if (isCurrent()) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
 
-    apiClient
-      .listBooks()
-      .then((bookResponse) => {
-        if (isMounted) {
-          setBooks(bookResponse.books);
-          setError(null);
-        }
-      })
-      .catch((loadError: unknown) => {
-        if (isMounted) {
-          setError(getErrorMessage(loadError));
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      });
+    void loadBooks(() => isMounted);
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [loadBooks]);
 
   const createBook = async () => {
     setIsCreating(true);
@@ -86,6 +90,14 @@ export function BooksView() {
             </select>
           </label>
           <Button
+            className="secondary-button"
+            icon={<ArrowDownloadRegular />}
+            type="button"
+            onClick={() => setIsShutterflyImportOpen(true)}
+          >
+            Import from Shutterfly
+          </Button>
+          <Button
             appearance="primary"
             className="primary-button"
             disabled={isCreating}
@@ -97,6 +109,16 @@ export function BooksView() {
           </Button>
         </div>
       </WorkspaceHeader>
+      {isShutterflyImportOpen ? (
+        <ShutterflyImportModal
+          onClose={() => {
+            setIsShutterflyImportOpen(false);
+            // An import may have created a book even if the user closes without opening it.
+            void loadBooks();
+          }}
+          onOpenBook={(bookId) => navigate(`/books/${bookId}`)}
+        />
+      ) : null}
       {error ? (
         <p className="panel-alert" role="alert">
           {error}

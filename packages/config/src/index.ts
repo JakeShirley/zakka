@@ -15,6 +15,7 @@ const runtimeConfigSchema = z
     WEB_ORIGIN: z.string().url().default("http://localhost:5173"),
     SESSION_COOKIE_SECURE: booleanEnvironmentSchema.optional(),
     ZAKKA_DATA_DIR: z.string().min(1).optional(),
+    SHUTTERFLY_API_KEY: z.string().trim().min(1).optional(),
   })
   .transform((config) => ({
     ...config,
