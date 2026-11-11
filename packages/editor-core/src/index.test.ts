@@ -996,6 +996,31 @@ describe("page document helpers", () => {
     expect((svg.match(/data-photo-shadow="true"/g) ?? []).length).toBe(2);
   });
 
+  it("renders photo color filters as an SVG color matrix", () => {
+    const plain = createPhotoLayer({ assetId: "asset_plain", id: "photo_plain" });
+    const mono = createPhotoLayer({
+      assetId: "asset_mono",
+      id: "photo_mono",
+      filter: { preset: "mono", brightness: 1, contrast: 1, saturation: 1 },
+    });
+    const brightened = createPhotoLayer({
+      assetId: "asset_bright",
+      id: "photo_bright",
+      filter: { preset: "none", brightness: 1.5, contrast: 1, saturation: 1 },
+    });
+    const svg = renderPageDocumentSvg(createPageDocument({ layers: [plain, mono, brightened] }), {
+      resolvePhotoHref: (layer) => `/assets/${layer.assetId}/content`,
+    });
+
+    expect(svg).not.toContain('id="photo_color_0"');
+    expect(svg).toContain(
+      '<filter id="photo_color_1" data-photo-filter="mono" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0 0 0 1 0" /></filter>',
+    );
+    expect(svg).toContain('values="1.5 0 0 0 0 0 1.5 0 0 0 0 0 1.5 0 0 0 0 0 1 0"');
+    expect((svg.match(/filter="url\(#photo_color_1\)"/g) ?? []).length).toBe(1);
+    expect(svg).toContain('filter="url(#photo_color_2)"');
+  });
+
   it("prefixes reusable SVG ids for pages rendered in the same DOM", () => {
     const photo = createPhotoLayer({ assetId: "asset_1", id: "photo_1" });
     const document = createPageDocument({ layers: [photo] });
