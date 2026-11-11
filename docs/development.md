@@ -94,6 +94,8 @@ pnpm screenshots
 
 The screenshot runner starts the Vite web app, mocks the API with representative fixture data, and writes desktop and mobile PNGs for each top-level feature to `docs/screenshots/`.
 
+Screenshots are for visual review only. Scenarios stage a screen and wait until it is ready; they do not assert behavior, and they tolerate affordances missing at the merge base. Put interaction checks in browser tests and API-backed flows in end-to-end tests (see [Testing](#testing)).
+
 Screenshot PNGs are generated artifacts and are intentionally ignored by Git. To write them somewhere else, set `ZAKKA_SCREENSHOT_DIR`:
 
 ```sh

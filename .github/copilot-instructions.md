@@ -12,6 +12,7 @@
 
 The `App Visual Diffs` workflow (`.github/workflows/app-visual-diffs.yml`) runs `apps/web/screenshots/app-screenshots.spec.ts` against both the HEAD workspace and a merge-base worktree. New or modified scenarios must pass in both environments.
 
+- Scenarios stage visual states only. Wait for readiness, but assert behavior in browser interaction tests or `apps/web/e2e/` instead.
 - In `waitFor`, assert only elements that exist in both merge-base and HEAD for existing pages.
 - Put feature-specific behavior in `prepare`, guard with `isVisible(...)`, and exit early when the new affordance is absent.
 - For new feature routes, keep screenshot API mocks falsey-tolerant so smaller merge-base request sets still resolve.
