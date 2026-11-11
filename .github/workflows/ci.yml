@@ -45,3 +45,41 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  e2e:
+    name: End-to-end
+    # Playwright 1.60 cannot install Chromium on ubuntu-latest (26.04).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @zakka/web exec playwright install --with-deps chromium
+
+      - name: Run end-to-end tests
+        run: pnpm e2e
+
+      - name: Upload Playwright report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: e2e-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results/e2e
+          retention-days: 14

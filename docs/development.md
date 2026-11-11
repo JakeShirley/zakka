@@ -25,6 +25,7 @@ pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm e2e
 pnpm build
 pnpm screenshots
 pnpm release:preview
@@ -58,6 +59,17 @@ pnpm --filter @zakka/web exec vitest --project browser
 Canvas interaction tests mount `PageCanvas` through `src/test/canvasHarness.tsx`, which mirrors the editor's selection and layer-command wiring and exposes the resulting page document. Use `dragOnCanvas` from `src/test/gestures.ts` for drags; it drives Playwright's real mouse, and distances are fractions of the canvas, so `{ x: 0.1, y: 0 }` moves 10% of the page width. Assert on the page document the interaction produces rather than on pixels.
 
 When you fix an editor interaction bug, add a browser test named after the behavior and the issue, for example `cropping from an edge keeps the image anchored on the page (#57)`.
+
+### End-to-end tests
+
+`pnpm e2e` runs Playwright user journeys in `apps/web/e2e/` against the real API and web app. It builds the shared packages, then starts the API on port 4310 with `NODE_ENV=test` and a fresh temporary `ZAKKA_DATA_DIR`, and Vite on port 5310 proxying to it, so it never touches your development data or servers. Every test registers its own account, so tests are isolated and run in parallel.
+
+Use end-to-end tests for behavior that spans the API and the whole editor: persistence after reload, autosave, undo and redo, keyboard shortcuts, page ordering, uploads, and exports. Use `page.request` helpers in `e2e/fixtures.ts` to set up data quickly and to assert what was saved.
+
+```sh
+pnpm e2e
+pnpm --filter @zakka/web e2e -g "autosaves"   # after a first full run has built the packages
+```
 
 ## Development Credentials
 
