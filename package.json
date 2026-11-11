@@ -17,6 +17,7 @@
     "dev": "turbo run dev",
     "dev:api": "pnpm --filter @zakka/api dev",
     "dev:web": "pnpm --filter @zakka/web dev",
+    "e2e": "turbo run build --filter=@zakka/api^... --filter=@zakka/web^... && pnpm --filter @zakka/web e2e",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "generate:changelog": "node scripts/generate-changelog.mjs",
