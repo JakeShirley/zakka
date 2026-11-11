@@ -7,6 +7,9 @@ export type StickerPack = Awaited<ReturnType<typeof apiClient.listStickerPacks>>
 export type CustomSticker = Awaited<
   ReturnType<typeof apiClient.listCustomStickers>
 >["stickers"][number];
+export type CustomWashiTape = Awaited<
+  ReturnType<typeof apiClient.listCustomWashiTapes>
+>["washiTapes"][number];
 export type BookSummary = Awaited<ReturnType<typeof apiClient.listBooks>>["books"][number];
 export type BookDetail = Awaited<ReturnType<typeof apiClient.getBook>>;
 export type ExportJob = Awaited<ReturnType<typeof apiClient.createExport>>;

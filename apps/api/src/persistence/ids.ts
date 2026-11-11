@@ -7,7 +7,8 @@ type InternalEntityKind =
   | "bookAsset"
   | "albumAsset"
   | "stickerPack"
-  | "customSticker";
+  | "customSticker"
+  | "customWashiTape";
 
 const internalPrefixes: Record<InternalEntityKind, string> = {
   authIdentity: "auth_identity",
@@ -17,6 +18,7 @@ const internalPrefixes: Record<InternalEntityKind, string> = {
   albumAsset: "album_asset",
   stickerPack: "sticker_pack",
   customSticker: "custom_sticker",
+  customWashiTape: "custom_washi_tape",
 };
 
 export const createEntityId = <Kind extends EntityKind>(kind: Kind): OpaqueId<Kind> =>

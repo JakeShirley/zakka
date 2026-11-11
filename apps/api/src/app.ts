@@ -87,12 +87,21 @@ import {
   stickerPackStickerRemoveRoute,
   stickerPackStickerUploadRoute,
   type StickerPackResponse,
+  type CustomWashiTapeResponse,
+  customWashiTapeCreateRoute,
+  customWashiTapeDeleteRoute,
+  customWashiTapeListResponseSchema,
+  customWashiTapeListRoute,
+  customWashiTapePatchRoute,
+  customWashiTapeResponseSchema,
 } from "@zakka/api-contract";
 import {
   createBookSpreads,
   createPageDocument,
   type PageDocument,
   pageDocumentSchema,
+  type WashiTapeDesign,
+  washiTapeDesignSchema,
 } from "@zakka/editor-core";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
@@ -131,6 +140,7 @@ import type {
   BookPageRecord,
   BookRecord,
   CustomStickerRecord,
+  CustomWashiTapeRecord,
   ExportJobRecord,
   PageRecord,
   SessionRecord,
@@ -421,6 +431,15 @@ const toCustomStickerResponse = (sticker: CustomStickerRecord): CustomStickerRes
     updatedAt: sticker.updatedAt,
   });
 
+const toCustomWashiTapeResponse = (washiTape: CustomWashiTapeRecord): CustomWashiTapeResponse =>
+  customWashiTapeResponseSchema.parse({
+    id: washiTape.id,
+    name: washiTape.name,
+    design: washiTapeDesignSchema.parse(JSON.parse(washiTape.designJson)),
+    createdAt: washiTape.createdAt,
+    updatedAt: washiTape.updatedAt,
+  });
+
 const toBookSummaryResponse = (
   book: BookRecord,
   pages: Array<{ bookPage: BookPageRecord; page: PageRecord }>,
@@ -531,6 +550,32 @@ const validatePageDocumentAssets = (
   }
 
   return true;
+};
+
+type WashiTapeDesignValidation = "ok" | "photo_required" | "asset_not_found";
+
+const validateWashiTapeDesign = (
+  accountId: string,
+  design: WashiTapeDesign,
+  repositories: Repositories,
+): WashiTapeDesignValidation => {
+  if (design.pattern.kind === "customPhoto" && !design.pattern.assetId) {
+    return "photo_required";
+  }
+
+  if (
+    design.pattern.assetId &&
+    !repositories.assets.findByIdForAccount(accountId, design.pattern.assetId)
+  ) {
+    return "asset_not_found";
+  }
+
+  return "ok";
+};
+
+const washiTapeDesignErrorMessages: Record<Exclude<WashiTapeDesignValidation, "ok">, string> = {
+  photo_required: "Custom photo washi tape needs a pattern photo",
+  asset_not_found: "Washi tape pattern photos must be assets owned by the account",
 };
 
 const readClientIp = (context: ApiContext): string | null => {
@@ -2354,6 +2399,175 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     }
 
     return context.json(toCustomStickerResponse(updated), 200);
+  });
+
+  app.openapi(customWashiTapeListRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "washi_tapes_unavailable", "Washi tapes are unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const records = options.repositories.customWashiTapes.listForAccount(authSession.account.id);
+
+    return context.json(
+      customWashiTapeListResponseSchema.parse({
+        washiTapes: records.map(toCustomWashiTapeResponse),
+      }),
+      200,
+    );
+  });
+
+  app.openapi(customWashiTapeCreateRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "washi_tapes_unavailable", "Washi tapes are unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const input = context.req.valid("json");
+    const validation = validateWashiTapeDesign(
+      authSession.account.id,
+      input.design,
+      options.repositories,
+    );
+
+    if (validation !== "ok") {
+      return context.json(
+        createErrorResponse(
+          context,
+          `washi_tape_${validation}`,
+          washiTapeDesignErrorMessages[validation],
+        ),
+        400,
+      );
+    }
+
+    const record = options.repositories.customWashiTapes.create({
+      accountId: authSession.account.id,
+      name: input.name,
+      designJson: JSON.stringify(input.design),
+    });
+
+    return context.json(toCustomWashiTapeResponse(record), 201);
+  });
+
+  app.openapi(customWashiTapePatchRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "washi_tapes_unavailable", "Washi tapes are unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const { washiTapeId } = context.req.valid("param");
+    const input = context.req.valid("json");
+
+    if (
+      !options.repositories.customWashiTapes.findByIdForAccount(authSession.account.id, washiTapeId)
+    ) {
+      return context.json(
+        createErrorResponse(context, "washi_tape_not_found", "Washi tape not found"),
+        404,
+      );
+    }
+
+    if (input.design) {
+      const validation = validateWashiTapeDesign(
+        authSession.account.id,
+        input.design,
+        options.repositories,
+      );
+
+      if (validation !== "ok") {
+        return context.json(
+          createErrorResponse(
+            context,
+            `washi_tape_${validation}`,
+            washiTapeDesignErrorMessages[validation],
+          ),
+          400,
+        );
+      }
+    }
+
+    const updated = options.repositories.customWashiTapes.update({
+      accountId: authSession.account.id,
+      washiTapeId,
+      ...(input.name === undefined ? {} : { name: input.name }),
+      ...(input.design === undefined ? {} : { designJson: JSON.stringify(input.design) }),
+    });
+
+    if (!updated) {
+      return context.json(
+        createErrorResponse(context, "washi_tape_not_found", "Washi tape not found"),
+        404,
+      );
+    }
+
+    return context.json(toCustomWashiTapeResponse(updated), 200);
+  });
+
+  app.openapi(customWashiTapeDeleteRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "washi_tapes_unavailable", "Washi tapes are unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const { washiTapeId } = context.req.valid("param");
+    const deleted = options.repositories.customWashiTapes.delete({
+      accountId: authSession.account.id,
+      washiTapeId,
+    });
+
+    if (!deleted) {
+      return context.json(
+        createErrorResponse(context, "washi_tape_not_found", "Washi tape not found"),
+        404,
+      );
+    }
+
+    return context.body(null, 204);
   });
 
   app.openapi(exportCreateRoute, async (context) => {
