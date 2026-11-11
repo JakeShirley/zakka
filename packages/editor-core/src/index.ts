@@ -978,6 +978,140 @@ const renderPhotoShadowSvg = (
   return `<g data-photo-shadow="true" transform="translate(${layer.shadow.offsetX} ${layer.shadow.offsetY})" opacity="${layer.shadow.opacity}" filter="url(#${filterId})">${shape}</g>`;
 };
 
+// Affine RGB transform: out = linear * in + offset, matching the CSS filter function matrices.
+type ColorTransform = { linear: number[][]; offset: number[] };
+
+const luminanceMixMatrix = (weights: [number, number, number], amount: number): number[][] =>
+  weights.map((_, row) =>
+    weights.map((weight, column) =>
+      row === column ? weight + (1 - weight) * amount : weight * (1 - amount),
+    ),
+  );
+
+const colorTransformFns = {
+  sepia: (amount: number): ColorTransform => {
+    const keep = 1 - Math.min(Math.max(amount, 0), 1);
+    return {
+      linear: [
+        [0.393 + 0.607 * keep, 0.769 - 0.769 * keep, 0.189 - 0.189 * keep],
+        [0.349 - 0.349 * keep, 0.686 + 0.314 * keep, 0.168 - 0.168 * keep],
+        [0.272 - 0.272 * keep, 0.534 - 0.534 * keep, 0.131 + 0.869 * keep],
+      ],
+      offset: [0, 0, 0],
+    };
+  },
+  saturate: (amount: number): ColorTransform => ({
+    linear: luminanceMixMatrix([0.213, 0.715, 0.072], amount),
+    offset: [0, 0, 0],
+  }),
+  grayscale: (amount: number): ColorTransform => ({
+    linear: luminanceMixMatrix([0.2126, 0.7152, 0.0722], 1 - Math.min(Math.max(amount, 0), 1)),
+    offset: [0, 0, 0],
+  }),
+  hueRotate: (degrees: number): ColorTransform => {
+    const radians = (degrees * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    return {
+      linear: [
+        [
+          0.213 + cos * 0.787 - sin * 0.213,
+          0.715 - cos * 0.715 - sin * 0.715,
+          0.072 - cos * 0.072 + sin * 0.928,
+        ],
+        [
+          0.213 - cos * 0.213 + sin * 0.143,
+          0.715 + cos * 0.285 + sin * 0.14,
+          0.072 - cos * 0.072 - sin * 0.283,
+        ],
+        [
+          0.213 - cos * 0.213 - sin * 0.787,
+          0.715 - cos * 0.715 + sin * 0.715,
+          0.072 + cos * 0.928 + sin * 0.072,
+        ],
+      ],
+      offset: [0, 0, 0],
+    };
+  },
+  brightness: (amount: number): ColorTransform => ({
+    linear: [
+      [amount, 0, 0],
+      [0, amount, 0],
+      [0, 0, amount],
+    ],
+    offset: [0, 0, 0],
+  }),
+  contrast: (amount: number): ColorTransform => {
+    const intercept = 0.5 - 0.5 * amount;
+    return {
+      linear: [
+        [amount, 0, 0],
+        [0, amount, 0],
+        [0, 0, amount],
+      ],
+      offset: [intercept, intercept, intercept],
+    };
+  },
+};
+
+const photoFilterPresetTransforms: Record<PhotoLayer["filter"]["preset"], ColorTransform[]> = {
+  none: [],
+  warm: [colorTransformFns.sepia(0.18), colorTransformFns.saturate(1.14)],
+  cool: [colorTransformFns.saturate(0.95), colorTransformFns.hueRotate(8)],
+  mono: [colorTransformFns.grayscale(1)],
+  fade: [
+    colorTransformFns.contrast(0.86),
+    colorTransformFns.saturate(0.72),
+    colorTransformFns.brightness(1.08),
+  ],
+  sepia: [colorTransformFns.sepia(0.72)],
+};
+
+const isIdentityPhotoFilter = (filter: PhotoLayer["filter"]): boolean =>
+  filter.preset === "none" &&
+  filter.brightness === 1 &&
+  filter.contrast === 1 &&
+  filter.saturation === 1;
+
+const formatMatrixValue = (value: number): string => {
+  const rounded = Math.round(value * 10000) / 10000;
+  return Object.is(rounded, -0) ? "0" : String(rounded);
+};
+
+const renderPhotoColorFilterSvg = (layer: PhotoLayer, filterId: string): string => {
+  if (isIdentityPhotoFilter(layer.filter)) {
+    return "";
+  }
+
+  // One primitive per step so each result is clamped to [0, 1], matching chained CSS filters.
+  const adjustments = [
+    layer.filter.brightness === 1 ? null : colorTransformFns.brightness(layer.filter.brightness),
+    layer.filter.contrast === 1 ? null : colorTransformFns.contrast(layer.filter.contrast),
+    layer.filter.saturation === 1 ? null : colorTransformFns.saturate(layer.filter.saturation),
+  ].filter((transform): transform is ColorTransform => transform !== null);
+  const primitives = [...photoFilterPresetTransforms[layer.filter.preset], ...adjustments]
+    .map((transform) => {
+      const values = [
+        ...transform.linear.flatMap((row, rowIndex) => [
+          ...row,
+          0,
+          transform.offset[rowIndex] ?? 0,
+        ]),
+        0,
+        0,
+        0,
+        1,
+        0,
+      ]
+        .map(formatMatrixValue)
+        .join(" ");
+      return `<feColorMatrix type="matrix" values="${values}" />`;
+    })
+    .join("");
+
+  return `<filter id="${filterId}" data-photo-filter="${layer.filter.preset}" color-interpolation-filters="sRGB">${primitives}</filter>`;
+};
+
 const renderPhotoFrameBackgroundSvg = (layer: PhotoLayer, layout: PhotoFrameLayout): string => {
   const fill = escapeXml(photoFrameFill(layer));
 
@@ -1754,6 +1888,9 @@ const renderPhotoLayerSvg = (
   const shadowFilterId = idPrefix
     ? createSvgId(idPrefix, "photo", "shadow", index)
     : createSvgId("photo", "shadow", index);
+  const colorFilterId = idPrefix
+    ? createSvgId(idPrefix, "photo", "color", index)
+    : createSvgId("photo", "color", index);
   const frameLayout = getPhotoFrameLayout(layer);
   const imageWidth = frameLayout.image.width / Math.max(layer.crop.width, 0.05);
   const imageHeight = frameLayout.image.height / Math.max(layer.crop.height, 0.05);
@@ -1778,18 +1915,20 @@ const renderPhotoLayerSvg = (
   const imageTransform = `translate(${imageCenterX} ${imageCenterY}) rotate(${layer.photoTransform.rotation}) scale(${scaleX} ${scaleY}) translate(${-imageCenterX} ${-imageCenterY})`;
   const preserveAspect = `xMidYMid ${layer.fit === "cover" ? "slice" : "meet"}`;
   const escapedHref = escapeXml(href);
+  const colorFilter = renderPhotoColorFilterSvg(layer, colorFilterId);
+  const colorFilterAttribute = colorFilter ? ` filter="url(#${colorFilterId})"` : "";
   const fullPhotoPreview = showFullPhotoPreview
-    ? `<image data-photo-pan-preview="true" href="${escapedHref}" x="${imageX}" y="${imageY}" width="${imageWidth}" height="${imageHeight}" preserveAspectRatio="${preserveAspect}" opacity="0.35" transform="${imageTransform}" pointer-events="none" />`
+    ? `<image data-photo-pan-preview="true" href="${escapedHref}" x="${imageX}" y="${imageY}" width="${imageWidth}" height="${imageHeight}" preserveAspectRatio="${preserveAspect}" opacity="0.35" transform="${imageTransform}"${colorFilterAttribute} pointer-events="none" />`
     : "";
 
   const frameClipDef = photoFrameClipPath(layer, frameClipId, frameLayout.outer);
-  const frameContent = `${renderPhotoFrameBackgroundSvg(layer, frameLayout)}${fullPhotoPreview}<g clip-path="url(#${clipId})"><image href="${escapedHref}" x="${imageX}" y="${imageY}" width="${imageWidth}" height="${imageHeight}" preserveAspectRatio="${preserveAspect}" transform="${imageTransform}" /></g>${renderPhotoFrameOverlaySvg(layer, frameLayout)}`;
+  const frameContent = `${renderPhotoFrameBackgroundSvg(layer, frameLayout)}${fullPhotoPreview}<g clip-path="url(#${clipId})"><image href="${escapedHref}" x="${imageX}" y="${imageY}" width="${imageWidth}" height="${imageHeight}" preserveAspectRatio="${preserveAspect}" transform="${imageTransform}"${colorFilterAttribute} /></g>${renderPhotoFrameOverlaySvg(layer, frameLayout)}`;
   const maskedFrameContent = frameClipDef
     ? `<g data-photo-mask-clip="${layer.mask.shape}" clip-path="url(#${frameClipId})">${frameContent}</g>`
     : frameContent;
 
   return {
-    defs: `${photoClipPath(layer, clipId, frameLayout.image)}${frameClipDef}${shadowFilter}`,
+    defs: `${photoClipPath(layer, clipId, frameLayout.image)}${frameClipDef}${shadowFilter}${colorFilter}`,
     body: `<g opacity="${layer.opacity}" transform="${layerTransform(layer)}">${shadowBody}${maskedFrameContent}</g>`,
   };
 };

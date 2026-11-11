@@ -996,6 +996,61 @@ describe("page document helpers", () => {
     expect((svg.match(/data-photo-shadow="true"/g) ?? []).length).toBe(2);
   });
 
+  it("renders photo color filters as an SVG color matrix", () => {
+    const plain = createPhotoLayer({ assetId: "asset_plain", id: "photo_plain" });
+    const mono = createPhotoLayer({
+      assetId: "asset_mono",
+      id: "photo_mono",
+      filter: { preset: "mono", brightness: 1, contrast: 1, saturation: 1 },
+    });
+    const brightened = createPhotoLayer({
+      assetId: "asset_bright",
+      id: "photo_bright",
+      filter: { preset: "none", brightness: 1.5, contrast: 1, saturation: 1 },
+    });
+    const svg = renderPageDocumentSvg(createPageDocument({ layers: [plain, mono, brightened] }), {
+      resolvePhotoHref: (layer) => `/assets/${layer.assetId}/content`,
+    });
+
+    expect(svg).not.toContain('id="photo_color_0"');
+    expect(svg).toContain(
+      '<filter id="photo_color_1" data-photo-filter="mono" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0 0 0 1 0" /></filter>',
+    );
+    expect(svg).toContain('values="1.5 0 0 0 0 0 1.5 0 0 0 0 0 1.5 0 0 0 0 0 1 0"');
+    expect((svg.match(/filter="url\(#photo_color_1\)"/g) ?? []).length).toBe(1);
+    expect(svg).toContain('filter="url(#photo_color_2)"');
+  });
+
+  it("clamps each photo filter step like chained CSS filters", () => {
+    const photo = createPhotoLayer({
+      assetId: "asset_sepia",
+      id: "photo_sepia",
+      filter: { preset: "sepia", brightness: 0.8, contrast: 1, saturation: 1 },
+    });
+    const svg = renderPageDocumentSvg(createPageDocument({ layers: [photo] }), {
+      resolvePhotoHref: (layer) => `/assets/${layer.assetId}/content`,
+    });
+    const matrices = [...svg.matchAll(/<feColorMatrix type="matrix" values="([^"]+)"/g)].map(
+      (match) => (match[1] ?? "").split(" ").map(Number),
+    );
+    const white = matrices.reduce(
+      (color, values) =>
+        [0, 1, 2].map((row) => {
+          const base = row * 5;
+          const channel =
+            (values[base] ?? 0) * (color[0] ?? 0) +
+            (values[base + 1] ?? 0) * (color[1] ?? 0) +
+            (values[base + 2] ?? 0) * (color[2] ?? 0) +
+            (values[base + 4] ?? 0);
+          return Math.min(Math.max(channel, 0), 1);
+        }),
+      [1, 1, 1],
+    );
+
+    expect(matrices).toHaveLength(2);
+    expect(white.map((channel) => Math.round(channel * 255))).toEqual([204, 204, 195]);
+  });
+
   it("prefixes reusable SVG ids for pages rendered in the same DOM", () => {
     const photo = createPhotoLayer({ assetId: "asset_1", id: "photo_1" });
     const document = createPageDocument({ layers: [photo] });
