@@ -1066,30 +1066,40 @@ export function BookEditorView() {
     }
   };
 
-  const addWashiTape = (design: WashiTapeDesign) => {
+  const addWashiTape = async (design: WashiTapeDesign) => {
     if (!activePage) {
       return;
     }
 
+    const pageId = activePage.id;
     const patternAssetId = design.pattern.kind === "customPhoto" ? design.pattern.assetId : null;
 
-    // Saved tapes can use any library photo; reference it from the book so the canvas can render it.
+    // Saved tapes can use any library photo; the book must reference it before the canvas can
+    // render it, so only place the tape once that reference is saved.
     if (book && patternAssetId && !assets.some((asset) => asset.id === patternAssetId)) {
-      apiClient
-        .addBookAssets(book.id, { assetIds: [patternAssetId] })
-        .then((response) => setAssets(response.assets))
-        .catch((referenceError: unknown) => setError(getErrorMessage(referenceError)));
+      try {
+        const response = await apiClient.addBookAssets(book.id, { assetIds: [patternAssetId] });
+        setAssets((current) => {
+          const currentIds = new Set(current.map((asset) => asset.id));
+          return [...current, ...response.assets.filter((asset) => !currentIds.has(asset.id))];
+        });
+      } catch (referenceError: unknown) {
+        setError(getErrorMessage(referenceError));
+        return;
+      }
     }
 
+    const canvas = activePage.document.canvas;
     const layer = createWashiTapeLayer({
       ...design,
-      width: Math.min(activePage.document.canvas.width * 0.56, 1120),
-      height: Math.min(activePage.document.canvas.height * 0.08, 220),
-      x: activePage.document.canvas.width * 0.16,
-      y: activePage.document.canvas.height * 0.16,
+      width: Math.min(canvas.width * 0.56, 1120),
+      height: Math.min(canvas.height * 0.08, 220),
+      x: canvas.width * 0.16,
+      y: canvas.height * 0.16,
     });
 
-    editPageDocument(activePage.id, addLayer(activePage.document, layer));
+    updatePageDetail(pageId, (page) => replacePageDocument(page, addLayer(page.document, layer)));
+    setPageStatus(pageId, "unsaved");
     setSelectedLayerIds([layer.id]);
   };
 

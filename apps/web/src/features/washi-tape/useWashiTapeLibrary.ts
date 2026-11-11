@@ -23,7 +23,14 @@ export function useWashiTapeLibrary() {
     Promise.all([apiClient.listCustomWashiTapes(), apiClient.listAssets()])
       .then(([washiTapeResponse, assetResponse]) => {
         if (isCancelled) return;
-        setCustomWashiTapes(washiTapeResponse.washiTapes);
+        // Keep tapes saved while this initial load was still in flight.
+        setCustomWashiTapes((current) => {
+          const loadedIds = new Set(washiTapeResponse.washiTapes.map((washiTape) => washiTape.id));
+          return [
+            ...current.filter((washiTape) => !loadedIds.has(washiTape.id)),
+            ...washiTapeResponse.washiTapes,
+          ];
+        });
         setAssets(assetResponse.assets);
       })
       .catch((loadError: unknown) => {
