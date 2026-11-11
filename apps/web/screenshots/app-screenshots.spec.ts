@@ -248,6 +248,31 @@ const customStickersByPack: Record<string, typeof customStickerFixtures> = {
   ),
 };
 
+const customWashiTapeFixtures = [
+  {
+    createdAt: now,
+    design: {
+      outline: "scallop",
+      pattern: { kind: "checker", primaryColor: "#fff4cc", secondaryColor: "#f2a65a" },
+      tile: { offsetX: 0, offsetY: 0, rotation: 45, scale: 1, scaleX: 0.5, scaleY: 0.5 },
+    },
+    id: "custom_washi_tape_picnic",
+    name: "Picnic checks",
+    updatedAt: now,
+  },
+  {
+    createdAt: now,
+    design: {
+      outline: "wave",
+      pattern: { kind: "stripe", primaryColor: "#e8f4f2", secondaryColor: "#3f8f86" },
+      tile: { offsetX: 0, offsetY: 0, rotation: -30, scale: 1, scaleX: 0.6, scaleY: 0.6 },
+    },
+    id: "custom_washi_tape_lagoon",
+    name: "Lagoon ribbon",
+    updatedAt: now,
+  },
+];
+
 const pageFixtures = [
   createPage("page_cover", "Cover", {
     backgroundColor: "#fff6e6",
@@ -758,6 +783,28 @@ const scenarios: ScreenshotScenario[] = [
     },
   },
   {
+    name: "washi-tape",
+    path: "/washi-tape",
+    waitFor: async (page) => {
+      await waitForFeatureOrFallback(page, "Washi Tape");
+    },
+  },
+  {
+    name: "book-editor-washi-tape-gallery",
+    path: "/books/book_summer",
+    prepare: async (page) => {
+      if (!(await isVisible(page.getByRole("link", { name: "Washi Tape" })))) {
+        return;
+      }
+
+      await page.getByRole("button", { name: "Add washi tape" }).click();
+      const gallery = page.getByRole("dialog", { name: "Add washi tape" });
+      await expect(gallery.getByRole("button", { name: "Add Picnic checks" })).toBeVisible();
+    },
+    viewports: ["desktop"],
+    waitFor: waitForBookEditor,
+  },
+  {
     name: "settings-account",
     path: "/settings",
     waitFor: async (page) => {
@@ -1039,6 +1086,11 @@ async function installMockApi(page: Page, authenticated: boolean) {
         // tolerate missing/invalid body
       }
       await route.fulfill({ json: { ...sticker, isFavorite } });
+      return;
+    }
+
+    if (pathName === "/api/v1/custom-washi-tapes") {
+      await route.fulfill({ json: { washiTapes: customWashiTapeFixtures } });
       return;
     }
 

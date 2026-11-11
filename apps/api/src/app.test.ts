@@ -7,6 +7,8 @@ import {
   assetResponseSchema,
   authSessionResponseSchema,
   bookResponseSchema,
+  customWashiTapeListResponseSchema,
+  customWashiTapeResponseSchema,
   exportJobResponseSchema,
   healthResponseSchema,
   pageResponseSchema,
@@ -1182,5 +1184,105 @@ describe("api app", () => {
     expect(layer.mask.shape).toBe("diamond");
     expect(originalResponse.status).toBe(200);
     expect(Buffer.from(await originalResponse.arrayBuffer())).toEqual(image);
+  });
+
+  it("saves custom washi tape designs to an account-scoped gallery", async () => {
+    const app = await createTestAppWithStorage();
+    const cookie = await registerAccount(app, {
+      displayName: "Washi Owner",
+      email: "washi-owner@example.com",
+    });
+    const otherCookie = await registerAccount(app, {
+      displayName: "Washi Other",
+      email: "washi-other@example.com",
+    });
+    const otherUpload = await uploadImage(
+      app,
+      otherCookie,
+      new File([toArrayBuffer(await createPng())], "other.png", { type: "image/png" }),
+    );
+    const otherAsset = await otherUpload.json();
+    const design = {
+      outline: "scallop",
+      pattern: { kind: "checker", primaryColor: "#fff4cc", secondaryColor: "#f2a65a" },
+      tile: { scale: 1, scaleX: 0.5, scaleY: 0.5, rotation: 45, offsetX: 0, offsetY: 0 },
+    };
+
+    const createResponse = await postJson(
+      app,
+      "/api/v1/custom-washi-tapes",
+      { name: "  Picnic  ", design },
+      cookie,
+    );
+    const created = customWashiTapeResponseSchema.parse(await createResponse.json());
+
+    expect(createResponse.status).toBe(201);
+    expect(created.id).toMatch(/^custom_washi_tape_/);
+    expect(created.name).toBe("Picnic");
+    expect(created.design).toEqual(design);
+
+    const missingPhotoResponse = await postJson(
+      app,
+      "/api/v1/custom-washi-tapes",
+      {
+        name: "No photo",
+        design: { ...design, pattern: { ...design.pattern, kind: "customPhoto" } },
+      },
+      cookie,
+    );
+    const foreignPhotoResponse = await postJson(
+      app,
+      "/api/v1/custom-washi-tapes",
+      {
+        name: "Foreign photo",
+        design: {
+          ...design,
+          pattern: { ...design.pattern, kind: "customPhoto", assetId: otherAsset.id },
+        },
+      },
+      cookie,
+    );
+
+    expect(missingPhotoResponse.status).toBe(400);
+    expect((await missingPhotoResponse.json()).error.code).toBe("washi_tape_photo_required");
+    expect(foreignPhotoResponse.status).toBe(400);
+    expect((await foreignPhotoResponse.json()).error.code).toBe("washi_tape_asset_not_found");
+
+    const patchResponse = await app.request(`/api/v1/custom-washi-tapes/${created.id}`, {
+      body: JSON.stringify({ name: "Picnic blanket", design: { ...design, outline: "wave" } }),
+      headers: { cookie, "content-type": "application/json" },
+      method: "PATCH",
+    });
+    const patched = customWashiTapeResponseSchema.parse(await patchResponse.json());
+
+    expect(patchResponse.status).toBe(200);
+    expect(patched.name).toBe("Picnic blanket");
+    expect(patched.design.outline).toBe("wave");
+
+    const ownerList = customWashiTapeListResponseSchema.parse(
+      await (await app.request("/api/v1/custom-washi-tapes", { headers: { cookie } })).json(),
+    );
+    const otherListResponse = await app.request("/api/v1/custom-washi-tapes", {
+      headers: { cookie: otherCookie },
+    });
+    const otherDeleteResponse = await app.request(`/api/v1/custom-washi-tapes/${created.id}`, {
+      headers: { cookie: otherCookie },
+      method: "DELETE",
+    });
+
+    expect(ownerList.washiTapes.map((washiTape) => washiTape.id)).toEqual([created.id]);
+    expect((await otherListResponse.json()).washiTapes).toEqual([]);
+    expect(otherDeleteResponse.status).toBe(404);
+
+    const deleteResponse = await app.request(`/api/v1/custom-washi-tapes/${created.id}`, {
+      headers: { cookie },
+      method: "DELETE",
+    });
+    const listAfterDelete = await app.request("/api/v1/custom-washi-tapes", {
+      headers: { cookie },
+    });
+
+    expect(deleteResponse.status).toBe(204);
+    expect((await listAfterDelete.json()).washiTapes).toEqual([]);
   });
 });

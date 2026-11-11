@@ -5478,3 +5478,270 @@ body {
   grid-row: 2 / -1;
   min-height: 0;
 }
+
+.washi-tape-gallery {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  min-width: 0;
+}
+
+.app-modal-body > .washi-tape-gallery {
+  padding: 18px;
+}
+
+.panel > .washi-tape-gallery {
+  padding: 16px;
+}
+
+.washi-tape-creator .washi-tape-creator-controls {
+  grid-template-columns: minmax(0, 1fr);
+  border-top: 0;
+  padding: 0;
+}
+
+.washi-tape-gallery .washi-tape-gallery-toolbar {
+  grid-template-columns: minmax(220px, 1fr) auto;
+  border-bottom: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.washi-tape-gallery-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.washi-tape-gallery-section > h4,
+.washi-tape-creator-heading h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--sb-neutral-foreground);
+}
+
+.washi-tape-gallery-section > .empty-state {
+  margin: 0;
+}
+
+.washi-tape-create-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  border: 1px dashed var(--sb-brand);
+  border-radius: 8px;
+  padding: 14px 16px;
+  color: var(--sb-neutral-foreground);
+  text-align: left;
+  background: var(--sb-brand-tint);
+  cursor: pointer;
+}
+
+.washi-tape-create-card:hover,
+.washi-tape-create-card:focus-visible {
+  background: var(--sb-brand-tint-strong);
+}
+
+.washi-tape-create-card-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: #ffffff;
+  background: var(--sb-brand);
+}
+
+.washi-tape-create-card-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.washi-tape-create-card-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.washi-tape-create-card-copy span {
+  color: var(--sb-neutral-foreground-3);
+  font-size: 0.86rem;
+}
+
+.washi-tape-creator {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--sb-brand);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--sb-neutral-background-2);
+}
+
+.app-modal-body > .washi-tape-creator {
+  border: 0;
+  border-radius: 0;
+  padding: 18px;
+  background: transparent;
+}
+
+.washi-tape-creator-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+  gap: 16px;
+  align-items: start;
+}
+
+.washi-tape-creator-preview-column {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.washi-tape-creator-preview {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--sb-neutral-stroke-2);
+  border-radius: 8px;
+  padding: 24px 12px;
+  background:
+    linear-gradient(45deg, var(--sb-neutral-background-3) 25%, transparent 25%) 0 0 / 16px 16px,
+    linear-gradient(-45deg, var(--sb-neutral-background-3) 25%, transparent 25%) 0 8px / 16px 16px,
+    var(--sb-neutral-background);
+}
+
+.washi-tape-creator-hint {
+  margin: 0;
+  color: var(--sb-neutral-foreground-3);
+  font-size: 0.86rem;
+}
+
+.washi-tape-creator-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.washi-tape-creator .washi-tape-controls-section {
+  background: var(--sb-neutral-background);
+}
+
+.washi-tape-preview {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.washi-tape-preview svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.washi-tape-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.washi-tape-tile-wrap {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.washi-tape-tile {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--sb-neutral-stroke-2);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--sb-neutral-foreground);
+  font: inherit;
+  text-align: left;
+  background: var(--sb-neutral-background);
+}
+
+button.washi-tape-tile {
+  cursor: pointer;
+}
+
+button.washi-tape-tile:hover,
+button.washi-tape-tile:focus-visible {
+  border-color: var(--sb-brand);
+  box-shadow: 0 10px 20px rgb(32 36 38 / 10%);
+}
+
+.washi-tape-tile-wrap[data-highlighted] .washi-tape-tile {
+  border-color: var(--sb-select);
+  box-shadow: 0 0 0 2px var(--sb-select-tint-strong);
+}
+
+.washi-tape-tile .washi-tape-preview {
+  border-radius: 6px;
+  padding: 8px 4px;
+  background: var(--sb-neutral-background-3);
+}
+
+.washi-tape-tile-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.washi-tape-tile-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.washi-tape-tile-copy span:first-child {
+  font-weight: 700;
+}
+
+.washi-tape-tile-copy span:last-child {
+  color: var(--sb-neutral-foreground-3);
+  font-size: 0.82rem;
+}
+
+.washi-tape-tile-add-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.washi-tape-tile-add-indicator svg {
+  width: 18px;
+  height: 18px;
+}
+
+.washi-tape-tile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+@media (max-width: 720px) {
+  .washi-tape-creator-body {
+    grid-template-columns: 1fr;
+  }
+
+  .washi-tape-gallery .washi-tape-gallery-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .washi-tape-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+}

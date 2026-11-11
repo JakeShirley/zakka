@@ -22,6 +22,7 @@ import {
   type StickerDefinition,
   updateCanvas,
   updateLayer,
+  type WashiTapeDesign,
   type WashiTapeLayer,
 } from "@zakka/editor-core";
 import type { DragEvent, FormEvent } from "react";
@@ -44,6 +45,7 @@ import {
 import { PhotoPickerModal } from "../editor/PhotoPickerModal";
 import { type PngExportSettings, PngExportSettingsModal } from "../editor/PngExportSettingsModal";
 import { StickerPickerModal } from "../editor/StickerPickerModal";
+import { WashiTapeGalleryModal } from "../washi-tape/WashiTapeGalleryModal";
 import { BookCanvasDeck } from "./BookCanvasDeck";
 import { BookEditorHeader } from "./BookEditorHeader";
 import { BookFilmstrip } from "./BookFilmstrip";
@@ -185,6 +187,7 @@ export function BookEditorView() {
   const [photoPickerMode, setPhotoPickerMode] = useState<PhotoPickerMode | null>(null);
   const [isLibraryPickerOpen, setIsLibraryPickerOpen] = useState(false);
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false);
+  const [isWashiTapeGalleryOpen, setIsWashiTapeGalleryOpen] = useState(false);
   const [pngExportTarget, setPngExportTarget] = useState<PngExportTarget | null>(null);
   const [draggedPageIds, setDraggedPageIds] = useState<string[]>([]);
   const [markedPageIds, setMarkedPageIds] = useState<string[]>([]);
@@ -530,6 +533,7 @@ export function BookEditorView() {
         photoPickerMode !== null ||
         isLibraryPickerOpen ||
         isStickerPickerOpen ||
+        isWashiTapeGalleryOpen ||
         pngExportTarget
       ) {
         return;
@@ -559,6 +563,7 @@ export function BookEditorView() {
     photoPickerMode,
     isLibraryPickerOpen,
     isStickerPickerOpen,
+    isWashiTapeGalleryOpen,
     pngExportTarget,
     redoBookEdit,
     undoBookEdit,
@@ -576,6 +581,7 @@ export function BookEditorView() {
         photoPickerMode !== null ||
         isLibraryPickerOpen ||
         isStickerPickerOpen ||
+        isWashiTapeGalleryOpen ||
         pngExportTarget ||
         editingPageId
       ) {
@@ -607,6 +613,7 @@ export function BookEditorView() {
     isBookSettingsOpen,
     isLibraryPickerOpen,
     isStickerPickerOpen,
+    isWashiTapeGalleryOpen,
     photoPickerMode,
     pngExportTarget,
     selectedLayerIds,
@@ -1059,19 +1066,40 @@ export function BookEditorView() {
     }
   };
 
-  const addWashiTape = () => {
+  const addWashiTape = async (design: WashiTapeDesign) => {
     if (!activePage) {
       return;
     }
 
+    const pageId = activePage.id;
+    const patternAssetId = design.pattern.kind === "customPhoto" ? design.pattern.assetId : null;
+
+    // Saved tapes can use any library photo; the book must reference it before the canvas can
+    // render it, so only place the tape once that reference is saved.
+    if (book && patternAssetId && !assets.some((asset) => asset.id === patternAssetId)) {
+      try {
+        const response = await apiClient.addBookAssets(book.id, { assetIds: [patternAssetId] });
+        setAssets((current) => {
+          const currentIds = new Set(current.map((asset) => asset.id));
+          return [...current, ...response.assets.filter((asset) => !currentIds.has(asset.id))];
+        });
+      } catch (referenceError: unknown) {
+        setError(getErrorMessage(referenceError));
+        return;
+      }
+    }
+
+    const canvas = activePage.document.canvas;
     const layer = createWashiTapeLayer({
-      width: Math.min(activePage.document.canvas.width * 0.56, 1120),
-      height: Math.min(activePage.document.canvas.height * 0.08, 220),
-      x: activePage.document.canvas.width * 0.16,
-      y: activePage.document.canvas.height * 0.16,
+      ...design,
+      width: Math.min(canvas.width * 0.56, 1120),
+      height: Math.min(canvas.height * 0.08, 220),
+      x: canvas.width * 0.16,
+      y: canvas.height * 0.16,
     });
 
-    editPageDocument(activePage.id, addLayer(activePage.document, layer));
+    updatePageDetail(pageId, (page) => replacePageDocument(page, addLayer(page.document, layer)));
+    setPageStatus(pageId, "unsaved");
     setSelectedLayerIds([layer.id]);
   };
 
@@ -1599,6 +1627,12 @@ export function BookEditorView() {
           onClose={() => setIsStickerPickerOpen(false)}
         />
       ) : null}
+      {isWashiTapeGalleryOpen ? (
+        <WashiTapeGalleryModal
+          onAddWashiTape={addWashiTape}
+          onClose={() => setIsWashiTapeGalleryOpen(false)}
+        />
+      ) : null}
       {isBookSettingsOpen ? (
         <BookSettingsModal
           book={book}
@@ -1729,7 +1763,7 @@ export function BookEditorView() {
           onAddText={addText}
           onOpenLibraryPicker={() => setIsLibraryPickerOpen(true)}
           onOpenStickerPicker={() => setIsStickerPickerOpen(true)}
-          onOpenWashiTapePicker={addWashiTape}
+          onOpenWashiTapePicker={() => setIsWashiTapeGalleryOpen(true)}
         />
         <section className="book-editor-stage" aria-label="Book editor">
           <BookModeBar

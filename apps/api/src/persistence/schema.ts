@@ -280,6 +280,20 @@ export const customStickers = sqliteTable(
   ],
 );
 
+export const customWashiTapes = sqliteTable(
+  "custom_washi_tapes",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    designJson: text("design_json").notNull(),
+    ...timestampColumns(),
+  },
+  (table) => [index("custom_washi_tapes_account_id_idx").on(table.accountId)],
+);
+
 export const bookAssets = sqliteTable(
   "book_assets",
   {
@@ -386,6 +400,7 @@ export type AlbumRecord = typeof albums.$inferSelect;
 export type AlbumAssetRecord = typeof albumAssets.$inferSelect;
 export type StickerPackRecord = typeof stickerPacks.$inferSelect;
 export type CustomStickerRecord = typeof customStickers.$inferSelect;
+export type CustomWashiTapeRecord = typeof customWashiTapes.$inferSelect;
 export type ExportJobRecord = typeof exportJobs.$inferSelect;
 export type IntegrationConnectionRecord = typeof integrationConnections.$inferSelect;
 export type ExternalMediaLinkRecord = typeof externalMediaLinks.$inferSelect;

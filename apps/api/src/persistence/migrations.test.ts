@@ -20,7 +20,8 @@ describe("SQLite migrations", () => {
         "0009_add_albums",
         "0010_add_sticker_packs",
         "0011_add_sticker_favorites",
-        "0012_add_integrations",
+        "0012_add_custom_washi_tapes",
+        "0013_add_integrations",
       ]);
       expect(runMigrations(connection.sqlite)).toEqual([]);
       expect(getAppliedMigrations(connection.sqlite)).toEqual([
@@ -35,7 +36,8 @@ describe("SQLite migrations", () => {
         "0009_add_albums",
         "0010_add_sticker_packs",
         "0011_add_sticker_favorites",
-        "0012_add_integrations",
+        "0012_add_custom_washi_tapes",
+        "0013_add_integrations",
       ]);
 
       const tableNames = connection.sqlite
@@ -54,6 +56,7 @@ describe("SQLite migrations", () => {
         "book_pages",
         "books",
         "custom_stickers",
+        "custom_washi_tapes",
         "exports",
         "external_media_links",
         "integration_connections",

@@ -8,6 +8,7 @@ type InternalEntityKind =
   | "albumAsset"
   | "stickerPack"
   | "customSticker"
+  | "customWashiTape"
   | "integrationConnection"
   | "externalMediaLink";
 
@@ -19,6 +20,7 @@ const internalPrefixes: Record<InternalEntityKind, string> = {
   albumAsset: "album_asset",
   stickerPack: "sticker_pack",
   customSticker: "custom_sticker",
+  customWashiTape: "custom_washi_tape",
   integrationConnection: "integration_connection",
   externalMediaLink: "external_media_link",
 };

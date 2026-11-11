@@ -9,3 +9,4 @@ export * from "./logs.js";
 export * from "./pages.js";
 export * from "./shared.js";
 export * from "./sticker-packs.js";
+export * from "./washi-tapes.js";
