@@ -34,6 +34,31 @@ The API health endpoint is available at `http://127.0.0.1:4000/api/v1/health` wh
 
 The API applies SQLite migrations on startup. To apply migrations without starting the server, run `pnpm --filter @zakka/api db:migrate`.
 
+## Testing
+
+`pnpm test` runs every package's Vitest suite. The web app has two Vitest projects (`apps/web/vitest.config.ts`):
+
+| Project | Files | Runs in | Use it for |
+| --- | --- | --- | --- |
+| `unit` | `src/**/*.test.ts` | Node | Pure logic such as transforms, page ordering, and spread layers. |
+| `browser` | `src/**/*.browser.test.tsx` | Headless Chromium (Vitest Browser Mode) | How users interact with components: real pointer drags, clicks with modifiers, keyboard shortcuts, focus, and `contentEditable` behavior. |
+
+Browser tests need Playwright's Chromium once per machine:
+
+```sh
+pnpm --filter @zakka/web exec playwright install chromium
+```
+
+Run one project while iterating:
+
+```sh
+pnpm --filter @zakka/web exec vitest --project browser
+```
+
+Canvas interaction tests mount `PageCanvas` through `src/test/canvasHarness.tsx`, which mirrors the editor's selection and layer-command wiring and exposes the resulting page document. Use `dragOnCanvas` from `src/test/gestures.ts` for drags; it drives Playwright's real mouse, and distances are fractions of the canvas, so `{ x: 0.1, y: 0 }` moves 10% of the page width. Assert on the page document the interaction produces rather than on pixels.
+
+When you fix an editor interaction bug, add a browser test named after the behavior and the issue, for example `cropping from an edge keeps the image anchored on the page (#57)`.
+
 ## Development Credentials
 
 When the API starts with `NODE_ENV=development`, it seeds a local account if one does not already exist:
