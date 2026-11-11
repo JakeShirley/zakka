@@ -1072,6 +1072,7 @@ export function PageCanvas({
             key={isPreview ? `${interactiveLayer.sourcePageId}:${layer.id}` : layer.id}
             className="canvas-layer"
             data-kind={layer.kind}
+            data-layer-id={layer.id}
             data-locked={layer.locked}
             data-preview={isPreview}
             data-selected={isSelected}

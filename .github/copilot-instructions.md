@@ -17,6 +17,11 @@ The `App Visual Diffs` workflow (`.github/workflows/app-visual-diffs.yml`) runs 
 - For new feature routes, keep screenshot API mocks falsey-tolerant so smaller merge-base request sets still resolve.
 - Before publishing screenshot scenario changes, run a local merge-base sanity check using a worktree server (port 5174) and `pnpm --filter @zakka/web screenshots:capture -g <scenario>`.
 
+## Interaction Test Rules
+
+- When fixing or adding an editor interaction (pointer drags, handles, modifier clicks, shortcuts, inline text editing), add a browser interaction test in a `*.browser.test.tsx` file next to the component. See "Testing" in `docs/development.md`.
+- Assert on the document or callback the interaction produces, and fail when an expected element is missing; do not guard interaction assertions with `isVisible(...)`.
+
 ## API, Schema, and Migration Rules
 
 When adding API endpoints, persistence tables, or migrations:
