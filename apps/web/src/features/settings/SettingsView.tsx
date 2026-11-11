@@ -2,13 +2,20 @@ import { Button, Spinner, Tab, TabList } from "@fluentui/react-components";
 import { ArrowClockwiseRegular } from "@fluentui/react-icons";
 import type { ServerLogEntryResponse, ServerLogLevel } from "@zakka/api-contract";
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 
 import { apiClient } from "../../apiClient";
 import { Panel, WorkspaceHeader } from "../../components/layout";
 import { getErrorMessage } from "../../lib/errors";
 import type { AuthSession } from "../../types";
+import { ShutterflyIntegrationPanel } from "./ShutterflyIntegrationPanel";
 
-type SettingsTab = "account" | "logs";
+const settingsTabs = ["account", "integrations", "logs"] as const;
+
+type SettingsTab = (typeof settingsTabs)[number];
+
+const isSettingsTab = (value: string | null): value is SettingsTab =>
+  settingsTabs.includes(value as SettingsTab);
 
 const logLevels: ServerLogLevel[] = ["debug", "info", "warn", "error"];
 const logLevelLabels: Record<ServerLogLevel, string> = {
@@ -27,7 +34,11 @@ const formatRequestSummary = (log: ServerLogEntryResponse): string =>
   [log.method, log.path, log.status === null ? null : String(log.status)].filter(Boolean).join(" ");
 
 export function SettingsView({ session }: { session: AuthSession }) {
-  const [selectedTab, setSelectedTab] = useState<SettingsTab>("account");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const selectedTab: SettingsTab = isSettingsTab(requestedTab) ? requestedTab : "account";
+  const setSelectedTab = (tab: SettingsTab) =>
+    setSearchParams(tab === "account" ? {} : { tab }, { replace: true });
   const [logLevel, setLogLevel] = useState<ServerLogLevel>("info");
   const [logs, setLogs] = useState<ServerLogEntryResponse[]>([]);
   const [logsError, setLogsError] = useState<string | null>(null);
@@ -63,6 +74,7 @@ export function SettingsView({ session }: { session: AuthSession }) {
         onTabSelect={(_, data) => setSelectedTab(data.value as SettingsTab)}
       >
         <Tab value="account">Account</Tab>
+        <Tab value="integrations">Integrations</Tab>
         <Tab value="logs">Logs</Tab>
       </TabList>
 
@@ -92,6 +104,10 @@ export function SettingsView({ session }: { session: AuthSession }) {
               </div>
             </dl>
           </Panel>
+        </div>
+      ) : selectedTab === "integrations" ? (
+        <div className="settings-grid settings-integrations-grid">
+          <ShutterflyIntegrationPanel />
         </div>
       ) : (
         <div className="settings-log-shell">

@@ -42,7 +42,13 @@ import {
   type RegisterRequest,
   type ServerLogLevel,
   type ServerLogListResponse,
+  type ShutterflyConnectionResponse,
+  type ShutterflyImportResponse,
+  type ShutterflyProjectListResponse,
   serverLogListResponseSchema,
+  shutterflyConnectionResponseSchema,
+  shutterflyImportResponseSchema,
+  shutterflyProjectListResponseSchema,
   type StickerPackCreateRequest,
   type StickerPackListResponse,
   type StickerPackPatchRequest,
@@ -291,6 +297,41 @@ export const createApiClient = (baseUrl = defaultBaseUrl) => ({
 
   listBooks: (): Promise<BookListResponse> =>
     requestJson(baseUrl, bookListResponseSchema, "/api/v1/books"),
+
+  getShutterflyConnection: (): Promise<ShutterflyConnectionResponse> =>
+    requestJson(baseUrl, shutterflyConnectionResponseSchema, "/api/v1/integrations/shutterfly"),
+
+  connectShutterfly: (refreshToken: string): Promise<ShutterflyConnectionResponse> =>
+    requestJson(baseUrl, shutterflyConnectionResponseSchema, "/api/v1/integrations/shutterfly", {
+      body: JSON.stringify({ refreshToken }),
+      method: "PUT",
+    }),
+
+  disconnectShutterfly: async (): Promise<void> => {
+    const response = await fetch(buildUrl(baseUrl, "/api/v1/integrations/shutterfly"), {
+      credentials: "include",
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      throw await parseError(response);
+    }
+  },
+
+  listShutterflyProjects: (): Promise<ShutterflyProjectListResponse> =>
+    requestJson(
+      baseUrl,
+      shutterflyProjectListResponseSchema,
+      "/api/v1/integrations/shutterfly/projects",
+    ),
+
+  importShutterflyProject: (projectId: string): Promise<ShutterflyImportResponse> =>
+    requestJson(
+      baseUrl,
+      shutterflyImportResponseSchema,
+      `/api/v1/integrations/shutterfly/projects/${encodeURIComponent(projectId)}/import`,
+      { method: "POST" },
+    ),
 
   createBook: (input: BookCreateRequest): Promise<BookResponse> =>
     requestJson(baseUrl, bookResponseSchema, "/api/v1/books", {

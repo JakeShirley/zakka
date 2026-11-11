@@ -547,6 +547,165 @@ textarea:focus-visible {
   font-weight: 700;
 }
 
+.settings-integrations-grid {
+  grid-template-columns: minmax(280px, 640px);
+}
+
+.integration-panel,
+.shutterfly-import {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.integration-panel p,
+.shutterfly-import p {
+  margin: 0;
+}
+
+.integration-panel .empty-state,
+.integration-panel .panel-alert,
+.shutterfly-import .empty-state,
+.shutterfly-import .panel-alert {
+  margin: 0;
+}
+
+.integration-panel .metadata-list {
+  padding: 0;
+}
+
+.integration-intro,
+.integration-hint {
+  color: var(--sb-neutral-foreground-3, #687174);
+  font-size: 0.9rem;
+}
+
+.integration-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #687174;
+  font-size: 0.9rem;
+}
+
+.integration-connect-form {
+  display: grid;
+  gap: 14px;
+}
+
+.integration-steps {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.integration-steps code,
+.integration-panel code,
+.shutterfly-import code {
+  overflow-wrap: anywhere;
+  font-size: 0.85em;
+}
+
+.integration-panel textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+}
+
+.integration-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.shutterfly-import {
+  width: min(720px, calc(100vw - 48px));
+  max-height: calc(100vh - 140px);
+  min-height: 160px;
+  overflow-y: auto;
+  align-content: start;
+}
+
+.shutterfly-project-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shutterfly-project {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid #d8ddd8;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fffdf7;
+}
+
+.shutterfly-project-thumbnail {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #eef1ee;
+}
+
+.shutterfly-project-thumbnail img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.shutterfly-project-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.shutterfly-project-copy span:first-child {
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shutterfly-project-copy span:last-child {
+  color: #687174;
+  font-size: 0.8rem;
+}
+
+.shutterfly-import-result {
+  display: grid;
+  gap: 10px;
+}
+
+.shutterfly-import-result ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 560px) {
+  .shutterfly-project {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .shutterfly-project-thumbnail {
+    display: none;
+  }
+
+  .shutterfly-project-copy span:first-child {
+    white-space: normal;
+  }
+}
+
 .server-log-list {
   display: grid;
   max-height: min(66vh, 720px);
@@ -4496,11 +4655,19 @@ body {
 }
 
 .segmented-control.settings-tab-list .fui-Tab {
-  flex: 0 0 112px;
+  flex: 0 0 auto;
   min-width: 112px;
   min-height: 40px;
   padding: 0 20px;
   box-shadow: none;
+}
+
+@media (max-width: 560px) {
+  .segmented-control.settings-tab-list .fui-Tab {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 12px;
+  }
 }
 
 .segmented-control.settings-tab-list .fui-Tab[aria-selected="true"] {

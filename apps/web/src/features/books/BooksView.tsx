@@ -1,5 +1,5 @@
 import { Button } from "@fluentui/react-components";
-import { AddRegular } from "@fluentui/react-icons";
+import { AddRegular, ArrowDownloadRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -7,6 +7,7 @@ import { apiClient } from "../../apiClient";
 import { Panel, WorkspaceHeader } from "../../components/layout";
 import { getErrorMessage } from "../../lib/errors";
 import type { BookSummary } from "../../types";
+import { ShutterflyImportModal } from "./ShutterflyImportModal";
 import {
   commonBookPageSizes,
   defaultBookPageSize,
@@ -21,6 +22,7 @@ export function BooksView() {
   const [isCreating, setIsCreating] = useState(false);
   const [newBookPageSizeKey, setNewBookPageSizeKey] = useState<string>(defaultBookPageSize.key);
   const [error, setError] = useState<string | null>(null);
+  const [isShutterflyImportOpen, setIsShutterflyImportOpen] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -86,6 +88,14 @@ export function BooksView() {
             </select>
           </label>
           <Button
+            className="secondary-button"
+            icon={<ArrowDownloadRegular />}
+            type="button"
+            onClick={() => setIsShutterflyImportOpen(true)}
+          >
+            Import from Shutterfly
+          </Button>
+          <Button
             appearance="primary"
             className="primary-button"
             disabled={isCreating}
@@ -97,6 +107,12 @@ export function BooksView() {
           </Button>
         </div>
       </WorkspaceHeader>
+      {isShutterflyImportOpen ? (
+        <ShutterflyImportModal
+          onClose={() => setIsShutterflyImportOpen(false)}
+          onOpenBook={(bookId) => navigate(`/books/${bookId}`)}
+        />
+      ) : null}
       {error ? (
         <p className="panel-alert" role="alert">
           {error}

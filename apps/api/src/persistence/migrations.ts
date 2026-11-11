@@ -265,6 +265,37 @@ ALTER TABLE custom_stickers ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0 CH
 CREATE INDEX custom_stickers_is_favorite_idx ON custom_stickers (account_id, is_favorite);
 `,
   },
+  {
+    id: "0012_add_integrations",
+    sql: `
+CREATE TABLE integration_connections (
+  id TEXT PRIMARY KEY NOT NULL CHECK (id GLOB 'integration_connection_*'),
+  account_id TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+  provider TEXT NOT NULL CHECK (provider IN ('shutterfly')),
+  external_account_id TEXT NOT NULL,
+  external_email TEXT,
+  encrypted_credentials TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (account_id, provider)
+);
+
+CREATE TABLE external_media_links (
+  id TEXT PRIMARY KEY NOT NULL CHECK (id GLOB 'external_media_link_*'),
+  account_id TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+  provider TEXT NOT NULL CHECK (provider IN ('shutterfly')),
+  external_id TEXT NOT NULL,
+  asset_id TEXT REFERENCES assets (id) ON DELETE CASCADE,
+  custom_sticker_id TEXT REFERENCES custom_stickers (id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK ((asset_id IS NULL) <> (custom_sticker_id IS NULL)),
+  UNIQUE (account_id, provider, external_id)
+);
+CREATE INDEX external_media_links_asset_id_idx ON external_media_links (asset_id);
+CREATE INDEX external_media_links_custom_sticker_id_idx ON external_media_links (custom_sticker_id);
+`,
+  },
 ];
 
 export const ensureMigrationTable = (sqlite: Database.Database) => {

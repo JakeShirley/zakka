@@ -4,6 +4,7 @@ export * from "./auth.js";
 export * from "./books.js";
 export * from "./exports.js";
 export * from "./health.js";
+export * from "./integrations.js";
 export * from "./logs.js";
 export * from "./pages.js";
 export * from "./shared.js";

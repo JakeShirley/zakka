@@ -5,12 +5,14 @@ export const assetVariantKinds = ["thumbnail", "preview", "render", "export"] as
 export const exportStatuses = ["queued", "running", "completed", "failed", "cancelled"] as const;
 export const exportFormats = ["png", "jpeg", "pdf", "zip"] as const;
 export const exportPresets = ["digital", "print"] as const;
+export const integrationProviders = ["shutterfly"] as const;
 
 export type AuthIdentityProvider = (typeof authIdentityProviders)[number];
 export type AssetVariantKind = (typeof assetVariantKinds)[number];
 export type ExportStatus = (typeof exportStatuses)[number];
 export type ExportFormat = (typeof exportFormats)[number];
 export type ExportPreset = (typeof exportPresets)[number];
+export type IntegrationProvider = (typeof integrationProviders)[number];
 
 const timestampColumns = () => ({
   createdAt: text("created_at").notNull(),
@@ -324,6 +326,53 @@ export const exportJobs = sqliteTable(
   ],
 );
 
+export const integrationConnections = sqliteTable(
+  "integration_connections",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    provider: text("provider", { enum: integrationProviders }).notNull(),
+    externalAccountId: text("external_account_id").notNull(),
+    externalEmail: text("external_email"),
+    encryptedCredentials: text("encrypted_credentials").notNull(),
+    ...timestampColumns(),
+  },
+  (table) => [
+    uniqueIndex("integration_connections_account_provider_unique").on(
+      table.accountId,
+      table.provider,
+    ),
+  ],
+);
+
+export const externalMediaLinks = sqliteTable(
+  "external_media_links",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    provider: text("provider", { enum: integrationProviders }).notNull(),
+    externalId: text("external_id").notNull(),
+    assetId: text("asset_id").references(() => assets.id, { onDelete: "cascade" }),
+    customStickerId: text("custom_sticker_id").references(() => customStickers.id, {
+      onDelete: "cascade",
+    }),
+    ...timestampColumns(),
+  },
+  (table) => [
+    uniqueIndex("external_media_links_account_provider_external_unique").on(
+      table.accountId,
+      table.provider,
+      table.externalId,
+    ),
+    index("external_media_links_asset_id_idx").on(table.assetId),
+    index("external_media_links_custom_sticker_id_idx").on(table.customStickerId),
+  ],
+);
+
 export type AccountRecord = typeof accounts.$inferSelect;
 export type AuthIdentityRecord = typeof authIdentities.$inferSelect;
 export type SessionRecord = typeof sessions.$inferSelect;
@@ -338,3 +387,5 @@ export type AlbumAssetRecord = typeof albumAssets.$inferSelect;
 export type StickerPackRecord = typeof stickerPacks.$inferSelect;
 export type CustomStickerRecord = typeof customStickers.$inferSelect;
 export type ExportJobRecord = typeof exportJobs.$inferSelect;
+export type IntegrationConnectionRecord = typeof integrationConnections.$inferSelect;
+export type ExternalMediaLinkRecord = typeof externalMediaLinks.$inferSelect;

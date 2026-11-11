@@ -7,6 +7,8 @@ import {
   developmentAccountPassword,
   ensureDevelopmentAccount,
 } from "./dev-account.js";
+import { loadOrCreateCredentialCipher } from "./integrations/credential-cipher.js";
+import { createShutterflyIntegration } from "./integrations/shutterfly/service.js";
 import { createDatabaseConnection } from "./persistence/database.js";
 import { createPageDocumentStore } from "./persistence/page-documents.js";
 import { createRepositories } from "./persistence/repositories.js";
@@ -30,9 +32,19 @@ if (config.NODE_ENV === "development") {
   );
 }
 
+const shutterfly = config.SHUTTERFLY_API_KEY
+  ? createShutterflyIntegration({
+      apiKey: config.SHUTTERFLY_API_KEY,
+      cipher: await loadOrCreateCredentialCipher(config.ZAKKA_DATA_DIR),
+      repositories,
+      storage,
+    })
+  : undefined;
+
 const staticAssetsDir = process.env.WEB_ASSETS_DIR;
 const app = createApp({
   repositories,
+  ...(shutterfly ? { shutterfly } : {}),
   ...(config.SESSION_COOKIE_SECURE === undefined
     ? {}
     : { sessionCookieSecure: config.SESSION_COOKIE_SECURE }),

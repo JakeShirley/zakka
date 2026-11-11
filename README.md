@@ -12,6 +12,7 @@ The production build is packaged as a single Docker image. The container runs th
 - Page editor tools for photos, text, stickers, washi tape, page settings, and layout adjustments.
 - Image grid workspace for arranging uploaded photos.
 - Page and book export support.
+- Import of saved Shutterfly photo books, with pages, photos, text, and stickers (optional; see [Configuration](docs/configuration.md#shutterfly-import)).
 - Local-first persistence using SQLite plus managed files for uploads, page documents, previews, variants, and exports.
 - OpenAPI-backed API under `/api/v1`.
 
