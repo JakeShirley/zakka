@@ -20,6 +20,7 @@ import {
   type StickerDefinition,
   updateCanvas,
   updateLayer,
+  type WashiTapeDesign,
   type WashiTapeLayer,
 } from "@zakka/editor-core";
 import { useEffect, useMemo, useState } from "react";
@@ -41,6 +42,7 @@ import {
 } from "./PageCanvas";
 import { PhotoPickerModal } from "./PhotoPickerModal";
 import { type PngExportSettings, PngExportSettingsModal } from "./PngExportSettingsModal";
+import { WashiTapeGalleryModal } from "../washi-tape/WashiTapeGalleryModal";
 import { StickerPickerModal } from "./StickerPickerModal";
 
 type PhotoPickerMode = { kind: "photo" } | { kind: "washiTapePattern"; layerId: string };
@@ -58,6 +60,7 @@ export function EditorView() {
   const [photoPickerMode, setPhotoPickerMode] = useState<PhotoPickerMode | null>(null);
   const [isPngExportSettingsOpen, setIsPngExportSettingsOpen] = useState(false);
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false);
+  const [isWashiTapeGalleryOpen, setIsWashiTapeGalleryOpen] = useState(false);
   const [activeSelectionPanel, setActiveSelectionPanel] = useState<SelectionPanel | null>(null);
   const [status, setStatus] = useState<EditorSaveStatus>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -183,9 +186,10 @@ export function EditorView() {
     editDocument(addLayer(document, layer));
     setSelectedLayerIds([layer.id]);
   };
-  const addWashiTape = () => {
+  const addWashiTape = (design: WashiTapeDesign) => {
     if (!document) return;
     const layer = createWashiTapeLayer({
+      ...design,
       width: Math.min(document.canvas.width * 0.56, 1120),
       height: Math.min(document.canvas.height * 0.08, 220),
       x: document.canvas.width * 0.16,
@@ -382,6 +386,12 @@ export function EditorView() {
           onClose={() => setIsStickerPickerOpen(false)}
         />
       ) : null}
+      {isWashiTapeGalleryOpen ? (
+        <WashiTapeGalleryModal
+          onAddWashiTape={addWashiTape}
+          onClose={() => setIsWashiTapeGalleryOpen(false)}
+        />
+      ) : null}
       {error ? (
         <p className="panel-alert" role="alert">
           {error}
@@ -419,7 +429,7 @@ export function EditorView() {
           onAddText={addText}
           onOpenPhotoPicker={() => setPhotoPickerMode({ kind: "photo" })}
           onOpenStickerPicker={() => setIsStickerPickerOpen(true)}
-          onOpenWashiTapePicker={addWashiTape}
+          onOpenWashiTapePicker={() => setIsWashiTapeGalleryOpen(true)}
         />
         <section
           className="editor-stage"

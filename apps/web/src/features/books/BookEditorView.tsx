@@ -22,6 +22,7 @@ import {
   type StickerDefinition,
   updateCanvas,
   updateLayer,
+  type WashiTapeDesign,
   type WashiTapeLayer,
 } from "@zakka/editor-core";
 import type { DragEvent, FormEvent } from "react";
@@ -44,6 +45,7 @@ import {
 import { PhotoPickerModal } from "../editor/PhotoPickerModal";
 import { type PngExportSettings, PngExportSettingsModal } from "../editor/PngExportSettingsModal";
 import { StickerPickerModal } from "../editor/StickerPickerModal";
+import { WashiTapeGalleryModal } from "../washi-tape/WashiTapeGalleryModal";
 import { BookCanvasDeck } from "./BookCanvasDeck";
 import { BookEditorHeader } from "./BookEditorHeader";
 import { BookFilmstrip } from "./BookFilmstrip";
@@ -185,6 +187,7 @@ export function BookEditorView() {
   const [photoPickerMode, setPhotoPickerMode] = useState<PhotoPickerMode | null>(null);
   const [isLibraryPickerOpen, setIsLibraryPickerOpen] = useState(false);
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false);
+  const [isWashiTapeGalleryOpen, setIsWashiTapeGalleryOpen] = useState(false);
   const [pngExportTarget, setPngExportTarget] = useState<PngExportTarget | null>(null);
   const [draggedPageIds, setDraggedPageIds] = useState<string[]>([]);
   const [markedPageIds, setMarkedPageIds] = useState<string[]>([]);
@@ -530,6 +533,7 @@ export function BookEditorView() {
         photoPickerMode !== null ||
         isLibraryPickerOpen ||
         isStickerPickerOpen ||
+        isWashiTapeGalleryOpen ||
         pngExportTarget
       ) {
         return;
@@ -559,6 +563,7 @@ export function BookEditorView() {
     photoPickerMode,
     isLibraryPickerOpen,
     isStickerPickerOpen,
+    isWashiTapeGalleryOpen,
     pngExportTarget,
     redoBookEdit,
     undoBookEdit,
@@ -576,6 +581,7 @@ export function BookEditorView() {
         photoPickerMode !== null ||
         isLibraryPickerOpen ||
         isStickerPickerOpen ||
+        isWashiTapeGalleryOpen ||
         pngExportTarget ||
         editingPageId
       ) {
@@ -607,6 +613,7 @@ export function BookEditorView() {
     isBookSettingsOpen,
     isLibraryPickerOpen,
     isStickerPickerOpen,
+    isWashiTapeGalleryOpen,
     photoPickerMode,
     pngExportTarget,
     selectedLayerIds,
@@ -1059,12 +1066,23 @@ export function BookEditorView() {
     }
   };
 
-  const addWashiTape = () => {
+  const addWashiTape = (design: WashiTapeDesign) => {
     if (!activePage) {
       return;
     }
 
+    const patternAssetId = design.pattern.kind === "customPhoto" ? design.pattern.assetId : null;
+
+    // Saved tapes can use any library photo; reference it from the book so the canvas can render it.
+    if (book && patternAssetId && !assets.some((asset) => asset.id === patternAssetId)) {
+      apiClient
+        .addBookAssets(book.id, { assetIds: [patternAssetId] })
+        .then((response) => setAssets(response.assets))
+        .catch((referenceError: unknown) => setError(getErrorMessage(referenceError)));
+    }
+
     const layer = createWashiTapeLayer({
+      ...design,
       width: Math.min(activePage.document.canvas.width * 0.56, 1120),
       height: Math.min(activePage.document.canvas.height * 0.08, 220),
       x: activePage.document.canvas.width * 0.16,
@@ -1599,6 +1617,12 @@ export function BookEditorView() {
           onClose={() => setIsStickerPickerOpen(false)}
         />
       ) : null}
+      {isWashiTapeGalleryOpen ? (
+        <WashiTapeGalleryModal
+          onAddWashiTape={addWashiTape}
+          onClose={() => setIsWashiTapeGalleryOpen(false)}
+        />
+      ) : null}
       {isBookSettingsOpen ? (
         <BookSettingsModal
           book={book}
@@ -1729,7 +1753,7 @@ export function BookEditorView() {
           onAddText={addText}
           onOpenLibraryPicker={() => setIsLibraryPickerOpen(true)}
           onOpenStickerPicker={() => setIsStickerPickerOpen(true)}
-          onOpenWashiTapePicker={addWashiTape}
+          onOpenWashiTapePicker={() => setIsWashiTapeGalleryOpen(true)}
         />
         <section className="book-editor-stage" aria-label="Book editor">
           <BookModeBar

@@ -265,6 +265,20 @@ ALTER TABLE custom_stickers ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0 CH
 CREATE INDEX custom_stickers_is_favorite_idx ON custom_stickers (account_id, is_favorite);
 `,
   },
+  {
+    id: "0012_add_custom_washi_tapes",
+    sql: `
+CREATE TABLE custom_washi_tapes (
+  id TEXT PRIMARY KEY NOT NULL CHECK (id GLOB 'custom_washi_tape_*'),
+  account_id TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  design_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX custom_washi_tapes_account_id_idx ON custom_washi_tapes (account_id);
+`,
+  },
 ];
 
 export const ensureMigrationTable = (sqlite: Database.Database) => {

@@ -360,40 +360,52 @@ export const stickerLayerSchema = pageLayerBaseSchema.extend({
   stickerId: stickerIdSchema,
 });
 
+export const washiTapeOutlineSchema = z.enum([
+  "straight",
+  "angled",
+  "rounded",
+  "torn",
+  "notched",
+  "bracket",
+  "pinched",
+  "tapered",
+  "scallop",
+  "stamp",
+  "wave",
+]);
+
+export const washiTapePatternSchema = z.object({
+  kind: z.enum(["solid", "polkaDot", "stripe", "grid", "checker", "customPhoto"]),
+  primaryColor: colorSchema,
+  secondaryColor: colorSchema,
+  assetId: z.string().min(1).optional(),
+});
+
+export const washiTapeTileSchema = z.object({
+  scale: z.number().finite().min(0.2).max(4).transform(roundToNearestHundredth),
+  scaleX: z.number().finite().min(0.01).max(4).transform(roundToNearestHundredth).default(1),
+  scaleY: z.number().finite().min(0.01).max(4).transform(roundToNearestHundredth).default(1),
+  rotation: rotationSchema,
+  offsetX: z.number().finite().min(-1).max(1).transform(roundToNearestHundredth),
+  offsetY: z.number().finite().min(-1).max(1).transform(roundToNearestHundredth),
+});
+
+/**
+ * The reusable look of a washi tape (outline, pattern, and tile settings) without any
+ * placement on a page, so a design can be saved to a gallery and applied to new layers.
+ */
+export const washiTapeDesignSchema = z.object({
+  outline: washiTapeOutlineSchema,
+  pattern: washiTapePatternSchema,
+  tile: washiTapeTileSchema,
+});
+
 export const washiTapeLayerSchema = pageLayerBaseSchema.extend({
   kind: z.literal("washiTape"),
   assetId: z.string().min(1).optional(),
-  outline: z.enum([
-    "straight",
-    "angled",
-    "rounded",
-    "torn",
-    "notched",
-    "bracket",
-    "pinched",
-    "tapered",
-    "scallop",
-    "stamp",
-    "wave",
-  ]),
-  pattern: z
-    .object({
-      kind: z.enum(["solid", "polkaDot", "stripe", "grid", "checker", "customPhoto"]),
-      primaryColor: colorSchema,
-      secondaryColor: colorSchema,
-      assetId: z.string().min(1).optional(),
-    })
-    .default(legacyPhotoWashiTapePattern),
-  tile: z
-    .object({
-      scale: z.number().finite().min(0.2).max(4).transform(roundToNearestHundredth),
-      scaleX: z.number().finite().min(0.01).max(4).transform(roundToNearestHundredth).default(1),
-      scaleY: z.number().finite().min(0.01).max(4).transform(roundToNearestHundredth).default(1),
-      rotation: rotationSchema,
-      offsetX: z.number().finite().min(-1).max(1).transform(roundToNearestHundredth),
-      offsetY: z.number().finite().min(-1).max(1).transform(roundToNearestHundredth),
-    })
-    .default(defaultWashiTapeTile),
+  outline: washiTapeOutlineSchema,
+  pattern: washiTapePatternSchema.default(legacyPhotoWashiTapePattern),
+  tile: washiTapeTileSchema.default(defaultWashiTapeTile),
 });
 
 export const pageLayerSchema = z.discriminatedUnion("kind", [
@@ -419,6 +431,7 @@ export type PhotoLayer = z.infer<typeof photoLayerSchema>;
 export type TextLayer = z.infer<typeof textLayerSchema>;
 export type StickerLayer = z.infer<typeof stickerLayerSchema>;
 export type WashiTapeLayer = z.infer<typeof washiTapeLayerSchema>;
+export type WashiTapeDesign = z.infer<typeof washiTapeDesignSchema>;
 export type PageLayerKind = PageLayer["kind"];
 
 export type RenderPageSvgOptions = {

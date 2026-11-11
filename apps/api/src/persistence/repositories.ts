@@ -27,7 +27,9 @@ import {
   bookPages,
   books,
   type CustomStickerRecord,
+  type CustomWashiTapeRecord,
   customStickers,
+  customWashiTapes,
   type ExportFormat,
   type ExportJobRecord,
   type ExportPreset,
@@ -1361,6 +1363,100 @@ export class StickerPackRepository {
   }
 }
 
+export class CustomWashiTapeRepository {
+  constructor(
+    private readonly db: AppDatabase,
+    private readonly clock: RepositoryClock = defaultClock,
+  ) {}
+
+  create(input: {
+    accountId: string;
+    name: string;
+    designJson: string;
+    id?: string;
+  }): CustomWashiTapeRecord {
+    const timestamp = now(this.clock);
+    const record: CustomWashiTapeRecord = {
+      id: input.id ?? createInternalId("customWashiTape"),
+      accountId: input.accountId,
+      name: input.name,
+      designJson: input.designJson,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    this.db.insert(customWashiTapes).values(record).run();
+
+    return record;
+  }
+
+  listForAccount(accountId: string): CustomWashiTapeRecord[] {
+    return this.db
+      .select()
+      .from(customWashiTapes)
+      .where(eq(customWashiTapes.accountId, accountId))
+      .orderBy(desc(customWashiTapes.createdAt), desc(sql`rowid`))
+      .all();
+  }
+
+  findByIdForAccount(accountId: string, washiTapeId: string): CustomWashiTapeRecord | null {
+    return (
+      this.db
+        .select()
+        .from(customWashiTapes)
+        .where(and(eq(customWashiTapes.accountId, accountId), eq(customWashiTapes.id, washiTapeId)))
+        .get() ?? null
+    );
+  }
+
+  update(input: {
+    accountId: string;
+    washiTapeId: string;
+    name?: string;
+    designJson?: string;
+  }): CustomWashiTapeRecord | null {
+    const existing = this.findByIdForAccount(input.accountId, input.washiTapeId);
+
+    if (!existing) {
+      return null;
+    }
+
+    const next: CustomWashiTapeRecord = {
+      ...existing,
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.designJson !== undefined ? { designJson: input.designJson } : {}),
+      updatedAt: now(this.clock),
+    };
+
+    this.db
+      .update(customWashiTapes)
+      .set({ name: next.name, designJson: next.designJson, updatedAt: next.updatedAt })
+      .where(
+        and(
+          eq(customWashiTapes.accountId, input.accountId),
+          eq(customWashiTapes.id, input.washiTapeId),
+        ),
+      )
+      .run();
+
+    return next;
+  }
+
+  delete(input: { accountId: string; washiTapeId: string }): boolean {
+    const result = this.db
+      .delete(customWashiTapes)
+      .where(
+        and(
+          eq(customWashiTapes.accountId, input.accountId),
+          eq(customWashiTapes.id, input.washiTapeId),
+        ),
+      )
+      .run();
+
+    return result.changes > 0;
+  }
+}
+
 export class ExportJobRepository {
   constructor(
     private readonly db: AppDatabase,
@@ -1466,6 +1562,7 @@ export const createRepositories = (
     assets: new AssetRepository(db, clock),
     albums: new AlbumRepository(db, clock),
     stickerPacks: new StickerPackRepository(db, clock),
+    customWashiTapes: new CustomWashiTapeRepository(db, clock),
     pages: new PageRepository(db, clock, pageDocuments),
     books: new BookRepository(db, clock, pageDocuments),
     exports: new ExportJobRepository(db, clock),

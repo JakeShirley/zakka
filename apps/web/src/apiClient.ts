@@ -20,6 +20,12 @@ import {
   type BookSetPagesRequest,
   bookListResponseSchema,
   bookResponseSchema,
+  type CustomWashiTapeCreateRequest,
+  type CustomWashiTapeListResponse,
+  type CustomWashiTapePatchRequest,
+  type CustomWashiTapeResponse,
+  customWashiTapeListResponseSchema,
+  customWashiTapeResponseSchema,
   type CustomStickerListResponse,
   type CustomStickerResponse,
   type CustomStickerFavoritePatchRequest,
@@ -169,6 +175,40 @@ export const createApiClient = (baseUrl = defaultBaseUrl) => ({
 
   removeAlbumAsset: async (albumId: string, assetId: string): Promise<void> => {
     const response = await fetch(buildUrl(baseUrl, `/api/v1/albums/${albumId}/assets/${assetId}`), {
+      credentials: "include",
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      throw await parseError(response);
+    }
+  },
+
+  listCustomWashiTapes: (): Promise<CustomWashiTapeListResponse> =>
+    requestJson(baseUrl, customWashiTapeListResponseSchema, "/api/v1/custom-washi-tapes"),
+
+  createCustomWashiTape: (input: CustomWashiTapeCreateRequest): Promise<CustomWashiTapeResponse> =>
+    requestJson(baseUrl, customWashiTapeResponseSchema, "/api/v1/custom-washi-tapes", {
+      body: JSON.stringify(input),
+      method: "POST",
+    }),
+
+  updateCustomWashiTape: (
+    washiTapeId: string,
+    input: CustomWashiTapePatchRequest,
+  ): Promise<CustomWashiTapeResponse> =>
+    requestJson(
+      baseUrl,
+      customWashiTapeResponseSchema,
+      `/api/v1/custom-washi-tapes/${washiTapeId}`,
+      {
+        body: JSON.stringify(input),
+        method: "PATCH",
+      },
+    ),
+
+  deleteCustomWashiTape: async (washiTapeId: string): Promise<void> => {
+    const response = await fetch(buildUrl(baseUrl, `/api/v1/custom-washi-tapes/${washiTapeId}`), {
       credentials: "include",
       method: "DELETE",
     });
