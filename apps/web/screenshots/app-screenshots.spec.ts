@@ -4,6 +4,10 @@ import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
+// Visual snapshots for review only. Scenarios stage a screen against a mocked API and wait for it
+// to be ready; they do not assert behavior. Interaction behavior belongs in `*.browser.test.tsx`
+// files, and flows that need the real API belong in `apps/web/e2e/`.
+
 const screenshotDirectory = path.resolve(
   process.env.ZAKKA_SCREENSHOT_DIR ??
     fileURLToPath(new URL("../../../docs/screenshots/", import.meta.url)),
@@ -660,20 +664,17 @@ const scenarios: ScreenshotScenario[] = [
       if (!(await isVisible(resizeHandle))) return;
 
       const handleBox = await resizeHandle.boundingBox();
-      const beforeBox = await inlineEditor.boundingBox();
-      if (!handleBox || !beforeBox) return;
+      if (!handleBox) return;
 
+      // Only stage the widened editor for the screenshot. Resizing while typing is asserted in
+      // PageCanvas.browser.test.tsx (#54).
       const handleX = handleBox.x + handleBox.width / 2;
       const handleY = handleBox.y + handleBox.height / 2;
       await page.mouse.move(handleX, handleY);
       await page.mouse.down();
       await page.mouse.move(handleX + 80, handleY, { steps: 10 });
       await page.mouse.up();
-
-      const afterBox = await inlineEditor.boundingBox();
-      expect(afterBox?.width ?? 0).toBeGreaterThan(beforeBox.width + 40);
       await expect(inlineEditor).toBeVisible();
-      await expect(inlineEditor).toBeFocused();
     },
     viewports: ["desktop"],
     waitFor: waitForBookEditor,
