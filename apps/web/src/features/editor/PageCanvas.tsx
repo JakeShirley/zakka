@@ -185,25 +185,74 @@ export type SelectLayerOptions = { additive?: boolean };
 const PHOTO_SCALE_MIN = 1;
 const PHOTO_SCALE_MAX = 5;
 const PHOTO_SCALE_STEP = 0.1;
+/** Gap kept between the zoom pill and the photo edges or pan handle; mirrors the CSS `bottom` inset. */
+const PHOTO_SCALE_SLIDER_INSET = 10;
+/** Mirrors the `.transform-pan-handle` CSS size. */
+const PHOTO_PAN_HANDLE_SIZE = 36;
 
 const clampPhotoScale = (value: number): number =>
   Math.min(PHOTO_SCALE_MAX, Math.max(PHOTO_SCALE_MIN, Math.round(value * 10) / 10));
 
+/**
+ * The slider is laid out in the photo's rotated box, so a mostly upside-down photo needs the
+ * opposite local side to end up physically away from the layer toolbar.
+ */
+const getPhotoScaleSliderOutsidePlacement = (
+  rotationDegrees: number,
+  toolbarPlacement: "above" | "below",
+): "above" | "below" => {
+  const awayFromToolbar = toolbarPlacement === "below" ? "above" : "below";
+  if (Math.cos((rotationDegrees * Math.PI) / 180) >= 0) return awayFromToolbar;
+  return awayFromToolbar === "above" ? "below" : "above";
+};
+
 function PhotoScaleSlider({
   layer,
+  outsidePlacement,
   onChange,
 }: {
   layer: PhotoLayer;
+  /** Side of the frame to use when the photo is too small to hold the slider (opposite the layer toolbar). */
+  outsidePlacement: "above" | "below";
   onChange: (scale: number) => void;
 }) {
   const scale = layer.photoTransform.scale;
+  const sliderRef = useRef<HTMLDivElement>(null);
+  const [fitsInside, setFitsInside] = useState(true);
   const commit = (next: number) => {
     const clamped = clampPhotoScale(next);
     if (clamped !== scale) onChange(clamped);
   };
 
+  useLayoutEffect(() => {
+    const slider = sliderRef.current;
+    const frame = slider?.parentElement;
+    if (!slider || !frame) return;
+    const updatePlacement = () => {
+      const panHandleHalfHeight = PHOTO_PAN_HANDLE_SIZE / 2;
+      const frameWidth = frame.clientWidth;
+      const frameHeight = frame.clientHeight;
+      // Layout sizes (not bounding rects) so the check ignores layer rotation.
+      const fitsWidth = slider.offsetWidth + PHOTO_SCALE_SLIDER_INSET * 2 <= frameWidth;
+      const fitsHeight =
+        frameHeight / 2 + panHandleHalfHeight + PHOTO_SCALE_SLIDER_INSET <=
+        frameHeight - PHOTO_SCALE_SLIDER_INSET - slider.offsetHeight;
+      setFitsInside(fitsWidth && fitsHeight);
+    };
+    updatePlacement();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(updatePlacement);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <div className="transform-scale-slider" onPointerDown={(event) => event.stopPropagation()}>
+    <div
+      className="transform-scale-slider"
+      data-placement={fitsInside ? "inside" : outsidePlacement}
+      ref={sliderRef}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
       <button
         type="button"
         aria-label="Zoom photo out"
@@ -453,6 +502,14 @@ export function PageCanvas({
     selectedSelectionFrame && selectedSelectionFrame.y > document.canvas.height * 0.16
       ? "above"
       : "below";
+  const selectedPhotoLayer = selectedLayer?.kind === "photo" ? selectedLayer : null;
+  const getLayerBoxStyle = (layer: PageLayer): CSSProperties => ({
+    left: `${(layer.x / document.canvas.width) * 100}%`,
+    top: `${(layer.y / document.canvas.height) * 100}%`,
+    width: `${(layer.width / document.canvas.width) * 100}%`,
+    height: `${(layer.height / document.canvas.height) * 100}%`,
+    transform: `rotate(${layer.rotation}deg)`,
+  });
   const selectedLayerMenuHalfWidth = selectedLayer
     ? selectedLayer.kind === "text"
       ? 248
@@ -1042,223 +1099,243 @@ export function PageCanvas({
         dangerouslySetInnerHTML={{ __html: renderedSvg }}
         ref={renderSurfaceRef}
       />
-      {displayedInteractiveLayers.map((interactiveLayer, layerIndex) => {
-        const { layer } = interactiveLayer;
-        const isPreview = interactiveLayer.kind === "preview";
-        const isSelected = !isPreview && layer.id === primarySelectedLayerId;
-        const isGroupSelected =
-          !isPreview && isMultiSelected && selectedLayerIds.includes(layer.id);
-        const layerStyle: CSSProperties = {
-          left: `${(layer.x / document.canvas.width) * 100}%`,
-          top: `${(layer.y / document.canvas.height) * 100}%`,
-          width: `${(layer.width / document.canvas.width) * 100}%`,
-          height: `${(layer.height / document.canvas.height) * 100}%`,
-          zIndex: layerIndex + 1,
-          opacity: layer.opacity,
-          transform: `rotate(${layer.rotation}deg)`,
-        };
-        const selectionFrame = getLayerSelectionFrame(layer);
-        const selectionFrameStyle: CSSProperties = {
-          left: `${((selectionFrame.x - layer.x) / layer.width) * 100}%`,
-          top: `${((selectionFrame.y - layer.y) / layer.height) * 100}%`,
-          width: `${(selectionFrame.width / layer.width) * 100}%`,
-          height: `${(selectionFrame.height / layer.height) * 100}%`,
-          transform: `rotate(${selectionFrame.rotation}deg)`,
-        };
-        const layerLabel = `${formatLayerKindLabel(layer.kind)} layer`;
-        const isInlineEditingText = editingTextLayerId === layer.id && layer.kind === "text";
-        return (
-          <div
-            key={isPreview ? `${interactiveLayer.sourcePageId}:${layer.id}` : layer.id}
-            className="canvas-layer"
-            data-kind={layer.kind}
-            data-layer-id={layer.id}
-            data-locked={layer.locked}
-            data-preview={isPreview}
-            data-selected={isSelected}
-            data-group-selected={isGroupSelected}
-            data-transforming={
-              activeTransform?.layerId === layer.id ||
-              activeGroupTransform?.layerIds.includes(layer.id)
-            }
-            style={layerStyle}
-          >
-            <button
-              type="button"
-              aria-label={`${layerLabel}${isPreview ? " from adjacent page" : ""}`}
-              className="canvas-layer-hitbox"
-              onClick={(event) => {
-                if (interactiveLayer.kind === "preview") {
-                  onSelectPreviewLayer?.(interactiveLayer.sourcePageId, layer.id);
-                  return;
-                }
+      {/* Bounds layer hitboxes and their controls to one stacking tier below the toolbar and menus. */}
+      <div className="canvas-layer-stack">
+        {displayedInteractiveLayers.map((interactiveLayer, layerIndex) => {
+          const { layer } = interactiveLayer;
+          const isPreview = interactiveLayer.kind === "preview";
+          const isSelected = !isPreview && layer.id === primarySelectedLayerId;
+          const isGroupSelected =
+            !isPreview && isMultiSelected && selectedLayerIds.includes(layer.id);
+          const layerStyle: CSSProperties = {
+            ...getLayerBoxStyle(layer),
+            zIndex: layerIndex + 1,
+            opacity: layer.opacity,
+          };
+          const selectionFrame = getLayerSelectionFrame(layer);
+          const selectionFrameStyle: CSSProperties = {
+            left: `${((selectionFrame.x - layer.x) / layer.width) * 100}%`,
+            top: `${((selectionFrame.y - layer.y) / layer.height) * 100}%`,
+            width: `${(selectionFrame.width / layer.width) * 100}%`,
+            height: `${(selectionFrame.height / layer.height) * 100}%`,
+            transform: `rotate(${selectionFrame.rotation}deg)`,
+          };
+          const layerLabel = `${formatLayerKindLabel(layer.kind)} layer`;
+          const isInlineEditingText = editingTextLayerId === layer.id && layer.kind === "text";
+          return (
+            <div
+              key={isPreview ? `${interactiveLayer.sourcePageId}:${layer.id}` : layer.id}
+              className="canvas-layer"
+              data-kind={layer.kind}
+              data-layer-id={layer.id}
+              data-locked={layer.locked}
+              data-preview={isPreview}
+              data-selected={isSelected}
+              data-group-selected={isGroupSelected}
+              data-transforming={
+                activeTransform?.layerId === layer.id ||
+                activeGroupTransform?.layerIds.includes(layer.id)
+              }
+              style={layerStyle}
+            >
+              <button
+                type="button"
+                aria-label={`${layerLabel}${isPreview ? " from adjacent page" : ""}`}
+                className="canvas-layer-hitbox"
+                onClick={(event) => {
+                  if (interactiveLayer.kind === "preview") {
+                    onSelectPreviewLayer?.(interactiveLayer.sourcePageId, layer.id);
+                    return;
+                  }
 
-                if (suppressNextClickRef.current) {
-                  suppressNextClickRef.current = false;
-                  return;
-                }
+                  if (suppressNextClickRef.current) {
+                    suppressNextClickRef.current = false;
+                    return;
+                  }
 
-                if (event.shiftKey && event.detail > 0) {
-                  return;
-                }
+                  if (event.shiftKey && event.detail > 0) {
+                    return;
+                  }
 
-                onSelectLayer(layer.id, { additive: event.shiftKey });
-              }}
-              onContextMenu={(event) => {
-                if (interactiveLayer.kind === "preview") {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  closeContextMenu();
-                  onSelectPreviewLayer?.(interactiveLayer.sourcePageId, layer.id);
-                  return;
-                }
+                  onSelectLayer(layer.id, { additive: event.shiftKey });
+                }}
+                onContextMenu={(event) => {
+                  if (interactiveLayer.kind === "preview") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeContextMenu();
+                    onSelectPreviewLayer?.(interactiveLayer.sourcePageId, layer.id);
+                    return;
+                  }
 
-                openContextMenu(event, layer);
-              }}
-              onDoubleClick={(event) => {
-                if (interactiveLayer.kind === "preview") return;
-                if (layer.kind === "text" && !layer.locked) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  beginInlineTextEdit(layer);
-                  return;
-                }
-                openLayerEditor(event, layer);
-              }}
-              onPointerDown={(event) => {
-                if (interactiveLayer.kind === "preview") {
-                  selectPreviewLayer(event, interactiveLayer);
-                  return;
-                }
+                  openContextMenu(event, layer);
+                }}
+                onDoubleClick={(event) => {
+                  if (interactiveLayer.kind === "preview") return;
+                  if (layer.kind === "text" && !layer.locked) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    beginInlineTextEdit(layer);
+                    return;
+                  }
+                  openLayerEditor(event, layer);
+                }}
+                onPointerDown={(event) => {
+                  if (interactiveLayer.kind === "preview") {
+                    selectPreviewLayer(event, interactiveLayer);
+                    return;
+                  }
 
-                if (event.shiftKey) {
-                  if (event.button !== 0) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  closeContextMenu();
-                  onSelectLayer(layer.id, { additive: true });
-                  return;
-                }
+                  if (event.shiftKey) {
+                    if (event.button !== 0) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeContextMenu();
+                    onSelectLayer(layer.id, { additive: true });
+                    return;
+                  }
 
-                if (isMultiSelected && selectedLayerIds.includes(layer.id)) {
-                  startGroupTransform(event, "move");
-                  return;
-                }
+                  if (isMultiSelected && selectedLayerIds.includes(layer.id)) {
+                    startGroupTransform(event, "move");
+                    return;
+                  }
 
-                startTransform(event, layer, "move");
-              }}
-            />
-            <div className="canvas-selection-frame" style={selectionFrameStyle}>
-              <span className="canvas-layer-content" />
-              {isSelected && !layer.locked ? (
-                <>
-                  {isInlineEditingText ? null : (
-                    <button
-                      type="button"
-                      aria-label="Rotate layer"
-                      className="transform-rotate-handle"
-                      title="Rotate"
-                      onPointerDown={(event) => startTransform(event, layer, "rotate")}
-                    >
-                      <ArrowClockwiseRegular />
-                    </button>
-                  )}
-                  {resizeHandles.map(({ handle, label }) => {
-                    const photoLabel = layer.kind === "photo" ? photoHandleLabels[handle] : null;
-                    const handleLabel = photoLabel ?? label;
-                    return (
+                  startTransform(event, layer, "move");
+                }}
+              />
+              <div className="canvas-selection-frame" style={selectionFrameStyle}>
+                <span className="canvas-layer-content" />
+                {isSelected && !layer.locked ? (
+                  <>
+                    {isInlineEditingText ? null : (
                       <button
                         type="button"
-                        aria-label={handleLabel}
-                        className="transform-resize-handle"
-                        data-handle={handle}
-                        data-kind={layer.kind}
-                        data-role={handle.length === 2 ? "scale" : "crop"}
-                        key={handle}
-                        title={handleLabel}
-                        onPointerDown={(event) => startTransform(event, layer, "resize", handle)}
-                      />
-                    );
-                  })}
-                  {layer.kind === "photo" ? (
-                    <button
-                      type="button"
-                      aria-label="Click and drag to adjust photo"
-                      className="transform-pan-handle"
-                      title="Click and drag to adjust photo"
-                      onPointerDown={(event) => {
-                        setPanPreviewLayerId(null);
-                        startTransform(event, layer, "pan");
-                      }}
-                      onPointerEnter={() => setPanPreviewLayerId(layer.id)}
-                      onPointerLeave={() => {
-                        setPanPreviewLayerId((current) => (current === layer.id ? null : current));
-                      }}
-                      onFocus={() => setPanPreviewLayerId(layer.id)}
-                      onBlur={() => {
-                        setPanPreviewLayerId((current) => (current === layer.id ? null : current));
-                      }}
-                    >
-                      <HandLeftRegular />
-                    </button>
-                  ) : null}
-                  {layer.kind === "photo" ? (
-                    <PhotoScaleSlider
-                      layer={layer}
-                      onChange={(scale) => {
-                        const nextPhotoTransform = { ...layer.photoTransform, scale };
-                        const clampedOffset = clampPhotoPanOffset(
-                          { ...layer, photoTransform: nextPhotoTransform },
-                          {
-                            offsetX: layer.photoTransform.offsetX,
-                            offsetY: layer.photoTransform.offsetY,
-                          },
-                        );
-                        changeLayer(layer.id, {
-                          photoTransform: { ...nextPhotoTransform, ...clampedOffset },
-                        } as Partial<PageLayer>);
-                      }}
-                    />
-                  ) : null}
-                </>
-              ) : null}
-              {isInlineEditingText ? (
-                <RichTextEditor
-                  ref={inlineTextEditorRef}
-                  ariaLabel="Edit text"
-                  className="canvas-inline-text-editor"
-                  spellCheck
-                  value={layer.text}
-                  style={{
-                    color: layer.color,
-                    fontFamily: `"${layer.fontFamily}", sans-serif`,
-                    fontSize: `calc(${layer.fontSize / document.canvas.width} * 100cqi)`,
-                    textAlign: layer.align,
-                  }}
-                  onBlur={(event) => {
-                    const next = event.relatedTarget as Node | null;
-                    if (next && canvasRef.current?.contains(next)) return;
-                    setEditingTextLayerId(null);
-                  }}
-                  onChange={(text) =>
-                    changeLayer(layer.id, {
-                      text,
-                    } as Partial<PageLayer>)
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      event.stopPropagation();
+                        aria-label="Rotate layer"
+                        className="transform-rotate-handle"
+                        title="Rotate"
+                        onPointerDown={(event) => startTransform(event, layer, "rotate")}
+                      >
+                        <ArrowClockwiseRegular />
+                      </button>
+                    )}
+                    {resizeHandles.map(({ handle, label }) => {
+                      const photoLabel = layer.kind === "photo" ? photoHandleLabels[handle] : null;
+                      const handleLabel = photoLabel ?? label;
+                      return (
+                        <button
+                          type="button"
+                          aria-label={handleLabel}
+                          className="transform-resize-handle"
+                          data-handle={handle}
+                          data-kind={layer.kind}
+                          data-role={handle.length === 2 ? "scale" : "crop"}
+                          key={handle}
+                          title={handleLabel}
+                          onPointerDown={(event) => startTransform(event, layer, "resize", handle)}
+                        />
+                      );
+                    })}
+                    {layer.kind === "photo" ? (
+                      <button
+                        type="button"
+                        aria-label="Click and drag to adjust photo"
+                        className="transform-pan-handle"
+                        title="Click and drag to adjust photo"
+                        onPointerDown={(event) => {
+                          setPanPreviewLayerId(null);
+                          startTransform(event, layer, "pan");
+                        }}
+                        onPointerEnter={() => setPanPreviewLayerId(layer.id)}
+                        onPointerLeave={() => {
+                          setPanPreviewLayerId((current) =>
+                            current === layer.id ? null : current,
+                          );
+                        }}
+                        onFocus={() => setPanPreviewLayerId(layer.id)}
+                        onBlur={() => {
+                          setPanPreviewLayerId((current) =>
+                            current === layer.id ? null : current,
+                          );
+                        }}
+                      >
+                        <HandLeftRegular />
+                      </button>
+                    ) : null}
+                  </>
+                ) : null}
+                {isInlineEditingText ? (
+                  <RichTextEditor
+                    ref={inlineTextEditorRef}
+                    ariaLabel="Edit text"
+                    className="canvas-inline-text-editor"
+                    spellCheck
+                    value={layer.text}
+                    style={{
+                      color: layer.color,
+                      fontFamily: `"${layer.fontFamily}", sans-serif`,
+                      fontSize: `calc(${layer.fontSize / document.canvas.width} * 100cqi)`,
+                      textAlign: layer.align,
+                    }}
+                    onBlur={(event) => {
+                      const next = event.relatedTarget as Node | null;
+                      if (next && canvasRef.current?.contains(next)) return;
                       setEditingTextLayerId(null);
+                    }}
+                    onChange={(text) =>
+                      changeLayer(layer.id, {
+                        text,
+                      } as Partial<PageLayer>)
                     }
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                />
-              ) : null}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setEditingTextLayerId(null);
+                      }
+                    }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                  />
+                ) : null}
+              </div>
             </div>
+          );
+        })}
+        {selectedPhotoLayer && !selectedPhotoLayer.locked ? (
+          // Rendered above every layer so neighbouring hitboxes can't steal clicks when the slider
+          // sits outside a small photo; the box mirrors the layer's geometry and rotation.
+          <div
+            className="canvas-layer-controls"
+            data-layer-id={selectedPhotoLayer.id}
+            style={{
+              ...getLayerBoxStyle(selectedPhotoLayer),
+              zIndex: displayedInteractiveLayers.length + 1,
+              opacity: selectedPhotoLayer.opacity,
+            }}
+          >
+            <PhotoScaleSlider
+              layer={selectedPhotoLayer}
+              outsidePlacement={getPhotoScaleSliderOutsidePlacement(
+                selectedPhotoLayer.rotation,
+                selectedLayerMenuPlacement,
+              )}
+              onChange={(scale) => {
+                const layer = selectedPhotoLayer;
+                const nextPhotoTransform = { ...layer.photoTransform, scale };
+                const clampedOffset = clampPhotoPanOffset(
+                  { ...layer, photoTransform: nextPhotoTransform },
+                  {
+                    offsetX: layer.photoTransform.offsetX,
+                    offsetY: layer.photoTransform.offsetY,
+                  },
+                );
+                changeLayer(layer.id, {
+                  photoTransform: { ...nextPhotoTransform, ...clampedOffset },
+                } as Partial<PageLayer>);
+              }}
+            />
           </div>
-        );
-      })}
+        ) : null}
+      </div>
       {isMultiSelected && multiSelectionBoundingBox ? (
         <div
           className="canvas-group-selection"

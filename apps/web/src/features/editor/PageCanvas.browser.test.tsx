@@ -248,6 +248,83 @@ describe("photo handles", () => {
     await expect.element(page.getByRole("button", { name: "Zoom photo out" })).toBeEnabled();
   });
 
+  test("the zoom slider sits inside large photos and moves outside small ones, away from the toolbar", async () => {
+    const { layer, probe } = await renderCanvas({
+      layers: [
+        photoLayer(),
+        photoLayer({ id: "low", x: 200, y: 1500, width: 240, height: 180 }),
+        photoLayer({ id: "high", x: 1400, y: 100, width: 240, height: 180 }),
+        photoLayer({ id: "flipped", x: 1700, y: 1650, width: 240, height: 180, rotation: 180 }),
+        // Stacked above "low" and just under it, so it overlaps the outside slider but not the photo.
+        createStickerLayer({ id: "neighbor", x: 0, y: 1700, width: 880, height: 250 }),
+      ],
+      selectedLayerIds: ["photo"],
+    });
+    const zoomSlider = () => document.querySelector<HTMLElement>(".transform-scale-slider");
+    const rects = (layerId: string) => {
+      const slider = zoomSlider();
+      const frame = layerElement(layerId).querySelector(".canvas-selection-frame");
+      const tools = document.querySelector(".selected-layer-tools");
+      if (!slider || !frame || !tools)
+        throw new Error(`Expected ${layerId} slider, frame, and tools`);
+      return {
+        frame: frame.getBoundingClientRect(),
+        slider: slider.getBoundingClientRect(),
+        tools: tools.getBoundingClientRect(),
+      };
+    };
+    await expect.poll(() => zoomSlider()?.dataset.placement).toBe("inside");
+
+    await layerHitbox("low").click();
+    await expect.poll(() => zoomSlider()?.dataset.placement).toBe("below");
+    const low = rects("low");
+    expect(low.slider.top).toBeGreaterThan(low.frame.bottom);
+    expect(low.tools.bottom).toBeLessThan(low.frame.top);
+    await page.getByRole("button", { name: "Zoom photo in" }).click();
+    expect(probe.selectedLayerIds).toEqual(["low"]);
+    expect(layer("low", "photo").photoTransform.scale).toBe(1.1);
+
+    await layerHitbox("high").click();
+    await expect.poll(() => zoomSlider()?.dataset.placement).toBe("above");
+    const high = rects("high");
+    expect(high.slider.bottom).toBeLessThan(high.frame.top);
+    expect(high.tools.top).toBeGreaterThan(high.frame.bottom);
+
+    // Upside down, the layer's local "above" is physically below, away from the toolbar.
+    await layerHitbox("flipped").click();
+    await expect.poll(() => zoomSlider()?.dataset.placement).toBe("above");
+    const flipped = rects("flipped");
+    expect(flipped.slider.top).toBeGreaterThan(flipped.frame.bottom);
+    expect(flipped.tools.bottom).toBeLessThan(flipped.frame.top);
+  });
+
+  test("the layer menu stays above a bottom-stacked photo's zoom slider in a many-layer page", async () => {
+    const fillers = Array.from({ length: 30 }, (_, index) =>
+      createStickerLayer({ id: `filler-${index}`, x: 1700, y: 1700, width: 100, height: 100 }),
+    );
+    const { probe } = await renderCanvas({
+      layers: [photoLayer({ id: "small", x: 200, y: 1500, width: 240, height: 180 }), ...fillers],
+      selectedLayerIds: ["small"],
+    });
+    const slider = document.querySelector<HTMLElement>(".transform-scale-slider");
+    await expect.poll(() => slider?.dataset.placement).toBe("below");
+
+    // Open the menu just above the slider so its first item lands over it.
+    await layerHitbox("small").click({ button: "right", position: { x: 12, y: 56 } });
+    const edit = page
+      .getByRole("menu", { name: "Photo layer actions" })
+      .getByRole("menuitem", { name: "Edit" });
+    const sliderRect = slider?.getBoundingClientRect();
+    const itemRect = edit.element().getBoundingClientRect();
+    if (!sliderRect) throw new Error("Expected the zoom slider");
+    const itemCenterY = (itemRect.top + itemRect.bottom) / 2;
+    expect(itemCenterY).toBeGreaterThan(sliderRect.top);
+    expect(itemCenterY).toBeLessThan(sliderRect.bottom);
+    await edit.click();
+
+    expect(probe.activeSelectionPanel).toBe("edit");
+  });
+
   test("Width fills the page width, centered, preserving the photo aspect ratio", async () => {
     const { layer } = await renderCanvas({ layers: [photoLayer()], selectedLayerIds: ["photo"] });
 

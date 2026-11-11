@@ -2059,6 +2059,13 @@ textarea:focus-visible {
   height: 100%;
 }
 
+.canvas-layer-stack {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
 .canvas-layer {
   position: absolute;
   z-index: 1;
@@ -2067,6 +2074,7 @@ textarea:focus-visible {
   padding: 0;
   color: inherit;
   background: transparent;
+  pointer-events: auto;
   transform-origin: center;
   user-select: none;
 }
@@ -2100,6 +2108,13 @@ textarea:focus-visible {
 .canvas-selection-frame {
   position: absolute;
   z-index: 1;
+  display: block;
+  transform-origin: center;
+  pointer-events: none;
+}
+
+.canvas-layer-controls {
+  position: absolute;
   display: block;
   transform-origin: center;
   pointer-events: none;
@@ -2374,7 +2389,6 @@ textarea:focus-visible {
   align-items: center;
   gap: 6px;
   width: max-content;
-  max-width: calc(100% - 24px);
   border: 1px solid #24766e;
   border-radius: 999px;
   padding: 4px 6px;
@@ -2384,6 +2398,17 @@ textarea:focus-visible {
   touch-action: none;
   transform: translateX(-50%);
   backdrop-filter: blur(2px);
+}
+
+/* Small photos can't fit the pill (or it would cover the pan handle), so it sits outside the
+   frame on the side away from the layer toolbar. */
+.transform-scale-slider[data-placement="below"] {
+  top: calc(100% + 14px);
+  bottom: auto;
+}
+
+.transform-scale-slider[data-placement="above"] {
+  bottom: calc(100% + 14px);
 }
 
 .transform-scale-button {
