@@ -1067,23 +1067,6 @@ const photoFilterPresetTransforms: Record<PhotoLayer["filter"]["preset"], ColorT
   sepia: [colorTransformFns.sepia(0.72)],
 };
 
-// Applies `next` after `previous`.
-const composeColorTransforms = (
-  previous: ColorTransform,
-  next: ColorTransform,
-): ColorTransform => ({
-  linear: next.linear.map((row) =>
-    [0, 1, 2].map((column) =>
-      row.reduce((sum, value, k) => sum + value * (previous.linear[k]?.[column] ?? 0), 0),
-    ),
-  ),
-  offset: next.linear.map(
-    (row, rowIndex) =>
-      row.reduce((sum, value, k) => sum + value * (previous.offset[k] ?? 0), 0) +
-      (next.offset[rowIndex] ?? 0),
-  ),
-});
-
 const isIdentityPhotoFilter = (filter: PhotoLayer["filter"]): boolean =>
   filter.preset === "none" &&
   filter.brightness === 1 &&
@@ -1100,24 +1083,33 @@ const renderPhotoColorFilterSvg = (layer: PhotoLayer, filterId: string): string 
     return "";
   }
 
-  const transform = [
-    ...photoFilterPresetTransforms[layer.filter.preset],
-    colorTransformFns.brightness(layer.filter.brightness),
-    colorTransformFns.contrast(layer.filter.contrast),
-    colorTransformFns.saturate(layer.filter.saturation),
-  ].reduce(composeColorTransforms, colorTransformFns.brightness(1));
-  const values = [
-    ...transform.linear.flatMap((row, rowIndex) => [...row, 0, transform.offset[rowIndex] ?? 0]),
-    0,
-    0,
-    0,
-    1,
-    0,
-  ]
-    .map(formatMatrixValue)
-    .join(" ");
+  // One primitive per step so each result is clamped to [0, 1], matching chained CSS filters.
+  const adjustments = [
+    layer.filter.brightness === 1 ? null : colorTransformFns.brightness(layer.filter.brightness),
+    layer.filter.contrast === 1 ? null : colorTransformFns.contrast(layer.filter.contrast),
+    layer.filter.saturation === 1 ? null : colorTransformFns.saturate(layer.filter.saturation),
+  ].filter((transform): transform is ColorTransform => transform !== null);
+  const primitives = [...photoFilterPresetTransforms[layer.filter.preset], ...adjustments]
+    .map((transform) => {
+      const values = [
+        ...transform.linear.flatMap((row, rowIndex) => [
+          ...row,
+          0,
+          transform.offset[rowIndex] ?? 0,
+        ]),
+        0,
+        0,
+        0,
+        1,
+        0,
+      ]
+        .map(formatMatrixValue)
+        .join(" ");
+      return `<feColorMatrix type="matrix" values="${values}" />`;
+    })
+    .join("");
 
-  return `<filter id="${filterId}" data-photo-filter="${layer.filter.preset}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="${values}" /></filter>`;
+  return `<filter id="${filterId}" data-photo-filter="${layer.filter.preset}" color-interpolation-filters="sRGB">${primitives}</filter>`;
 };
 
 const renderPhotoFrameBackgroundSvg = (layer: PhotoLayer, layout: PhotoFrameLayout): string => {

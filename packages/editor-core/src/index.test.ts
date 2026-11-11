@@ -1021,6 +1021,36 @@ describe("page document helpers", () => {
     expect(svg).toContain('filter="url(#photo_color_2)"');
   });
 
+  it("clamps each photo filter step like chained CSS filters", () => {
+    const photo = createPhotoLayer({
+      assetId: "asset_sepia",
+      id: "photo_sepia",
+      filter: { preset: "sepia", brightness: 0.8, contrast: 1, saturation: 1 },
+    });
+    const svg = renderPageDocumentSvg(createPageDocument({ layers: [photo] }), {
+      resolvePhotoHref: (layer) => `/assets/${layer.assetId}/content`,
+    });
+    const matrices = [...svg.matchAll(/<feColorMatrix type="matrix" values="([^"]+)"/g)].map(
+      (match) => (match[1] ?? "").split(" ").map(Number),
+    );
+    const white = matrices.reduce(
+      (color, values) =>
+        [0, 1, 2].map((row) => {
+          const base = row * 5;
+          const channel =
+            (values[base] ?? 0) * (color[0] ?? 0) +
+            (values[base + 1] ?? 0) * (color[1] ?? 0) +
+            (values[base + 2] ?? 0) * (color[2] ?? 0) +
+            (values[base + 4] ?? 0);
+          return Math.min(Math.max(channel, 0), 1);
+        }),
+      [1, 1, 1],
+    );
+
+    expect(matrices).toHaveLength(2);
+    expect(white.map((channel) => Math.round(channel * 255))).toEqual([204, 204, 195]);
+  });
+
   it("prefixes reusable SVG ids for pages rendered in the same DOM", () => {
     const photo = createPhotoLayer({ assetId: "asset_1", id: "photo_1" });
     const document = createPageDocument({ layers: [photo] });
