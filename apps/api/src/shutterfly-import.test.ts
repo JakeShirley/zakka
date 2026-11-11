@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createApp } from "./app.js";
 import { createCredentialCipher } from "./integrations/credential-cipher.js";
+import { createShutterflyClient } from "./integrations/shutterfly/client.js";
 import {
   createShutterflyIntegration,
   readSolidSvgColor,
@@ -72,9 +73,11 @@ const createFakeShutterfly = async (): Promise<FakeShutterfly> => {
   })
     .jpeg()
     .toBuffer();
-  const svg = Buffer.from(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="144" height="96"><circle cx="48" cy="48" r="40" fill="#c0a060"/></svg>',
-  );
+  // Each sticker gets distinct artwork so per-pack checksum dedupe keeps them separate.
+  const stickerSvg = (url: string) =>
+    Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="96"><circle cx="48" cy="48" r="${(url.length % 40) + 10}" fill="#c0a060"/></svg>`,
+    );
   const fake: FakeShutterfly = {
     fetch: async () => new Response(null, { status: 500 }),
     requests: [],
@@ -197,7 +200,9 @@ const createFakeShutterfly = async (): Promise<FakeShutterfly> => {
     }
 
     if (url.startsWith("https://sfly3-catalog-design.sf-cdn.com/internal/")) {
-      return new Response(new Uint8Array(svg), { headers: { "content-type": "application/xml" } });
+      return new Response(new Uint8Array(stickerSvg(url)), {
+        headers: { "content-type": "application/xml" },
+      });
     }
 
     return new Response(null, { status: 404 });
@@ -518,5 +523,27 @@ describe("readSolidSvgColor", () => {
         svg('<rect fill="#ffffff" height="860.4" width="860.4"/><circle r="40" fill="#ff0000"/>'),
       ),
     ).toBeNull();
+  });
+});
+
+describe("Shutterfly downloads", () => {
+  it("stops reading a response once it exceeds the size cap, even without Content-Length", async () => {
+    let chunksRead = 0;
+    const chunk = new Uint8Array(1024 * 1024);
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        chunksRead += 1;
+        controller.enqueue(chunk);
+      },
+    });
+    const client = createShutterflyClient({
+      apiKey,
+      fetch: async () => new Response(body),
+    });
+
+    await expect(client.download("https://uniim-cp.shutterfly.com/huge")).rejects.toThrow(
+      "Shutterfly download is too large",
+    );
+    expect(chunksRead).toBeLessThan(45);
   });
 });

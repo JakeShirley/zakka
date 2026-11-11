@@ -202,13 +202,47 @@ const applyTransform = (rect: Rect, transform: SurfaceTransform): Rect => ({
   rot: rect.rot,
 });
 
-const overlapsPage = (rect: Rect, pageWidth: number, pageHeight: number): boolean =>
-  rect.w > 0 &&
-  rect.h > 0 &&
-  rect.x < pageWidth &&
-  rect.x + rect.w > 0 &&
-  rect.y < pageHeight &&
-  rect.y + rect.h > 0;
+/** Checks the layer's bounds after rotation about its center, as editor-core renders it. */
+const overlapsPage = (rect: Rect, pageWidth: number, pageHeight: number): boolean => {
+  if (rect.w <= 0 || rect.h <= 0) {
+    return false;
+  }
+
+  const radians = (rect.rot * Math.PI) / 180;
+  const halfWidth =
+    (Math.abs(rect.w * Math.cos(radians)) + Math.abs(rect.h * Math.sin(radians))) / 2;
+  const halfHeight =
+    (Math.abs(rect.w * Math.sin(radians)) + Math.abs(rect.h * Math.cos(radians))) / 2;
+  const centerX = rect.x + rect.w / 2;
+  const centerY = rect.y + rect.h / 2;
+
+  return (
+    centerX - halfWidth < pageWidth &&
+    centerX + halfWidth > 0 &&
+    centerY - halfHeight < pageHeight &&
+    centerY + halfHeight > 0
+  );
+};
+
+const maxZakkaTextLength = 2000;
+const markdownSyntaxPattern = /[\\`*_[\]<>!~#|]/g;
+
+/** Shutterfly text is plain; escape characters Zakka's Markdown renderer would treat as formatting. */
+export const escapeShutterflyText = (text: string): { text: string; truncated: boolean } => {
+  let escaped = "";
+
+  for (const character of text) {
+    const next = character.replace(markdownSyntaxPattern, "\\$&");
+
+    if (escaped.length + next.length > maxZakkaTextLength) {
+      return { text: escaped, truncated: true };
+    }
+
+    escaped += next;
+  }
+
+  return { text: escaped, truncated: false };
+};
 
 const coversPageCenter = (rect: Rect, pageWidth: number, pageHeight: number): boolean =>
   rect.x <= pageWidth / 2 &&
@@ -489,6 +523,15 @@ const mapItemToPlacement = (
           ? 0
           : clamp(baseline - sourceFontPixels, 0, sourceRect.h) * placement.transform.scale;
       const color = userDataString(item, "fontColor");
+      const escapedText = escapeShutterflyText(text);
+
+      if (escapedText.truncated) {
+        warn(
+          context,
+          `Shortened text longer than Zakka's ${maxZakkaTextLength}-character limit`,
+          itemKey,
+        );
+      }
 
       pushLayer(
         context,
@@ -497,7 +540,7 @@ const mapItemToPlacement = (
           ...common,
           y: rect.y + topInset,
           height: Math.max(rect.h - topInset, fontSize * 1.2),
-          text: text.slice(0, 2000),
+          text: escapedText.text,
           fontFamily: font.family,
           fontSize,
           color: color && hexColorPattern.test(color) ? color.toLowerCase() : "#000000",

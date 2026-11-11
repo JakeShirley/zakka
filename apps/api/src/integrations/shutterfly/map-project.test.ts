@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 
-import { createBookSpreads, type PageLayer } from "@zakka/editor-core";
+import { createBookSpreads, type PageLayer, parseRichText } from "@zakka/editor-core";
 import { describe, expect, it } from "vitest";
 
 import {
   collectShutterflyProjectReferences,
+  escapeShutterflyText,
   mapShutterflyProject,
   type ShutterflyMappingResolvers,
 } from "./map-project.js";
@@ -194,5 +195,45 @@ describe("mapShutterflyProject", () => {
     expect(background).toMatchObject({ kind: "photo", assetId: "asset_background", locked: true });
     // The 3510 px square background image is centered on the 3105 px wide cover surface.
     expect(background?.kind === "photo" ? background.crop.x : -1).toBeCloseTo(202.5 / 3510, 4);
+  });
+
+  it("keeps rotated spread elements on both pages when their rotated bounds cross the gutter", () => {
+    const rotated = structuredClone(project);
+    const spread = rotated.surfaceCategories
+      .find((category) => category.categoryName === "inside")
+      ?.surfaces.find((surface) => surface.surfaceNumber === "1");
+
+    spread?.surfaceData.layeredItems.push({
+      ...spread.surfaceData.layeredItems[0],
+      type: "embellishment",
+      container: { x: 2050, y: 800, w: 300, h: 700, rot: 90 },
+      content: { contentType: "Embellishment", userData: { assetId: "DA_893" } },
+      layerMetadata: [],
+    } as (typeof spread.surfaceData.layeredItems)[number]);
+
+    const book = mapShutterflyProject(rotated, resolvers);
+
+    expect(findPage(book, "Page 2").document.layers.some((layer) => layer.kind === "sticker")).toBe(
+      true,
+    );
+    expect(findPage(book, "Page 3").document.layers.some((layer) => layer.kind === "sticker")).toBe(
+      true,
+    );
+  });
+});
+
+describe("escapeShutterflyText", () => {
+  it("keeps Markdown-like characters literal when Zakka renders the text", () => {
+    const caption = "Our *favorite* trip_2024 `beach` [day] <3";
+    const { text, truncated } = escapeShutterflyText(caption);
+
+    expect(truncated).toBe(false);
+    expect(parseRichText(text)).toEqual([[{ text: caption, bold: false, italic: false }]]);
+  });
+
+  it("reports when escaped text must be shortened to fit Zakka's limit", () => {
+    const result = escapeShutterflyText("*".repeat(1500));
+
+    expect(result).toEqual({ text: "\\*".repeat(1000), truncated: true });
   });
 });

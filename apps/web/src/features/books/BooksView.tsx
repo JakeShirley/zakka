@@ -1,6 +1,6 @@
 import { Button } from "@fluentui/react-components";
 import { AddRegular, ArrowDownloadRegular } from "@fluentui/react-icons";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { apiClient } from "../../apiClient";
@@ -24,32 +24,34 @@ export function BooksView() {
   const [error, setError] = useState<string | null>(null);
   const [isShutterflyImportOpen, setIsShutterflyImportOpen] = useState(false);
 
+  const loadBooks = useCallback(async (isCurrent: () => boolean = () => true) => {
+    try {
+      const bookResponse = await apiClient.listBooks();
+
+      if (isCurrent()) {
+        setBooks(bookResponse.books);
+        setError(null);
+      }
+    } catch (loadError: unknown) {
+      if (isCurrent()) {
+        setError(getErrorMessage(loadError));
+      }
+    } finally {
+      if (isCurrent()) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 
-    apiClient
-      .listBooks()
-      .then((bookResponse) => {
-        if (isMounted) {
-          setBooks(bookResponse.books);
-          setError(null);
-        }
-      })
-      .catch((loadError: unknown) => {
-        if (isMounted) {
-          setError(getErrorMessage(loadError));
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      });
+    void loadBooks(() => isMounted);
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [loadBooks]);
 
   const createBook = async () => {
     setIsCreating(true);
@@ -109,7 +111,11 @@ export function BooksView() {
       </WorkspaceHeader>
       {isShutterflyImportOpen ? (
         <ShutterflyImportModal
-          onClose={() => setIsShutterflyImportOpen(false)}
+          onClose={() => {
+            setIsShutterflyImportOpen(false);
+            // An import may have created a book even if the user closes without opening it.
+            void loadBooks();
+          }}
           onOpenBook={(bookId) => navigate(`/books/${bookId}`)}
         />
       ) : null}

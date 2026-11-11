@@ -366,14 +366,33 @@ export const createShutterflyClient = (options: { apiKey: string; fetch?: typeof
       const declaredLength = Number(response.headers.get("content-length"));
 
       if (Number.isFinite(declaredLength) && declaredLength > maxDownloadBytes) {
+        await response.body?.cancel();
         throw new ShutterflyRequestError("Shutterfly download is too large");
       }
 
-      const buffer = Buffer.from(await response.arrayBuffer());
+      // Read incrementally so a response without Content-Length cannot exceed the cap in memory.
+      const chunks: Uint8Array[] = [];
+      let byteLength = 0;
+      const reader = response.body?.getReader();
 
-      if (buffer.byteLength > maxDownloadBytes) {
-        throw new ShutterflyRequestError("Shutterfly download is too large");
+      while (reader) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        byteLength += value.byteLength;
+
+        if (byteLength > maxDownloadBytes) {
+          await reader.cancel();
+          throw new ShutterflyRequestError("Shutterfly download is too large");
+        }
+
+        chunks.push(value);
       }
+
+      const buffer = Buffer.concat(chunks, byteLength);
 
       return buffer;
     },
