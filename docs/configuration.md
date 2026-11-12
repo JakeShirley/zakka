@@ -22,7 +22,7 @@ When running behind a reverse proxy, configure the proxy to overwrite and pass t
 
 ## Shutterfly import
 
-Zakka can import saved Shutterfly photo book projects as Zakka books, including pages, photo placement and crops, text, solid backgrounds, and stickers. Shutterfly has no public API, so this feature uses the same unofficial endpoints as Shutterfly's web app. It may stop working whenever Shutterfly changes their site. Use it only for your own projects.
+Zakka can import saved Shutterfly photo book projects as Zakka books, including pages, photo placement and crops, text and text backgrounds, solid backgrounds, and stickers. Shutterfly has no public API, so this feature uses the same unofficial endpoints as Shutterfly's web app. It may stop working whenever Shutterfly changes their site. Use it only for your own projects.
 
 To enable it, set `SHUTTERFLY_API_KEY` to the `X-API-Key` value that Shutterfly's web app sends. It is the same 32-character value for every Shutterfly user:
 

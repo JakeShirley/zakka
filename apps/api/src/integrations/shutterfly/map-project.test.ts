@@ -129,6 +129,39 @@ describe("mapShutterflyProject", () => {
     expect(sticker.width).toBeCloseTo(1444.6, 1);
   });
 
+  it("imports a Shutterfly text background without shrinking the text area", () => {
+    const withBackground = structuredClone(project);
+
+    for (const category of withBackground.surfaceCategories) {
+      for (const surface of category.surfaces) {
+        for (const item of surface.surfaceData.layeredItems) {
+          if (item.type === "text" && item.content.userData.assetId === "DA_46646") {
+            item.content.userData.backgroundColor = "#818053";
+            item.content.userData.backgroundOpacity = 0.51;
+          }
+        }
+      }
+    }
+
+    const text = layerOfKind(
+      findPage(mapShutterflyProject(withBackground, resolvers), "Page 1").document.layers,
+      "text",
+    );
+    const { padding } = text.background;
+
+    expect(text.background).toMatchObject({
+      enabled: true,
+      color: "#818053",
+      opacity: 0.51,
+      radius: 0,
+    });
+    expect(padding).toBeCloseTo(302.133 - (46 * 300) / 72, 1);
+    expect(text.y - padding).toBeCloseTo(445.95, 1);
+    expect(text.x).toBeCloseTo(715.5, 1);
+    expect(text.width).toBeCloseTo(954, 1);
+    expect(text.y + text.height).toBeCloseTo(445.95 + 477, 0);
+  });
+
   it("maps the front cover with its bordered photo and keeps spine content off the pages", () => {
     const book = mapShutterflyProject(project, resolvers);
     const frontLayers = findPage(book, "Front cover").document.layers;

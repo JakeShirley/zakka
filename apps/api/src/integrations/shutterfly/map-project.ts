@@ -65,6 +65,8 @@ const defaultBackgroundColor = "#ffffff";
 const minZakkaFontSize = 6;
 const maxZakkaFontSize = 240;
 const maxLayersPerPage = 200;
+// Matches the text background padding limit in the editor-core text layer schema.
+const maxZakkaTextBackgroundPadding = 120;
 const hexColorPattern = /^#[0-9a-fA-F]{6}$/;
 
 const stringValue = (value: unknown): string | null =>
@@ -114,6 +116,22 @@ const isSpreadSurface = (surface: ShutterflySurface, pageWidth: number): boolean
 
 const userDataString = (item: ShutterflyLayeredItem, key: string): string | null =>
   stringValue(item.content.userData[key]);
+
+/** Reads the fill Shutterfly draws across the whole text box, if any. */
+const textBackground = (item: ShutterflyLayeredItem): { color: string; opacity: number } | null => {
+  const color = userDataString(item, "backgroundColor");
+
+  if (!color || !hexColorPattern.test(color)) {
+    return null;
+  }
+
+  const opacity =
+    numberValue(item.content.userData.backgroundOpacity) ??
+    numberValue(item.content.userData.backgroundColorOpacity) ??
+    1;
+
+  return opacity > 0 ? { color: color.toLowerCase(), opacity: clamp(opacity, 0, 1) } : null;
+};
 
 const photoMediaId = (item: ShutterflyLayeredItem): string | null =>
   userDataString(item, "mediaId");
@@ -533,6 +551,12 @@ const mapItemToPlacement = (
         );
       }
 
+      const background = textBackground(item);
+      // Zakka pads a text background evenly on every side. Padding by the top inset puts the
+      // background's top edge on Shutterfly's box without shrinking the text area, so the
+      // fill can extend slightly past Shutterfly's box on the other sides.
+      const backgroundPadding = background ? Math.min(topInset, maxZakkaTextBackgroundPadding) : 0;
+
       pushLayer(
         context,
         page,
@@ -545,6 +569,17 @@ const mapItemToPlacement = (
           fontSize,
           color: color && hexColorPattern.test(color) ? color.toLowerCase() : "#000000",
           align: alignmentFromAnchor(item.content.userData.alignmentAnchor),
+          ...(background
+            ? {
+                background: {
+                  enabled: true,
+                  color: background.color,
+                  opacity: background.opacity,
+                  padding: backgroundPadding,
+                  radius: 0,
+                },
+              }
+            : {}),
         }),
       );
       return;
