@@ -82,6 +82,8 @@ type StoredCredentials = { refreshToken: string };
 
 const normalizeFontName = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
 
+const editorFontFamilies = new Set(editorFontDefinitions.map((font) => font.family));
+
 const fontFamilyByName = new Map(
   editorFontDefinitions.flatMap((font) => [
     [normalizeFontName(font.family.split(",")[0] ?? font.family), font.family] as const,
@@ -97,6 +99,11 @@ export const matchZakkaFontFamily = (
     return null;
   }
 
+  // Zakka mirrors Shutterfly's font names, some of which differ only by spacing ("Anna Clara").
+  if (editorFontFamilies.has(shutterflyFontName)) {
+    return shutterflyFontName;
+  }
+
   const candidates = [
     shutterflyFontName,
     shutterflyFontName.replace(/\b(pro|std|lt|com|regular|roman)\b/gi, ""),
@@ -104,6 +111,39 @@ export const matchZakkaFontFamily = (
 
   for (const candidate of candidates) {
     const family = fontFamilyByName.get(normalizeFontName(candidate));
+
+    if (family) {
+      return family;
+    }
+  }
+
+  return null;
+};
+
+const maxFontReplacementHops = 5;
+
+const fontReplacementId = (asset: ShutterflyDesignAsset | undefined): string | null =>
+  asset?.assetType === "font" ? (asset.attributes?.validNewFontId ?? null) : null;
+
+/**
+ * Finds the Zakka font for a Shutterfly font asset. Retired Shutterfly fonts (often named
+ * like "Mrs Eaves Roman - DUP2") are matched through the live font they were replaced with.
+ */
+export const matchShutterflyFontAsset = (
+  assetId: string | null,
+  designAssets: ReadonlyMap<string, ShutterflyDesignAsset>,
+): string | null => {
+  const chain: ShutterflyDesignAsset[] = [];
+  let asset = assetId ? designAssets.get(assetId) : undefined;
+
+  while (asset && !chain.includes(asset) && chain.length <= maxFontReplacementHops) {
+    chain.push(asset);
+    const replacementId = fontReplacementId(asset);
+    asset = replacementId ? designAssets.get(replacementId) : undefined;
+  }
+
+  for (const candidate of chain.reverse()) {
+    const family = matchZakkaFontFamily(candidate.name);
 
     if (family) {
       return family;
@@ -617,6 +657,28 @@ export const createShutterflyIntegration = (options: {
         ? await withSession(accountId, (session) => client.getDesignAssets(session, designAssetIds))
         : new Map<string, ShutterflyDesignAsset>();
 
+      for (let hop = 0; hop < maxFontReplacementHops; hop += 1) {
+        const replacementIds = [
+          ...new Set(
+            [...designAssets.values()]
+              .map(fontReplacementId)
+              .filter((id): id is string => id !== null && !designAssets.has(id)),
+          ),
+        ];
+
+        if (replacementIds.length === 0) {
+          break;
+        }
+
+        const replacements = await withSession(accountId, (session) =>
+          client.getDesignAssets(session, replacementIds),
+        );
+
+        for (const [id, asset] of replacements) {
+          designAssets.set(id, asset);
+        }
+      }
+
       const photoAssetIds = new Map(
         await mapWithConcurrency(
           references.photos,
@@ -657,7 +719,7 @@ export const createShutterflyIntegration = (options: {
           stickerId: (id) => stickerIds.get(id) ?? null,
           background: (id) => backgrounds.get(id) ?? null,
           fontFamily: (id) => {
-            const family = matchZakkaFontFamily(id ? designAssets.get(id)?.name : undefined);
+            const family = matchShutterflyFontAsset(id, designAssets);
 
             return family
               ? { family, matched: true }

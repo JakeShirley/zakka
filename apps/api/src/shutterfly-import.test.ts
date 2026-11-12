@@ -9,6 +9,7 @@ import {
   shutterflyImportResponseSchema,
   shutterflyProjectListResponseSchema,
 } from "@zakka/api-contract";
+import { editorFontDefinitions } from "@zakka/editor-core";
 import { makeFixedClock } from "@zakka/test-utils";
 import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
@@ -18,6 +19,7 @@ import { createCredentialCipher } from "./integrations/credential-cipher.js";
 import { createShutterflyClient } from "./integrations/shutterfly/client.js";
 import {
   createShutterflyIntegration,
+  matchZakkaFontFamily,
   readSolidSvgColor,
 } from "./integrations/shutterfly/service.js";
 import { createDatabaseConnection, type DatabaseConnection } from "./persistence/database.js";
@@ -142,6 +144,12 @@ const createFakeShutterfly = async (): Promise<FakeShutterfly> => {
       return Response.json(project);
     }
 
+    if (url.startsWith("https://projects-api3.shutterfly.com/projects/v2/project/1000000000003?")) {
+      return new Response(fixtureText.replaceAll('"DA_46646"', '"DA_46365"'), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+
     if (url.startsWith("https://projects-api3.shutterfly.com/projects/v2/project/1000000000001?")) {
       return new Response(fixtureText, { headers: { "content-type": "application/json" } });
     }
@@ -174,20 +182,29 @@ const createFakeShutterfly = async (): Promise<FakeShutterfly> => {
         files: { PRINT_RES: { location: `/internal/${id}.svg`, fileType: "SVG" } },
       });
 
-      return Response.json({
-        entities: {
-          designAssets: [
-            { id: "DA_46646", name: "Helvetica Neue", assetType: "font" },
-            sticker("DA_22741", "round-frame"),
-            sticker("DA_893", "winter-break"),
-            {
-              id: "DA_bg1",
-              name: "linen",
-              assetType: "background",
-              preview: "https://sfly3-catalog-design-imzr.sf-cdn.com/DA_bg1.png",
-            },
-          ],
+      const requestedIds = new Set<string>(JSON.parse(String(init?.body)).designAssetIds);
+      const designAssets = [
+        { id: "DA_46646", name: "Helvetica Neue", assetType: "font" },
+        {
+          id: "DA_46365",
+          name: "Mrs Eaves Roman - DUP2",
+          assetType: "font",
+          availability: "hidden",
+          attributes: { validNewFontId: "DA_650924" },
         },
+        { id: "DA_650924", name: "Mrs Eaves Roman", assetType: "font" },
+        sticker("DA_22741", "round-frame"),
+        sticker("DA_893", "winter-break"),
+        {
+          id: "DA_bg1",
+          name: "linen",
+          assetType: "background",
+          preview: "https://sfly3-catalog-design-imzr.sf-cdn.com/DA_bg1.png",
+        },
+      ];
+
+      return Response.json({
+        entities: { designAssets: designAssets.filter((asset) => requestedIds.has(asset.id)) },
       });
     }
 
@@ -419,6 +436,30 @@ describe("Shutterfly integration routes", () => {
     expect(repositories.books.listForAccount(accountId)).toHaveLength(2);
   });
 
+  it("matches retired Shutterfly fonts through their replacement font", async () => {
+    const { app, fake } = await createTestApp();
+    const cookie = await register(app);
+
+    await connect(app, cookie, validRefreshToken);
+
+    const response = await importProject(app, cookie, "1000000000003");
+    const body = shutterflyImportResponseSchema.parse(await response.json());
+    const pageOne = body.book.pages.find((page) => page.page.title === "Page 1");
+    const pageResponse = await app.request(`/api/v1/pages/${pageOne?.pageId}`, {
+      headers: { cookie },
+    });
+    const layers = pageResponseSchema.parse(await pageResponse.json()).document.layers;
+
+    expect(response.status).toBe(201);
+    expect(body.warnings).toEqual([]);
+    expect(layers.find((layer) => layer.kind === "text")).toMatchObject({
+      fontFamily: "Mrs Eaves Roman",
+    });
+    expect(
+      fake.requests.filter((request) => request.url.includes("/design-asset-by-ids")),
+    ).toHaveLength(2);
+  });
+
   it("asks the user to reconnect when Shutterfly rejects the stored token", async () => {
     const { app, fake } = await createTestApp();
     const cookie = await register(app);
@@ -503,6 +544,20 @@ describe("Shutterfly integration routes", () => {
     expect(list.status).toBe(409);
     expect(await list.json()).toMatchObject({ error: { code: "shutterfly_not_connected" } });
     expect(await status.json()).toMatchObject({ connected: false });
+  });
+});
+
+describe("matchZakkaFontFamily", () => {
+  it("maps every bundled Shutterfly font name to the font with that exact name", () => {
+    const shutterflyFamilies = editorFontDefinitions
+      .filter((font) => font.id !== "system")
+      .map((font) => font.family);
+
+    expect(shutterflyFamilies.length).toBeGreaterThan(0);
+
+    for (const family of shutterflyFamilies) {
+      expect(matchZakkaFontFamily(family)).toBe(family);
+    }
   });
 });
 

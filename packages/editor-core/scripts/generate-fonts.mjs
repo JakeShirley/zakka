@@ -22,24 +22,31 @@ const googleFonts = googleFontBlocks.map((block) => {
 
   return { id, vendorPath };
 });
+const declaredFontCount = googleFontsSource.match(/^\s+id:\s*"/gm)?.length ?? 0;
 
-if (googleFonts.length !== 53) {
-  throw new Error(`Expected 53 Google Fonts entries, found ${googleFonts.length}`);
+if (googleFonts.length === 0 || googleFonts.length !== declaredFontCount) {
+  throw new Error(
+    `Parsed ${googleFonts.length} Google Fonts entries but found ${declaredFontCount} ids`,
+  );
 }
+
+const vendorPaths = [...new Set(googleFonts.map(({ vendorPath }) => vendorPath))].sort();
 
 mkdirSync(generatedRoot, { recursive: true });
 
-const googleFontEntries = googleFonts.map(({ id, vendorPath }) => {
+const fontFileEntries = vendorPaths.map((vendorPath) => {
   const chunks = chunkBase64(fontFileBase64(vendorPath))
     .map((chunk) => `    ${JSON.stringify(chunk)},`)
     .join("\n");
 
-  return `  ${JSON.stringify(id)}: [\n${chunks}\n  ].join(""),`;
+  return `  ${JSON.stringify(vendorPath)}: [\n${chunks}\n  ].join(""),`;
 });
 
 writeFileSync(
   join(generatedRoot, "googleFonts.ts"),
-  `export const googleFontBase64ById = {\n${googleFontEntries.join("\n")}\n} as const;\n`,
+  `export const googleFontBase64ByVendorPath: Readonly<Record<string, string>> = {\n${fontFileEntries.join("\n")}\n};\n`,
 );
 
-console.log(`Generated bundled font module for ${googleFonts.length} Google Fonts.`);
+console.log(
+  `Generated bundled font module for ${googleFonts.length} Google Fonts entries from ${vendorPaths.length} files.`,
+);

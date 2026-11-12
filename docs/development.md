@@ -104,6 +104,19 @@ ZAKKA_SCREENSHOT_DIR=/tmp/zakka-screenshots pnpm screenshots
 
 Pull requests run the App Visual Diffs workflow. It renders screenshots for the merge base and the pull request head, compares the PNGs, uploads the comparison artifact, and updates a pull request comment with Before, After, and Diff images when visual changes are detected.
 
+## Editor Fonts
+
+Editor font families mirror the Shutterfly photo book editor font list. Shutterfly's font files are commercially licensed, so each family in `packages/editor-core/src/google-fonts.ts` renders with an open-source Google Fonts exact match, near revival, or substitute (`matchKind`). The vendored files in `packages/editor-core/vendor/fonts/google-fonts/` are Latin-subset WOFF files that are inlined into the editor-core bundle at build time, so the web canvas and server exports render identical glyph paths.
+
+After adding or changing an entry's `googleFamily`, `googleWeight`, or `googleStyle`, download and subset the referenced files:
+
+```sh
+python3 -m pip install fonttools
+python3 packages/editor-core/scripts/vendor-google-fonts.py
+```
+
+The script drops `ccmp`, `liga`, or `rlig` from a font when those features contain lookups opentype.js cannot run, because opentype.js would otherwise throw while laying out text.
+
 ## Docker
 
 Run the local API container with persistent application data:
