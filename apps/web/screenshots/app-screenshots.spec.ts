@@ -754,6 +754,35 @@ const scenarios: ScreenshotScenario[] = [
     waitFor: waitForBookEditor,
   },
   {
+    name: "book-editor-arrange",
+    path: "/books/book_summer",
+    prepare: async (page) => {
+      const pageFrame = page.locator('.book-page-frame[aria-label="Page 1"]');
+      const layerHitbox = (kind: "photo" | "sticker" | "text") =>
+        pageFrame.locator(`.canvas-layer[data-kind="${kind}"] .canvas-layer-hitbox`).first();
+
+      await layerHitbox("photo").click({ force: true });
+      // Selection overlays can cover overlapping layers, so dispatch the shift-press directly.
+      for (const kind of ["text", "sticker"] as const) {
+        await layerHitbox(kind).dispatchEvent("pointerdown", {
+          button: 0,
+          isPrimary: true,
+          pointerId: 1,
+          shiftKey: true,
+        });
+      }
+
+      // Stage the align preview only when the arrange panel exists (it is absent on merge-base).
+      const horizontalChoices = page.getByRole("group", { name: "Horizontal" });
+      if (!(await isVisible(horizontalChoices))) return;
+      await page.getByLabel("Relative to").selectOption("largest");
+      await horizontalChoices.getByRole("button", { name: "Center", exact: true }).click();
+      await expect(page.getByTestId("arrange-preview")).toBeVisible();
+    },
+    viewports: ["desktop"],
+    waitFor: waitForBookEditor,
+  },
+  {
     name: "library",
     path: "/library",
     waitFor: async (page) => {

@@ -72,6 +72,13 @@ export type CanvasPreviewLayer = {
   stackIndex: number;
 };
 
+/** Dashed outlines showing where an arrange action will move layers. */
+export type ArrangeCanvasPreview = {
+  anchorLabel: string | null;
+  anchorLayer: PageLayer | null;
+  ghosts: PageLayer[];
+};
+
 type InteractiveCanvasLayer =
   | {
       kind: "document";
@@ -302,6 +309,7 @@ type ActiveGroupTransform = {
 
 export function PageCanvas({
   activeSelectionPanel = null,
+  arrangePreview = null,
   assetById,
   document,
   previewLayers = [],
@@ -321,6 +329,7 @@ export function PageCanvas({
   onTransformLayersEnd,
 }: {
   activeSelectionPanel?: SelectionPanel | null;
+  arrangePreview?: ArrangeCanvasPreview | null;
   assetById: Map<string, Asset>;
   document: PageDocument;
   previewLayers?: CanvasPreviewLayer[];
@@ -510,6 +519,17 @@ export function PageCanvas({
     height: `${(layer.height / document.canvas.height) * 100}%`,
     transform: `rotate(${layer.rotation}deg)`,
   });
+  const getLayerFrameStyle = (layer: PageLayer): CSSProperties => {
+    const frame = getLayerSelectionFrame(layer);
+    return {
+      left: `${(frame.x / document.canvas.width) * 100}%`,
+      top: `${(frame.y / document.canvas.height) * 100}%`,
+      width: `${(frame.width / document.canvas.width) * 100}%`,
+      height: `${(frame.height / document.canvas.height) * 100}%`,
+      // Text frames are already measured from the rotated, rendered text.
+      transform: layer.kind === "text" ? undefined : `rotate(${layer.rotation}deg)`,
+    };
+  };
   const selectedLayerMenuHalfWidth = selectedLayer
     ? selectedLayer.kind === "text"
       ? 248
@@ -1336,6 +1356,29 @@ export function PageCanvas({
           </div>
         ) : null}
       </div>
+      {arrangePreview && !activeTransform && !activeGroupTransform ? (
+        <div className="canvas-arrange-preview" aria-hidden="true" data-testid="arrange-preview">
+          {arrangePreview.ghosts.map((layer) => (
+            <div
+              className="canvas-arrange-ghost"
+              data-layer-id={layer.id}
+              key={layer.id}
+              style={getLayerFrameStyle(layer)}
+            />
+          ))}
+          {arrangePreview.anchorLayer ? (
+            <div
+              className="canvas-arrange-anchor"
+              data-layer-id={arrangePreview.anchorLayer.id}
+              style={getLayerFrameStyle(arrangePreview.anchorLayer)}
+            >
+              {arrangePreview.anchorLabel ? (
+                <span className="canvas-arrange-anchor-badge">{arrangePreview.anchorLabel}</span>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {isMultiSelected && multiSelectionBoundingBox ? (
         <div
           className="canvas-group-selection"
