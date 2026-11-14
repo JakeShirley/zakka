@@ -321,6 +321,26 @@ describe("page document helpers", () => {
     expect(renderPageDocumentSvg(document, { showPhotoPlaceholders: true })).toContain(
       'data-photo-placeholder="true"',
     );
+
+    const shadowed = createPageDocument({
+      layers: [
+        createPhotoLayer({
+          id: "photo_shadowed",
+          shadow: {
+            enabled: true,
+            color: "#101418",
+            opacity: 0.4,
+            offsetX: 8,
+            offsetY: 16,
+            blur: 24,
+            spread: 0,
+          },
+        }),
+      ],
+    });
+    expect(renderPageDocumentSvg(shadowed, { showPhotoPlaceholders: true })).toContain(
+      'data-photo-shadow="true"',
+    );
   });
 
   it("finds the topmost unlocked photo placeholder under a point", () => {

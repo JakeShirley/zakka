@@ -75,6 +75,8 @@ export type CanvasPreviewLayer = {
   stackIndex: number;
 };
 
+export type PhotoPlaceholderDropTarget = { layerId: string; pageId?: string };
+
 /** Dashed outlines showing where an arrange action will move layers. */
 export type ArrangeCanvasPreview = {
   anchorLabel: string | null;
@@ -344,9 +346,20 @@ export function PageCanvas({
   onChangeLayer?: (layerId: string, update: Partial<PageLayer>) => void;
   /** Opens a photo picker to fill an empty photo placeholder. */
   onChoosePhoto?: ((layerId: string) => void) | undefined;
-  /** `placeholderLayerId` is the empty photo placeholder under the drop point, if any. */
-  onDropAsset?: (assetId: string, canvasPoint: CanvasPoint, placeholderLayerId?: string) => void;
-  onDropFiles?: (files: File[], canvasPoint: CanvasPoint, placeholderLayerId?: string) => void;
+  /**
+   * `placeholder` is the empty photo placeholder under the drop point, if any. `pageId` is set
+   * when it is a spread preview layer owned by another page.
+   */
+  onDropAsset?: (
+    assetId: string,
+    canvasPoint: CanvasPoint,
+    placeholder?: PhotoPlaceholderDropTarget,
+  ) => void;
+  onDropFiles?: (
+    files: File[],
+    canvasPoint: CanvasPoint,
+    placeholder?: PhotoPlaceholderDropTarget,
+  ) => void;
   onReorderLayer: (layerId: string, command: ReorderLayerCommand) => void;
   onSelectPreviewLayer?: (pageId: string, layerId: string) => void;
   onSelectLayer: (layerId: string | null, options?: SelectLayerOptions) => void;
@@ -1084,6 +1097,18 @@ export function PageCanvas({
     dragOverDepthRef.current = Math.max(0, dragOverDepthRef.current - 1);
     if (dragOverDepthRef.current === 0) setIsAssetDragOver(false);
   };
+  const findDropPlaceholder = (point: CanvasPoint): PhotoPlaceholderDropTarget | undefined => {
+    // Hit-test what the canvas shows, including placeholders projected from the facing page.
+    const hit = findPhotoPlaceholderAtPoint(
+      { ...document, layers: interactiveLayers.map((entry) => entry.layer) },
+      point,
+    );
+    if (!hit) return undefined;
+    const entry = interactiveLayers.find((item) => item.layer.id === hit.id);
+    return entry?.kind === "preview"
+      ? { layerId: hit.id, pageId: entry.sourcePageId }
+      : { layerId: hit.id };
+  };
   const handleAssetDrop = (event: ReactDragEvent<HTMLFieldSetElement>) => {
     if (!isAcceptedDragPayload(event)) return;
     event.preventDefault();
@@ -1091,13 +1116,13 @@ export function PageCanvas({
     setIsAssetDragOver(false);
     const point = getDropCanvasPoint(event);
     if (!point) return;
-    const placeholderLayerId = findPhotoPlaceholderAtPoint(document, point)?.id;
+    const placeholder = findDropPlaceholder(point);
     if (onDropFiles && hasFileDragPayload(event)) {
       const files = Array.from(event.dataTransfer.files).filter((file) =>
         file.type.startsWith("image/"),
       );
       if (files.length > 0) {
-        onDropFiles(files, point, placeholderLayerId);
+        onDropFiles(files, point, placeholder);
         return;
       }
     }
@@ -1105,7 +1130,7 @@ export function PageCanvas({
     const assetId =
       event.dataTransfer.getData(assetDragMimeType) || event.dataTransfer.getData("text/plain");
     if (!assetId) return;
-    onDropAsset(assetId, point, placeholderLayerId);
+    onDropAsset(assetId, point, placeholder);
   };
 
   return (

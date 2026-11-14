@@ -515,7 +515,7 @@ describe("toolbar and drop actions", () => {
     // Playwright drops on the target's center.
     expect(drop?.point.x).toBeCloseTo(1000, -2);
     expect(drop?.point.y).toBeCloseTo(1000, -2);
-    expect(drop?.placeholderLayerId).toBeUndefined();
+    expect(drop?.placeholder).toBeUndefined();
   });
 
   test("dropping a library asset onto a photo placeholder targets that placeholder", async () => {
@@ -529,7 +529,32 @@ describe("toolbar and drop actions", () => {
     );
 
     expect(probe.droppedAssets).toEqual([
-      expect.objectContaining({ assetId: "asset_test", placeholderLayerId: "photo" }),
+      expect.objectContaining({ assetId: "asset_test", placeholder: { layerId: "photo" } }),
+    ]);
+  });
+
+  test("dropping onto a facing page's placeholder preview targets the page that owns it", async () => {
+    const { probe } = await renderCanvas({
+      layers: [],
+      previewLayers: [
+        {
+          layer: photoLayer({ assetId: undefined, x: 600, y: 600, width: 800, height: 800 }),
+          sourcePageId: "page_left",
+          stackIndex: 0,
+        },
+      ],
+    });
+
+    await userEvent.dragAndDrop(
+      page.getByRole("img", { name: "Draggable test asset" }),
+      canvasLocator(),
+    );
+
+    expect(probe.droppedAssets).toEqual([
+      expect.objectContaining({
+        assetId: "asset_test",
+        placeholder: { layerId: "photo", pageId: "page_left" },
+      }),
     ]);
   });
 });

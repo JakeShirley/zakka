@@ -13,7 +13,9 @@ import { render } from "vitest-browser-react";
 import { assetDragMimeType } from "../features/editor/AssetRail";
 import type { CanvasPoint } from "../features/editor/editorTypes";
 import {
+  type CanvasPreviewLayer,
   PageCanvas,
+  type PhotoPlaceholderDropTarget,
   type ReorderLayerCommand,
   type SelectionPanel,
 } from "../features/editor/PageCanvas";
@@ -59,7 +61,11 @@ export type CanvasProbe = {
   activeSelectionPanel: SelectionPanel | null;
   choosePhotoRequests: string[];
   document: PageDocument;
-  droppedAssets: Array<{ assetId: string; placeholderLayerId?: string; point: CanvasPoint }>;
+  droppedAssets: Array<{
+    assetId: string;
+    placeholder?: PhotoPlaceholderDropTarget;
+    point: CanvasPoint;
+  }>;
   reorders: Array<{ command: ReorderLayerCommand; layerId: string }>;
   selectedLayerIds: string[];
 };
@@ -67,6 +73,7 @@ export type CanvasProbe = {
 type RenderCanvasOptions = {
   assets?: Asset[];
   layers: PageLayer[];
+  previewLayers?: CanvasPreviewLayer[];
   selectedLayerIds?: string[];
 };
 
@@ -77,6 +84,7 @@ type RenderCanvasOptions = {
 export async function renderCanvas({
   assets = [createTestAsset()],
   layers,
+  previewLayers = [],
   selectedLayerIds = [],
 }: RenderCanvasOptions) {
   const probe: CanvasProbe = {
@@ -117,6 +125,7 @@ export async function renderCanvas({
           activeSelectionPanel={panel}
           assetById={assetById}
           document={document}
+          previewLayers={previewLayers}
           selectedLayerIds={selection}
           onActiveSelectionPanelChange={setPanel}
           onChangeLayer={applyUpdate}
@@ -125,11 +134,11 @@ export async function renderCanvas({
             setDocument((current) => deleteLayer(current, layerId));
             setSelection((current) => current.filter((id) => id !== layerId));
           }}
-          onDropAsset={(assetId, point, placeholderLayerId) =>
+          onDropAsset={(assetId, point, placeholder) =>
             probe.droppedAssets.push({
               assetId,
               point,
-              ...(placeholderLayerId ? { placeholderLayerId } : {}),
+              ...(placeholder ? { placeholder } : {}),
             })
           }
           onReorderLayer={(layerId, command) => {

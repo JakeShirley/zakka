@@ -6,6 +6,7 @@ import {
   type ArrangeCanvasPreview,
   type CanvasPreviewLayer,
   PageCanvas,
+  type PhotoPlaceholderDropTarget,
   type ReorderLayerCommand,
   type SelectionPanel,
   type SelectLayerOptions,
@@ -14,6 +15,15 @@ import {
 import type { LayerTransformUpdate } from "../editor/transforms";
 import type { EditHistoryMode } from "./bookEditorHistory";
 import type { ViewMode } from "./bookEditorTypes";
+
+/** An empty photo placeholder under a drop, with the page that owns it. */
+export type PlaceholderTarget = { layerId: string; pageId: string };
+
+const resolvePlaceholder = (
+  pageId: string,
+  placeholder: PhotoPlaceholderDropTarget | undefined,
+): PlaceholderTarget | undefined =>
+  placeholder ? { layerId: placeholder.layerId, pageId: placeholder.pageId ?? pageId } : undefined;
 
 type BookCanvasDeckProps = {
   activePageId: string;
@@ -35,13 +45,13 @@ type BookCanvasDeckProps = {
     pageId: string,
     assetId: string,
     canvasPoint: CanvasPoint,
-    placeholderLayerId?: string,
+    placeholder?: PlaceholderTarget,
   ) => void;
   onDropFiles?: (
     pageId: string,
     files: File[],
     canvasPoint: CanvasPoint,
-    placeholderLayerId?: string,
+    placeholder?: PlaceholderTarget,
   ) => void;
   onReorderLayer: (pageId: string, layerId: string, command: ReorderLayerCommand) => void;
   onSelectLayer: (pageId: string, layerId: string | null, options?: SelectLayerOptions) => void;
@@ -123,14 +133,14 @@ export function BookCanvasDeck({
               onDeleteLayer={(layerId) => onDeleteLayer(pageId, layerId)}
               {...(onDropAsset
                 ? {
-                    onDropAsset: (assetId, point, placeholderLayerId) =>
-                      onDropAsset(pageId, assetId, point, placeholderLayerId),
+                    onDropAsset: (assetId, point, placeholder) =>
+                      onDropAsset(pageId, assetId, point, resolvePlaceholder(pageId, placeholder)),
                   }
                 : {})}
               {...(onDropFiles
                 ? {
-                    onDropFiles: (files, point, placeholderLayerId) =>
-                      onDropFiles(pageId, files, point, placeholderLayerId),
+                    onDropFiles: (files, point, placeholder) =>
+                      onDropFiles(pageId, files, point, resolvePlaceholder(pageId, placeholder)),
                   }
                 : {})}
               onReorderLayer={(layerId, command) => onReorderLayer(pageId, layerId, command)}

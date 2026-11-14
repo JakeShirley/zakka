@@ -1896,6 +1896,7 @@ const renderPhotoPlaceholderSvg = (
   layer: PhotoLayer,
   clipId: string,
   frameClipId: string,
+  shadowFilterId: string,
 ): { body: string; defs: string } => {
   const frameLayout = getPhotoFrameLayout(layer);
   const aperture = frameLayout.image;
@@ -1919,8 +1920,8 @@ const renderPhotoPlaceholderSvg = (
     : frameContent;
 
   return {
-    defs: `${photoClipPath(layer, clipId, aperture)}${frameClipDef}`,
-    body: `<g data-photo-placeholder="true" opacity="${layer.opacity}" transform="${layerTransform(layer)}">${maskedFrameContent}</g>`,
+    defs: `${photoClipPath(layer, clipId, aperture)}${frameClipDef}${renderPhotoShadowFilterSvg(layer, shadowFilterId)}`,
+    body: `<g data-photo-placeholder="true" opacity="${layer.opacity}" transform="${layerTransform(layer)}">${renderPhotoShadowSvg(layer, frameLayout, shadowFilterId)}${maskedFrameContent}</g>`,
   };
 };
 
@@ -1939,15 +1940,16 @@ const renderPhotoLayerSvg = (
     ? createSvgId(idPrefix, "photo", "frameclip", index)
     : createSvgId("photo", "frameclip", index);
 
-  if (!href) {
-    return showPlaceholder && !layer.assetId
-      ? renderPhotoPlaceholderSvg(layer, clipId, frameClipId)
-      : null;
-  }
-
   const shadowFilterId = idPrefix
     ? createSvgId(idPrefix, "photo", "shadow", index)
     : createSvgId("photo", "shadow", index);
+
+  if (!href) {
+    return showPlaceholder && !layer.assetId
+      ? renderPhotoPlaceholderSvg(layer, clipId, frameClipId, shadowFilterId)
+      : null;
+  }
+
   const colorFilterId = idPrefix
     ? createSvgId(idPrefix, "photo", "color", index)
     : createSvgId("photo", "color", index);
