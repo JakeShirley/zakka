@@ -1205,6 +1205,76 @@ describe("page document helpers", () => {
     expect(white.map((channel) => Math.round(channel * 255))).toEqual([204, 204, 195]);
   });
 
+  it("renders shadows and highlights as an anchored, monotonic tone curve", () => {
+    const toned = createPhotoLayer({
+      assetId: "asset_toned",
+      id: "photo_toned",
+      filter: {
+        preset: "none",
+        brightness: 1.1,
+        contrast: 1,
+        saturation: 1.2,
+        shadows: 0.6,
+        highlights: -0.4,
+      },
+    });
+    const crushed = createPhotoLayer({
+      assetId: "asset_crushed",
+      id: "photo_crushed",
+      filter: { preset: "none", brightness: 1, contrast: 1, saturation: 1, shadows: -1 },
+    });
+    const svg = renderPageDocumentSvg(createPageDocument({ layers: [toned, crushed] }), {
+      resolvePhotoHref: (layer) => `/assets/${layer.assetId}/content`,
+    });
+    const filters = [...svg.matchAll(/<filter id="photo_color_\d"[^>]*>(.*?)<\/filter>/g)].map(
+      (match) => match[1] ?? "",
+    );
+    const curveOf = (filter: string) =>
+      (filter.match(/<feFuncR type="table" tableValues="([^"]+)"/)?.[1] ?? "")
+        .split(" ")
+        .map(Number);
+
+    expect(filters).toHaveLength(2);
+    // Tone curve sits after brightness and before saturation.
+    expect(filters[0]?.replace(/ (?:values|tableValues)="[^"]+"/g, "")).toBe(
+      '<feColorMatrix type="matrix" /><feComponentTransfer data-photo-tone="true"><feFuncR type="table" /><feFuncG type="table" /><feFuncB type="table" /></feComponentTransfer><feColorMatrix type="matrix" />',
+    );
+
+    const lifted = curveOf(filters[0] ?? "");
+    expect(lifted).toHaveLength(33);
+    expect(lifted[0]).toBe(0);
+    expect(lifted[32]).toBe(1);
+    expect(lifted[8]).toBeGreaterThan(0.25);
+    expect(lifted[24]).toBeLessThan(0.75);
+
+    const crushedCurve = curveOf(filters[1] ?? "");
+    expect(crushedCurve[2]).toBe(0);
+    expect(crushedCurve[8]).toBeLessThan(0.25);
+    expect(crushedCurve[32]).toBe(1);
+    expect(
+      crushedCurve.every((value, index) => index === 0 || value >= (crushedCurve[index - 1] ?? 0)),
+    ).toBe(true);
+  });
+
+  it("defaults missing shadows and highlights for documents saved before tone adjustments", () => {
+    const document = pageDocumentSchema.parse({
+      version: 1,
+      canvas: { width: 2400, height: 3000, backgroundColor: "#ffffff" },
+      layers: [
+        {
+          ...createPhotoLayer({ assetId: "asset_legacy", id: "photo_legacy" }),
+          filter: { preset: "warm", brightness: 1, contrast: 1, saturation: 1 },
+        },
+      ],
+    });
+    const [layer] = document.layers;
+
+    expect(layer?.kind === "photo" ? layer.filter : null).toMatchObject({
+      shadows: 0,
+      highlights: 0,
+    });
+  });
+
   it("prefixes reusable SVG ids for pages rendered in the same DOM", () => {
     const photo = createPhotoLayer({ assetId: "asset_1", id: "photo_1" });
     const document = createPageDocument({ layers: [photo] });

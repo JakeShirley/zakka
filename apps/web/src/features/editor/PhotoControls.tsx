@@ -1,8 +1,79 @@
 import { Button } from "@fluentui/react-components";
 import { ImageAddRegular, PageFitRegular } from "@fluentui/react-icons";
 import { isPhotoPlaceholder, type PhotoLayer, resetPhotoLayerEdits } from "@zakka/editor-core";
+import { useId } from "react";
 
 import { NumericInput } from "../../components/NumericInput";
+
+type PhotoAdjustmentKey = "brightness" | "contrast" | "saturation" | "shadows" | "highlights";
+
+type PhotoAdjustment = {
+  key: PhotoAdjustmentKey;
+  label: string;
+  min: number;
+  max: number;
+  neutral: number;
+};
+
+// Ranges match the editor-core filter schema so any saved value is editable; values are shown
+// as -100..+100 on each side of neutral.
+const photoAdjustments: PhotoAdjustment[] = [
+  { key: "brightness", label: "Brightness", min: 0.2, max: 2, neutral: 1 },
+  { key: "contrast", label: "Contrast", min: 0.2, max: 2, neutral: 1 },
+  { key: "highlights", label: "Highlights", min: -1, max: 1, neutral: 0 },
+  { key: "shadows", label: "Shadows", min: -1, max: 1, neutral: 0 },
+  { key: "saturation", label: "Saturation", min: 0, max: 3, neutral: 1 },
+];
+
+const formatAdjustment = (adjustment: PhotoAdjustment, value: number): string => {
+  const span =
+    value >= adjustment.neutral
+      ? adjustment.max - adjustment.neutral
+      : adjustment.neutral - adjustment.min;
+  const amount = Math.round(((value - adjustment.neutral) / span) * 100);
+  return amount > 0 ? `+${amount}` : String(amount);
+};
+
+function PhotoAdjustmentSlider({
+  adjustment,
+  value,
+  onChange,
+}: {
+  adjustment: PhotoAdjustment;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const id = useId();
+
+  return (
+    <div className="washi-tape-axis-scale-field">
+      <div className="washi-tape-slider-label-row">
+        <label htmlFor={id}>{adjustment.label}</label>
+        <output htmlFor={id}>{formatAdjustment(adjustment, value)}</output>
+      </div>
+      <div className="washi-tape-slider-row">
+        <input
+          id={id}
+          max={adjustment.max}
+          min={adjustment.min}
+          step={0.01}
+          type="range"
+          value={value}
+          onChange={(event) => onChange(Number(event.currentTarget.value))}
+        />
+        <button
+          type="button"
+          className="washi-tape-scale-reset-button"
+          aria-label={`Reset ${adjustment.label.toLowerCase()}`}
+          disabled={value === adjustment.neutral}
+          onClick={() => onChange(adjustment.neutral)}
+        >
+          Reset
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function PhotoControls({
   layer,
@@ -80,6 +151,17 @@ export function PhotoControls({
                 <option value="sepia">Sepia</option>
               </select>
             </label>
+          </fieldset>
+          <fieldset className="inspector-section">
+            <legend>Adjust</legend>
+            {photoAdjustments.map((adjustment) => (
+              <PhotoAdjustmentSlider
+                key={adjustment.key}
+                adjustment={adjustment}
+                value={layer.filter[adjustment.key]}
+                onChange={(value) => updateFilter({ [adjustment.key]: value })}
+              />
+            ))}
           </fieldset>
           <fieldset className="inspector-section">
             <legend>Transform</legend>

@@ -167,6 +167,8 @@ const defaultPhotoFilter = {
   brightness: 1,
   contrast: 1,
   saturation: 1,
+  shadows: 0,
+  highlights: 0,
 };
 
 const defaultTextStroke = {
@@ -360,6 +362,9 @@ export const photoLayerSchema = pageLayerBaseSchema.extend({
       brightness: z.number().finite().min(0.2).max(2),
       contrast: z.number().finite().min(0.2).max(2),
       saturation: z.number().finite().min(0).max(3),
+      // Tone adjustments in [-1, 1]: positive lifts, negative deepens that tonal range.
+      shadows: z.number().finite().min(-1).max(1).default(0),
+      highlights: z.number().finite().min(-1).max(1).default(0),
     })
     .default(defaultPhotoFilter),
 });
@@ -669,7 +674,6 @@ export type CreatePhotoLayerInput = Partial<
     PhotoLayer,
     | "border"
     | "crop"
-    | "filter"
     | "fit"
     | "height"
     | "id"
@@ -686,6 +690,8 @@ export type CreatePhotoLayerInput = Partial<
 > & {
   /** Leave out to create an empty photo placeholder. */
   assetId?: string | undefined;
+  /** Tone adjustments added after the original filter fields may be omitted. */
+  filter?: z.input<typeof photoLayerSchema>["filter"];
 };
 
 export type CreateTextLayerInput = Partial<
@@ -1295,11 +1301,56 @@ const isIdentityPhotoFilter = (filter: PhotoLayer["filter"]): boolean =>
   filter.preset === "none" &&
   filter.brightness === 1 &&
   filter.contrast === 1 &&
-  filter.saturation === 1;
+  filter.saturation === 1 &&
+  filter.shadows === 0 &&
+  filter.highlights === 0;
 
 const formatMatrixValue = (value: number): string => {
   const rounded = Math.round(value * 10000) / 10000;
   return Object.is(rounded, -0) ? "0" : String(rounded);
+};
+
+const colorTransformPrimitiveSvg = (transform: ColorTransform): string => {
+  const values = [
+    ...transform.linear.flatMap((row, rowIndex) => [...row, 0, transform.offset[rowIndex] ?? 0]),
+    0,
+    0,
+    0,
+    1,
+    0,
+  ]
+    .map(formatMatrixValue)
+    .join(" ");
+  return `<feColorMatrix type="matrix" values="${values}" />`;
+};
+
+const photoToneCurveSamples = 32;
+// Largest per-channel shift (at the centre of the shadow/highlight band) for an amount of ±1.
+const photoToneMaxShift = 0.25;
+
+/**
+ * Tone curve for the shadows/highlights adjustments. Each band is a smooth bump that peaks in its
+ * third of the tonal range and leaves pure black and white anchored; the result is clamped and kept
+ * monotonic so strong negative values crush rather than invert.
+ */
+const photoToneCurve = (shadows: number, highlights: number): number[] => {
+  let previous = 0;
+  return Array.from({ length: photoToneCurveSamples + 1 }, (_, index) => {
+    const x = index / photoToneCurveSamples;
+    const shadowBand = (27 / 4) * x * (1 - x) ** 2;
+    const highlightBand = (27 / 4) * x * x * (1 - x);
+    const shifted = x + photoToneMaxShift * (shadows * shadowBand + highlights * highlightBand);
+    previous = Math.max(previous, Math.min(Math.max(shifted, 0), 1));
+    return previous;
+  });
+};
+
+const photoToneCurvePrimitiveSvg = (shadows: number, highlights: number): string => {
+  const tableValues = photoToneCurve(shadows, highlights).map(formatMatrixValue).join(" ");
+  const channels = ["R", "G", "B"]
+    .map((channel) => `<feFunc${channel} type="table" tableValues="${tableValues}" />`)
+    .join("");
+  return `<feComponentTransfer data-photo-tone="true">${channels}</feComponentTransfer>`;
 };
 
 const renderPhotoColorFilterSvg = (layer: PhotoLayer, filterId: string): string => {
@@ -1307,30 +1358,16 @@ const renderPhotoColorFilterSvg = (layer: PhotoLayer, filterId: string): string 
     return "";
   }
 
+  const { brightness, contrast, saturation, shadows, highlights } = layer.filter;
   // One primitive per step so each result is clamped to [0, 1], matching chained CSS filters.
-  const adjustments = [
-    layer.filter.brightness === 1 ? null : colorTransformFns.brightness(layer.filter.brightness),
-    layer.filter.contrast === 1 ? null : colorTransformFns.contrast(layer.filter.contrast),
-    layer.filter.saturation === 1 ? null : colorTransformFns.saturate(layer.filter.saturation),
-  ].filter((transform): transform is ColorTransform => transform !== null);
-  const primitives = [...photoFilterPresetTransforms[layer.filter.preset], ...adjustments]
-    .map((transform) => {
-      const values = [
-        ...transform.linear.flatMap((row, rowIndex) => [
-          ...row,
-          0,
-          transform.offset[rowIndex] ?? 0,
-        ]),
-        0,
-        0,
-        0,
-        1,
-        0,
-      ]
-        .map(formatMatrixValue)
-        .join(" ");
-      return `<feColorMatrix type="matrix" values="${values}" />`;
-    })
+  const primitives = [
+    ...photoFilterPresetTransforms[layer.filter.preset].map(colorTransformPrimitiveSvg),
+    brightness === 1 ? null : colorTransformPrimitiveSvg(colorTransformFns.brightness(brightness)),
+    contrast === 1 ? null : colorTransformPrimitiveSvg(colorTransformFns.contrast(contrast)),
+    shadows === 0 && highlights === 0 ? null : photoToneCurvePrimitiveSvg(shadows, highlights),
+    saturation === 1 ? null : colorTransformPrimitiveSvg(colorTransformFns.saturate(saturation)),
+  ]
+    .filter((primitive): primitive is string => primitive !== null)
     .join("");
 
   return `<filter id="${filterId}" data-photo-filter="${layer.filter.preset}" color-interpolation-filters="sRGB">${primitives}</filter>`;
