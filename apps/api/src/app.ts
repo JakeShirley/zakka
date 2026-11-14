@@ -115,12 +115,25 @@ import {
   shutterflyProjectListResponseSchema,
   shutterflyProjectListRoute,
   mapTileRoute,
+  builtInBackgroundContentRoute,
+  builtInBackgroundThumbnailRoute,
+  customBackgroundContentRoute,
+  customBackgroundDeleteRoute,
+  customBackgroundListResponseSchema,
+  customBackgroundListRoute,
+  customBackgroundPatchRoute,
+  customBackgroundResponseSchema,
+  type CustomBackgroundResponse,
+  customBackgroundThumbnailRoute,
+  customBackgroundUploadRoute,
 } from "@zakka/api-contract";
 import {
   createBookSpreads,
   createPageDocument,
+  getCustomBackgroundStorageId,
   type PageDocument,
   pageDocumentSchema,
+  toCustomBackgroundId,
   type WashiTapeDesign,
   washiTapeDesignSchema,
 } from "@zakka/editor-core";
@@ -162,6 +175,7 @@ import type {
   AssetVariantRecord,
   BookPageRecord,
   BookRecord,
+  CustomBackgroundRecord,
   CustomStickerRecord,
   CustomWashiTapeRecord,
   ExportJobRecord,
@@ -182,6 +196,12 @@ import {
   ShutterflyProjectNotSupportedError,
 } from "./integrations/shutterfly/service.js";
 import { CustomStickerUploadError, createCustomStickerFromUpload } from "./custom-stickers.js";
+import {
+  CustomBackgroundUploadError,
+  createCustomBackgroundFromUpload,
+  deleteCustomBackground,
+  readBuiltInBackgroundTexture,
+} from "./custom-backgrounds.js";
 
 type ApiBindings = {
   Variables: {
@@ -488,6 +508,22 @@ const toCustomWashiTapeResponse = (washiTape: CustomWashiTapeRecord): CustomWash
     updatedAt: washiTape.updatedAt,
   });
 
+const toCustomBackgroundResponse = (background: CustomBackgroundRecord): CustomBackgroundResponse =>
+  customBackgroundResponseSchema.parse({
+    id: background.id,
+    backgroundId: toCustomBackgroundId(background.id),
+    name: background.name,
+    mimeType: background.mimeType,
+    byteSize: background.byteSize,
+    width: background.width,
+    height: background.height,
+    source: background.source,
+    contentUrl: `/api/v1/custom-backgrounds/${background.id}/content`,
+    thumbnailUrl: `/api/v1/custom-backgrounds/${background.id}/thumbnail`,
+    createdAt: background.createdAt,
+    updatedAt: background.updatedAt,
+  });
+
 const toBookSummaryResponse = (
   book: BookRecord,
   pages: Array<{ bookPage: BookPageRecord; page: PageRecord }>,
@@ -597,6 +633,17 @@ const validatePageDocumentAssets = (
     if (!repositories.assets.findByIdForAccount(accountId, assetId)) {
       return false;
     }
+  }
+
+  const customBackgroundId = document.canvas.background
+    ? getCustomBackgroundStorageId(document.canvas.background.backgroundId)
+    : null;
+
+  if (
+    customBackgroundId &&
+    !repositories.customBackgrounds.findByIdForAccount(accountId, customBackgroundId)
+  ) {
+    return false;
   }
 
   return true;
@@ -1200,7 +1247,7 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
         createErrorResponse(
           context,
           "page_asset_not_found",
-          "Photo layers must reference assets owned by the account",
+          "Photo layers and backgrounds must reference assets owned by the account",
         ),
         400,
       );
@@ -1301,7 +1348,7 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
         createErrorResponse(
           context,
           "page_asset_not_found",
-          "Photo layers must reference assets owned by the account",
+          "Photo layers and backgrounds must reference assets owned by the account",
         ),
         400,
       );
@@ -2749,6 +2796,221 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
 
     return context.body(null, 204);
   });
+
+  app.openapi(customBackgroundListRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "backgrounds_unavailable", "Backgrounds are unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const backgrounds = options.repositories.customBackgrounds.listForAccount(
+      authSession.account.id,
+    );
+
+    return context.json(
+      customBackgroundListResponseSchema.parse({
+        backgrounds: backgrounds.map(toCustomBackgroundResponse),
+      }),
+      200,
+    );
+  });
+
+  app.openapi(customBackgroundUploadRoute, async (context) => {
+    if (!options.repositories || !options.storage) {
+      return context.json(
+        createErrorResponse(context, "backgrounds_unavailable", "Backgrounds are unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    let body: Record<string, unknown>;
+
+    try {
+      body = await context.req.parseBody();
+    } catch {
+      return context.json(
+        createErrorResponse(context, "invalid_upload", "Upload must be multipart form data"),
+        400,
+      );
+    }
+
+    try {
+      const background = await createCustomBackgroundFromUpload({
+        accountId: authSession.account.id,
+        file: body.file,
+        name: typeof body.name === "string" ? body.name : undefined,
+        repositories: options.repositories,
+        storage: options.storage,
+      });
+
+      return context.json(toCustomBackgroundResponse(background), 201);
+    } catch (error) {
+      if (error instanceof CustomBackgroundUploadError) {
+        return context.json(createErrorResponse(context, error.code, error.message), error.status);
+      }
+
+      throw error;
+    }
+  });
+
+  app.openapi(customBackgroundPatchRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "backgrounds_unavailable", "Backgrounds are unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const { backgroundId } = context.req.valid("param");
+    const { name } = context.req.valid("json");
+    const updated = options.repositories.customBackgrounds.rename({
+      accountId: authSession.account.id,
+      backgroundId,
+      name,
+    });
+
+    if (!updated) {
+      return context.json(
+        createErrorResponse(context, "background_not_found", "Background not found"),
+        404,
+      );
+    }
+
+    return context.json(toCustomBackgroundResponse(updated), 200);
+  });
+
+  app.openapi(customBackgroundDeleteRoute, async (context) => {
+    if (!options.repositories || !options.storage) {
+      return context.json(
+        createErrorResponse(context, "backgrounds_unavailable", "Backgrounds are unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const { backgroundId } = context.req.valid("param");
+    const deleted = await deleteCustomBackground({
+      accountId: authSession.account.id,
+      backgroundId,
+      repositories: options.repositories,
+      storage: options.storage,
+    });
+
+    if (!deleted) {
+      return context.json(
+        createErrorResponse(context, "background_not_found", "Background not found"),
+        404,
+      );
+    }
+
+    return context.body(null, 204);
+  });
+
+  for (const [route, variant] of [
+    [customBackgroundContentRoute, "content"],
+    [customBackgroundThumbnailRoute, "thumbnail"],
+  ] as const) {
+    app.openapi(route, async (context) => {
+      if (!options.repositories || !options.storage) {
+        return context.json(
+          createErrorResponse(context, "backgrounds_unavailable", "Backgrounds are unavailable"),
+          500,
+        );
+      }
+
+      const authSession = getAuthenticatedSession(context, options.repositories);
+
+      if (!authSession) {
+        return context.json(
+          createErrorResponse(context, "not_authenticated", "Authentication is required"),
+          401,
+        );
+      }
+
+      const { backgroundId } = context.req.valid("param");
+      const background = options.repositories.customBackgrounds.findByIdForAccount(
+        authSession.account.id,
+        backgroundId,
+      );
+
+      if (!background) {
+        return context.json(
+          createErrorResponse(context, "background_not_found", "Background not found"),
+          404,
+        );
+      }
+
+      const buffer = await options.storage.read(
+        variant === "content" ? background.storageKey : background.thumbnailStorageKey,
+      );
+
+      return context.body(toArrayBuffer(buffer), 200, {
+        "cache-control": "private, max-age=86400",
+        "content-length": String(buffer.byteLength),
+        "content-type": background.mimeType,
+      });
+    });
+  }
+
+  for (const [route, variant] of [
+    [builtInBackgroundContentRoute, "content"],
+    [builtInBackgroundThumbnailRoute, "thumbnail"],
+  ] as const) {
+    app.openapi(route, async (context) => {
+      const { slug } = context.req.valid("param");
+      const buffer = await readBuiltInBackgroundTexture(slug, variant);
+
+      if (!buffer) {
+        return context.json(
+          createErrorResponse(context, "background_not_found", "Background not found"),
+          404,
+        );
+      }
+
+      return context.body(toArrayBuffer(buffer), 200, {
+        "cache-control": "public, max-age=604800, immutable",
+        "content-length": String(buffer.byteLength),
+        "content-type": "image/jpeg",
+      });
+    });
+  }
 
   app.openapi(exportCreateRoute, async (context) => {
     if (!options.repositories || !options.storage) {

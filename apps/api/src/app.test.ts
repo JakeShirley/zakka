@@ -7,6 +7,8 @@ import {
   assetResponseSchema,
   authSessionResponseSchema,
   bookResponseSchema,
+  customBackgroundListResponseSchema,
+  customBackgroundResponseSchema,
   customWashiTapeListResponseSchema,
   customWashiTapeResponseSchema,
   exportJobResponseSchema,
@@ -1365,5 +1367,149 @@ describe("api app", () => {
 
     expect(deleteResponse.status).toBe(204);
     expect((await listAfterDelete.json()).washiTapes).toEqual([]);
+  });
+
+  it("uploads, serves, renames, and deletes account-scoped custom backgrounds", async () => {
+    const app = await createTestAppWithStorage();
+    const cookie = await registerAccount(app, {
+      displayName: "Background Owner",
+      email: "background-owner@example.com",
+    });
+    const otherCookie = await registerAccount(app, {
+      displayName: "Background Other",
+      email: "background-other@example.com",
+    });
+    const form = new FormData();
+
+    form.set(
+      "file",
+      new File([toArrayBuffer(await createPng())], "beach.png", { type: "image/png" }),
+    );
+    form.set("name", "  Beach day  ");
+
+    const uploadResponse = await app.request("/api/v1/custom-backgrounds", {
+      body: form,
+      headers: { cookie },
+      method: "POST",
+    });
+    const created = customBackgroundResponseSchema.parse(await uploadResponse.json());
+
+    expect(uploadResponse.status).toBe(201);
+    expect(created).toMatchObject({
+      backgroundId: `custom:${created.id}`,
+      height: 16,
+      mimeType: "image/jpeg",
+      name: "Beach day",
+      source: "upload",
+      width: 24,
+    });
+
+    const contentResponse = await app.request(created.contentUrl, { headers: { cookie } });
+    const thumbnailResponse = await app.request(created.thumbnailUrl, { headers: { cookie } });
+    const otherContentResponse = await app.request(created.contentUrl, {
+      headers: { cookie: otherCookie },
+    });
+
+    expect(contentResponse.status).toBe(200);
+    expect(contentResponse.headers.get("content-type")).toBe("image/jpeg");
+    expect((await sharp(Buffer.from(await contentResponse.arrayBuffer())).metadata()).format).toBe(
+      "jpeg",
+    );
+    expect(thumbnailResponse.status).toBe(200);
+    expect(otherContentResponse.status).toBe(404);
+
+    const background = {
+      backgroundId: created.backgroundId,
+      height: 1080,
+      scale: 1,
+      width: 1080,
+      x: 0,
+      y: 0,
+    };
+    const ownPageResponse = await postJson(
+      app,
+      "/api/v1/pages",
+      { title: "Beach", document: createPageDocument({ canvas: { background } }) },
+      cookie,
+    );
+    const otherPageResponse = await postJson(
+      app,
+      "/api/v1/pages",
+      { title: "Stolen", document: createPageDocument({ canvas: { background } }) },
+      otherCookie,
+    );
+
+    expect(ownPageResponse.status).toBe(201);
+    expect(otherPageResponse.status).toBe(400);
+    expect(await otherPageResponse.json()).toMatchObject({
+      error: { code: "page_asset_not_found" },
+    });
+
+    const renameResponse = await app.request(`/api/v1/custom-backgrounds/${created.id}`, {
+      body: JSON.stringify({ name: "Shoreline" }),
+      headers: { cookie, "content-type": "application/json" },
+      method: "PATCH",
+    });
+
+    expect(renameResponse.status).toBe(200);
+    expect((await renameResponse.json()).name).toBe("Shoreline");
+
+    const otherListResponse = await app.request("/api/v1/custom-backgrounds", {
+      headers: { cookie: otherCookie },
+    });
+    const otherDeleteResponse = await app.request(`/api/v1/custom-backgrounds/${created.id}`, {
+      headers: { cookie: otherCookie },
+      method: "DELETE",
+    });
+
+    expect((await otherListResponse.json()).backgrounds).toEqual([]);
+    expect(otherDeleteResponse.status).toBe(404);
+
+    const deleteResponse = await app.request(`/api/v1/custom-backgrounds/${created.id}`, {
+      headers: { cookie },
+      method: "DELETE",
+    });
+    const listAfterDelete = customBackgroundListResponseSchema.parse(
+      await (await app.request("/api/v1/custom-backgrounds", { headers: { cookie } })).json(),
+    );
+    const contentAfterDelete = await app.request(created.contentUrl, { headers: { cookie } });
+
+    expect(deleteResponse.status).toBe(204);
+    expect(listAfterDelete.backgrounds).toEqual([]);
+    expect(contentAfterDelete.status).toBe(404);
+  });
+
+  it("rejects non-image background uploads", async () => {
+    const app = await createTestAppWithStorage();
+    const cookie = await registerAccount(app, {
+      displayName: "Background Uploader",
+      email: "background-uploader@example.com",
+    });
+    const form = new FormData();
+
+    form.set("file", new File(["not an image"], "notes.txt", { type: "text/plain" }));
+
+    const response = await app.request("/api/v1/custom-backgrounds", {
+      body: form,
+      headers: { cookie },
+      method: "POST",
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("serves built-in background textures without authentication", async () => {
+    const app = createTestApp();
+    const contentResponse = await app.request("/api/v1/backgrounds/builtin/kraft-paper/content");
+    const thumbnailResponse = await app.request(
+      "/api/v1/backgrounds/builtin/kraft-paper/thumbnail",
+    );
+    const missingResponse = await app.request("/api/v1/backgrounds/builtin/polka-dots/content");
+
+    expect(contentResponse.status).toBe(200);
+    expect(contentResponse.headers.get("content-type")).toBe("image/jpeg");
+    expect(contentResponse.headers.get("cache-control")).toContain("immutable");
+    expect(thumbnailResponse.status).toBe(200);
+    expect(missingResponse.status).toBe(404);
   });
 });

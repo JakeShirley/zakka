@@ -13,9 +13,6 @@ if (!existsSync(join(vendorRoot, "textures"))) {
 rmSync(distRoot, { force: true, recursive: true });
 mkdirSync(distRoot, { recursive: true });
 cpSync(join(vendorRoot, "textures"), join(distRoot, "textures"), { recursive: true });
-writeFileSync(
-  join(distRoot, "LICENSE.md"),
-  readFileSync(join(vendorRoot, "LICENSE.md"), "utf8"),
-);
+writeFileSync(join(distRoot, "LICENSE.md"), readFileSync(join(vendorRoot, "LICENSE.md"), "utf8"));
 
 console.log("Copied background textures to dist/backgrounds.");

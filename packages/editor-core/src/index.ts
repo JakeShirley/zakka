@@ -2598,6 +2598,7 @@ export const createPageDocument = (input: CreatePageDocumentInput = {}): PageDoc
       width: input.canvas?.width ?? 2400,
       height: input.canvas?.height ?? 3000,
       backgroundColor: input.canvas?.backgroundColor ?? "#fffdf7",
+      ...(input.canvas?.background ? { background: input.canvas.background } : {}),
     },
     layers: input.layers ?? [],
   });

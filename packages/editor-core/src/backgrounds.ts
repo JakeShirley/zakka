@@ -169,15 +169,15 @@ const patternBackgrounds: BuiltInBackground[] = [
     "Grid paper",
     "#fbfbf6",
     75,
-    () => `${fill("#fbfbf6", 75)}<path d="M0 0.5 H75 M0.5 0 V75" stroke="#a9cbe6" stroke-width="3" />`,
+    () =>
+      `${fill("#fbfbf6", 75)}<path d="M0 0.5 H75 M0.5 0 V75" stroke="#a9cbe6" stroke-width="3" />`,
   ),
   tile(
     "lined-paper",
     "Lined paper",
     "#fdfcf6",
     { width: 100, height: 102 },
-    () =>
-      `${fill("#fdfcf6", 100, 102)}<path d="M0 100 H100" stroke="#9cc0df" stroke-width="3" />`,
+    () => `${fill("#fdfcf6", 100, 102)}<path d="M0 100 H100" stroke="#9cc0df" stroke-width="3" />`,
   ),
   tile(
     "dot-grid",
