@@ -65,8 +65,6 @@ const defaultBackgroundColor = "#ffffff";
 const minZakkaFontSize = 6;
 const maxZakkaFontSize = 240;
 const maxLayersPerPage = 200;
-// Matches the text background padding limit in the editor-core text layer schema.
-const maxZakkaTextBackgroundPadding = 120;
 const hexColorPattern = /^#[0-9a-fA-F]{6}$/;
 
 const stringValue = (value: unknown): string | null =>
@@ -552,34 +550,49 @@ const mapItemToPlacement = (
       }
 
       const background = textBackground(item);
-      // Zakka pads a text background evenly on every side. Padding by the top inset puts the
-      // background's top edge on Shutterfly's box without shrinking the text area, so the
-      // fill can extend slightly past Shutterfly's box on the other sides.
-      const backgroundPadding = background ? Math.min(topInset, maxZakkaTextBackgroundPadding) : 0;
+
+      if (background) {
+        // Shutterfly fills its whole text box, while the text layer below starts at the first
+        // baseline, so the fill gets its own empty text layer at Shutterfly's box.
+        pushLayer(
+          context,
+          page,
+          createTextLayer({
+            ...common,
+            id: `${layerId}_background`,
+            text: "",
+            background: {
+              enabled: true,
+              color: background.color,
+              opacity: background.opacity,
+              padding: 0,
+              radius: 0,
+            },
+          }),
+        );
+      }
+
+      const height = Math.max(rect.h - topInset, fontSize * 1.2);
+      // Keep the shortened text layer where it sits inside Shutterfly's rotated box: Zakka
+      // rotates each layer about its own center, so move that center along the rotated y axis.
+      const centerOffset = topInset + height / 2 - rect.h / 2;
+      const radians = (common.rotation * Math.PI) / 180;
+      const centerX = rect.x + rect.w / 2 - centerOffset * Math.sin(radians);
+      const centerY = rect.y + rect.h / 2 + centerOffset * Math.cos(radians);
 
       pushLayer(
         context,
         page,
         createTextLayer({
           ...common,
-          y: rect.y + topInset,
-          height: Math.max(rect.h - topInset, fontSize * 1.2),
+          x: centerX - rect.w / 2,
+          y: centerY - height / 2,
+          height,
           text: escapedText.text,
           fontFamily: font.family,
           fontSize,
           color: color && hexColorPattern.test(color) ? color.toLowerCase() : "#000000",
           align: alignmentFromAnchor(item.content.userData.alignmentAnchor),
-          ...(background
-            ? {
-                background: {
-                  enabled: true,
-                  color: background.color,
-                  opacity: background.opacity,
-                  padding: backgroundPadding,
-                  radius: 0,
-                },
-              }
-            : {}),
         }),
       );
       return;

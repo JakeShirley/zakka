@@ -150,6 +150,12 @@ const createFakeShutterfly = async (): Promise<FakeShutterfly> => {
       });
     }
 
+    if (url.startsWith("https://projects-api3.shutterfly.com/projects/v2/project/1000000000004?")) {
+      return new Response(fixtureText.replaceAll('"DA_46646"', '"DA_orphan"'), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+
     if (url.startsWith("https://projects-api3.shutterfly.com/projects/v2/project/1000000000001?")) {
       return new Response(fixtureText, { headers: { "content-type": "application/json" } });
     }
@@ -193,6 +199,13 @@ const createFakeShutterfly = async (): Promise<FakeShutterfly> => {
           attributes: { validNewFontId: "DA_650924" },
         },
         { id: "DA_650924", name: "Mrs Eaves Roman", assetType: "font" },
+        {
+          id: "DA_orphan",
+          name: "Helvetica Neue - DUP2",
+          assetType: "font",
+          availability: "hidden",
+          attributes: { validNewFontId: "DA_missing" },
+        },
         sticker("DA_22741", "round-frame"),
         sticker("DA_893", "winter-break"),
         {
@@ -455,6 +468,20 @@ describe("Shutterfly integration routes", () => {
     expect(layers.find((layer) => layer.kind === "text")).toMatchObject({
       fontFamily: "Mrs Eaves Roman",
     });
+    expect(
+      fake.requests.filter((request) => request.url.includes("/design-asset-by-ids")),
+    ).toHaveLength(2);
+  });
+
+  it("requests a missing replacement font only once", async () => {
+    const { app, fake } = await createTestApp();
+    const cookie = await register(app);
+
+    await connect(app, cookie, validRefreshToken);
+
+    const response = await importProject(app, cookie, "1000000000004");
+
+    expect(response.status).toBe(201);
     expect(
       fake.requests.filter((request) => request.url.includes("/design-asset-by-ids")),
     ).toHaveLength(2);

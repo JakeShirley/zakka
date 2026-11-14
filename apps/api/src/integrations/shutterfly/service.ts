@@ -657,17 +657,24 @@ export const createShutterflyIntegration = (options: {
         ? await withSession(accountId, (session) => client.getDesignAssets(session, designAssetIds))
         : new Map<string, ShutterflyDesignAsset>();
 
+      // The catalog can omit a replacement, so remember every requested id to fetch each once.
+      const requestedDesignAssetIds = new Set(designAssetIds);
+
       for (let hop = 0; hop < maxFontReplacementHops; hop += 1) {
         const replacementIds = [
           ...new Set(
             [...designAssets.values()]
               .map(fontReplacementId)
-              .filter((id): id is string => id !== null && !designAssets.has(id)),
+              .filter((id): id is string => id !== null && !requestedDesignAssetIds.has(id)),
           ),
         ];
 
         if (replacementIds.length === 0) {
           break;
+        }
+
+        for (const id of replacementIds) {
+          requestedDesignAssetIds.add(id);
         }
 
         const replacements = await withSession(accountId, (session) =>
