@@ -129,9 +129,6 @@ const prepareMapLayers = async (
   }
 
   const deadline = AbortSignal.timeout(exportTileDeadlineMs);
-  const pastDeadline = new Promise<null>((resolvePastDeadline) =>
-    deadline.addEventListener("abort", () => resolvePastDeadline(null), { once: true }),
-  );
 
   await Promise.all([
     ...[...details].map(async (detail) => {
@@ -139,11 +136,7 @@ const prepareMapLayers = async (
     }),
     ...[...tiles].map(async ([key, tile]) => {
       try {
-        // Racing the deadline also bounds tiles already being fetched for another request.
-        const image = await Promise.race([
-          mapTiles?.getTile(tile, { signal: deadline }),
-          pastDeadline,
-        ]);
+        const image = await mapTiles?.getTile(tile, { signal: deadline });
 
         if (image) {
           tileHrefs.set(key, `data:${image.mimeType};base64,${image.buffer.toString("base64")}`);

@@ -60,6 +60,12 @@ const highDetailScaleThreshold = 1200;
 const maxTileCount = 400;
 /** Page units (1/300 in) per tile pixel; standard keeps tile labels legible at about 150 DPI. */
 const tileUnitsPerPixel: Record<MapTileDetail, number> = { fine: 1, large: 4, standard: 2 };
+/**
+ * View centers keep about 1 cm of precision so street-level pans move smoothly instead of
+ * snapping: at zoom 18 in a 1500-unit frame, 1e-6 degrees is about one page unit. Matches
+ * `mapViewSchema`.
+ */
+const mapCenterDecimals = 7;
 
 const roundNumber = (value: number, digits = 1): number => {
   const factor = 10 ** digits;
@@ -239,8 +245,8 @@ export const resolveMapLayerView = (layer: MapLayer): MapView => {
     });
     // Keep the whole sphere in frame so the globe style reads as a globe; custom view can zoom in.
     return {
-      centerLatitude: roundNumber(centerLatitude, 4),
-      centerLongitude: roundNumber(centerLongitude, 4),
+      centerLatitude: roundNumber(centerLatitude, mapCenterDecimals),
+      centerLongitude: roundNumber(centerLongitude, mapCenterDecimals),
       zoom: 0,
     };
   }
@@ -297,8 +303,8 @@ export const resolveMapLayerView = (layer: MapLayer): MapView => {
   const [, centerLatitude] = unitProjection.invert?.(centerPoint) ?? [0, 0];
 
   return {
-    centerLatitude: roundNumber(centerLatitude, 4),
-    centerLongitude: roundNumber(centerLongitude, 4),
+    centerLatitude: roundNumber(centerLatitude, mapCenterDecimals),
+    centerLongitude: roundNumber(centerLongitude, mapCenterDecimals),
     zoom: roundNumber(clamp(zoom, 0, maxZoom), 2),
   };
 };
@@ -315,8 +321,8 @@ export const getMapZoomRange = (layer: MapLayer): { max: number; min: number } =
 type CustomMapLayerView = MapLayerView & { mode: "custom" };
 
 const customView = (view: MapView): CustomMapLayerView => ({
-  centerLatitude: roundNumber(view.centerLatitude, 4),
-  centerLongitude: roundNumber(normalizeLongitude(view.centerLongitude), 4),
+  centerLatitude: roundNumber(view.centerLatitude, mapCenterDecimals),
+  centerLongitude: roundNumber(normalizeLongitude(view.centerLongitude), mapCenterDecimals),
   mode: "custom",
   zoom: roundNumber(view.zoom, 2),
 });

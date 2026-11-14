@@ -82,8 +82,10 @@ describe("map tile source", () => {
 
   it("drops queued fetches and cancels in-flight ones when the caller aborts", async () => {
     const png = await createTilePng();
+    const fetchSignals: AbortSignal[] = [];
     const fetchTile = vi.fn<typeof fetch>(async (_url, init) => {
       if (fetchTile.mock.calls.length > 4) return new Response(new Uint8Array(png));
+      if (init?.signal) fetchSignals.push(init.signal);
 
       return new Promise<Response>((_resolve, reject) =>
         init?.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
@@ -97,18 +99,47 @@ describe("map tile source", () => {
 
     await vi.waitFor(() => expect(fetchTile).toHaveBeenCalledTimes(4));
     controller.abort();
-    const results = await Promise.allSettled(requests);
 
-    // Cache misses resolve in any order, so which four requests won a slot varies.
-    expect(results.filter((result) => result.status === "rejected")).toHaveLength(4);
-    expect(results.filter((result) => result.status === "fulfilled")).toEqual(
-      Array(2).fill({ status: "fulfilled", value: null }),
-    );
+    expect(await Promise.all(requests)).toEqual(Array(6).fill(null));
+    expect(fetchSignals.map((signal) => signal.aborted)).toEqual(Array(4).fill(true));
     expect(fetchTile).toHaveBeenCalledTimes(4);
     await expect(source.getTile({ provider: "osm", x: 7, y: 0, z: 3 })).resolves.toEqual({
       buffer: png,
       mimeType: "image/png",
     });
+  });
+
+  it("keeps a shared fetch alive while another caller still needs the tile", async () => {
+    const png = await createTilePng();
+    let finishFetch = () => {};
+    let fetchSignal: AbortSignal | undefined;
+    const fetchTile = vi.fn<typeof fetch>(async (_url, init) => {
+      fetchSignal = init?.signal ?? undefined;
+
+      return new Promise<Response>((resolveFetch) => {
+        finishFetch = () => resolveFetch(new Response(new Uint8Array(png)));
+      });
+    });
+    const source = createMapTileSource({ cacheDir: await createTempDir(), fetch: fetchTile });
+    const tile = { provider: "osm", x: 1, y: 1, z: 1 } as const;
+    const firstExport = new AbortController();
+    const secondExport = new AbortController();
+    const first = source.getTile(tile, { signal: firstExport.signal });
+    const second = source.getTile(tile, { signal: secondExport.signal });
+    const browser = source.getTile(tile);
+
+    await vi.waitFor(() => expect(fetchTile).toHaveBeenCalledTimes(1));
+    firstExport.abort();
+    secondExport.abort();
+
+    await expect(first).resolves.toBeNull();
+    await expect(second).resolves.toBeNull();
+    expect(fetchSignal?.aborted).toBe(false);
+
+    finishFetch();
+
+    await expect(browser).resolves.toEqual({ buffer: png, mimeType: "image/png" });
+    expect(fetchTile).toHaveBeenCalledTimes(1);
   });
 });
 

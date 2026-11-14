@@ -477,6 +477,24 @@ const longitudeSchema = z
   .min(-180)
   .max(180)
   .transform(roundToNearestTenThousandth);
+// View centers need far more precision than markers so street-level pans don't snap.
+const roundToMapCenterPrecision = (value: number): number => {
+  const rounded = Math.round(value * 1e7) / 1e7;
+
+  return Object.is(rounded, -0) ? 0 : rounded;
+};
+const centerLatitudeSchema = z
+  .number()
+  .finite()
+  .min(-90)
+  .max(90)
+  .transform(roundToMapCenterPrecision);
+const centerLongitudeSchema = z
+  .number()
+  .finite()
+  .min(-180)
+  .max(180)
+  .transform(roundToMapCenterPrecision);
 
 export const mapMarkerSchema = z.object({
   id: mapItemIdSchema,
@@ -504,8 +522,8 @@ export const mapRouteSchema = z.object({
 export const mapViewSchema = z.object({
   /** `fit` frames every marker and route automatically; `custom` uses the stored center and zoom. */
   mode: z.enum(["fit", "custom"]),
-  centerLongitude: longitudeSchema,
-  centerLatitude: latitudeSchema,
+  centerLongitude: centerLongitudeSchema,
+  centerLatitude: centerLatitudeSchema,
   /** 0 shows the whole world across the layer width; each step doubles the scale. */
   zoom: z.number().finite().min(0).max(18).transform(roundToNearestHundredth),
 });

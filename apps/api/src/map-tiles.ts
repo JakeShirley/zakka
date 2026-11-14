@@ -7,8 +7,9 @@ export type MapTileImage = { buffer: Buffer; mimeType: "image/jpeg" | "image/png
 
 export type MapTileSource = {
   /**
-   * Aborting `signal` drops the request if it is still queued for an upstream slot and cancels
-   * its fetch, resolving to null.
+   * Aborting `signal` resolves this request to null. The upstream fetch, shared with concurrent
+   * requests for the same tile, is dropped from the queue or cancelled once every caller has
+   * aborted.
    */
   getTile: (tile: MapTile, options?: { signal?: AbortSignal }) => Promise<MapTileImage | null>;
 };
@@ -49,6 +50,14 @@ export const isMapTileInRange = (tile: MapTile): boolean => {
   );
 };
 
+/** One upstream load shared by every concurrent request for the same tile. */
+type PendingTile = {
+  /** Callers still waiting; callers without an abort signal keep the load alive. */
+  callers: number;
+  controller: AbortController;
+  request: Promise<MapTileImage | null>;
+};
+
 /**
  * Fetches raster tiles from their provider and keeps them on disk. Tile providers ask
  * clients to cache aggressively and identify themselves, and exports need the same bytes
@@ -61,13 +70,13 @@ export const createMapTileSource = (options: {
 }): MapTileSource => {
   const cacheDir = resolve(options.cacheDir);
   const fetchTile = options.fetch ?? globalThis.fetch;
-  const pending = new Map<string, Promise<MapTileImage | null>>();
+  const pending = new Map<string, PendingTile>();
   const waiting: Array<() => void> = [];
   let activeFetches = 0;
 
   /** Resolves false, without taking a slot, if `signal` aborts first. */
-  const acquireUpstreamSlot = (signal: AbortSignal | undefined): Promise<boolean> => {
-    if (signal?.aborted) return Promise.resolve(false);
+  const acquireUpstreamSlot = (signal: AbortSignal): Promise<boolean> => {
+    if (signal.aborted) return Promise.resolve(false);
 
     if (activeFetches < maxConcurrentUpstreamFetches) {
       activeFetches += 1;
@@ -82,12 +91,12 @@ export const createMapTileSource = (options: {
         resolveSlot(false);
       };
       const grant = () => {
-        signal?.removeEventListener("abort", onAbort);
+        signal.removeEventListener("abort", onAbort);
         resolveSlot(true);
       };
 
       waiting.push(grant);
-      signal?.addEventListener("abort", onAbort, { once: true });
+      signal.addEventListener("abort", onAbort, { once: true });
     });
   };
 
@@ -99,10 +108,7 @@ export const createMapTileSource = (options: {
     else activeFetches -= 1;
   };
 
-  const load = async (
-    tile: MapTile,
-    signal: AbortSignal | undefined,
-  ): Promise<MapTileImage | null> => {
+  const load = async (tile: MapTile, signal: AbortSignal): Promise<MapTileImage | null> => {
     const cachePath = join(cacheDir, tile.provider, String(tile.z), String(tile.x), `${tile.y}`);
 
     try {
@@ -119,10 +125,9 @@ export const createMapTileSource = (options: {
     let buffer: Buffer | null;
 
     try {
-      const timeout = AbortSignal.timeout(fetchTimeoutMs);
       const response = await fetchTile(getMapTileUrl(tile), {
         headers: { "user-agent": options.userAgent ?? defaultUserAgent },
-        signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
+        signal: AbortSignal.any([AbortSignal.timeout(fetchTimeoutMs), signal]),
       });
 
       buffer = response.ok ? Buffer.from(await response.arrayBuffer()) : null;
@@ -151,16 +156,51 @@ export const createMapTileSource = (options: {
         return Promise.reject(new MapTileRangeError(tile));
       }
 
+      const signal = requestOptions?.signal;
+
+      if (signal?.aborted) return Promise.resolve(null);
+
       const key = `${tile.provider}/${tile.z}/${tile.x}/${tile.y}`;
-      const existing = pending.get(key);
+      let shared = pending.get(key);
 
-      if (existing) return existing;
+      if (!shared) {
+        const controller = new AbortController();
+        const created: PendingTile = {
+          callers: 0,
+          controller,
+          request: load(tile, controller.signal).finally(() => {
+            if (pending.get(key) === created) pending.delete(key);
+          }),
+        };
 
-      const request = load(tile, requestOptions?.signal).finally(() => pending.delete(key));
+        pending.set(key, created);
+        shared = created;
+      }
 
-      pending.set(key, request);
+      const entry = shared;
 
-      return request;
+      entry.callers += 1;
+
+      if (!signal) return entry.request;
+
+      return new Promise((resolveTile, rejectTile) => {
+        const onAbort = () => {
+          entry.callers -= 1;
+
+          // Cancel the upstream fetch only once no caller still needs the tile.
+          if (entry.callers === 0) {
+            if (pending.get(key) === entry) pending.delete(key);
+            entry.controller.abort(signal.reason);
+          }
+
+          resolveTile(null);
+        };
+
+        signal.addEventListener("abort", onAbort, { once: true });
+        entry.request
+          .then(resolveTile, rejectTile)
+          .finally(() => signal.removeEventListener("abort", onAbort));
+      });
     },
   };
 };

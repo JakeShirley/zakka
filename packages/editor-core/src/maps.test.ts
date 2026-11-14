@@ -10,6 +10,7 @@ import {
   type MapLayer,
   mapLayerSchema,
   mapStyleIds,
+  mapViewSchema,
   panMapLayerView,
   renderPageDocumentSvg,
   resizePageDocument,
@@ -17,6 +18,7 @@ import {
   zoomMapLayerView,
 } from "./index.js";
 import { getMapGeography } from "./map-data.js";
+import { getDetailedMapGeography } from "./map-data-detailed.js";
 import { searchMapPlaces } from "./map-places.js";
 
 const seattle = { id: "sea", label: "Seattle", latitude: 47.6062, longitude: -122.3321 };
@@ -179,6 +181,25 @@ describe("map layers", () => {
     expect(after[1] - before[1]).toBeCloseTo(-80, 0);
   });
 
+  it("pans smoothly at street level, including after the view is saved", () => {
+    const layer = createMapLayer({
+      markers: [{ ...seattle, icon: "dot" }],
+      style: "osm",
+      view: {
+        mode: "custom",
+        centerLatitude: seattle.latitude,
+        centerLongitude: seattle.longitude,
+        zoom: 18,
+      },
+    });
+    const before = markerCenter(renderMap(layer), "sea");
+    const view = mapViewSchema.parse(panMapLayerView(layer, { x: 40, y: -25 }));
+    const after = markerCenter(renderMap({ ...layer, view }), "sea");
+
+    expect(after[0] - before[0]).toBeCloseTo(40, 0);
+    expect(after[1] - before[1]).toBeCloseTo(-25, 0);
+  });
+
   it("spins the globe toward the drag and clamps map zoom to the style range", () => {
     const globe = createMapLayer({
       markers: [tokyo],
@@ -296,6 +317,14 @@ describe("bundled map data", () => {
     expect(ids).toContain("USA");
     expect(ids).toContain("FRA");
     expect(geography.lakes.length).toBeGreaterThan(0);
+  });
+
+  it("keeps state and province lines in the detailed geography", () => {
+    const detailed = getDetailedMapGeography();
+
+    expect(detailed.detail).toBe("high");
+    expect(detailed.countries.length).toBeGreaterThan(getMapGeography().countries.length);
+    expect(detailed.states.length).toBeGreaterThan(0);
   });
 
   it("searches places by name prefix ignoring accents and ranks larger places first", () => {
