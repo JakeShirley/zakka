@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   pageResponseSchema,
   shutterflyConnectionResponseSchema,
+  shutterflyImportJobResponseSchema,
   shutterflyImportResponseSchema,
   shutterflyProjectListResponseSchema,
 } from "@zakka/api-contract";
@@ -21,6 +22,7 @@ import {
   createShutterflyIntegration,
   matchZakkaFontFamily,
   readSolidSvgColor,
+  type ShutterflyImportProgress,
 } from "./integrations/shutterfly/service.js";
 import { createDatabaseConnection, type DatabaseConnection } from "./persistence/database.js";
 import { runMigrations } from "./persistence/migrations.js";
@@ -257,25 +259,22 @@ const createTestApp = async (options: { configured?: boolean } = {}) => {
   });
   const fake = await createFakeShutterfly();
   const clock = { now: fixedDate.getTime() };
+  const shutterfly = createShutterflyIntegration({
+    apiKey,
+    cipher: createCredentialCipher(randomBytes(32)),
+    clock: () => new Date(clock.now),
+    fetch: fake.fetch,
+    repositories,
+    storage,
+  });
   const app = createApp({
     clock: makeFixedClock(fixedDate),
     repositories,
     storage,
-    ...(options.configured === false
-      ? {}
-      : {
-          shutterfly: createShutterflyIntegration({
-            apiKey,
-            cipher: createCredentialCipher(randomBytes(32)),
-            clock: () => new Date(clock.now),
-            fetch: fake.fetch,
-            repositories,
-            storage,
-          }),
-        }),
+    ...(options.configured === false ? {} : { shutterfly }),
   });
 
-  return { app, clock, connection, fake, repositories };
+  return { app, clock, connection, fake, repositories, shutterfly };
 };
 
 const register = async (app: ReturnType<typeof createApp>, email = "maker@example.com") => {
@@ -306,6 +305,36 @@ const importProject = (app: ReturnType<typeof createApp>, cookie: string, projec
     headers: { cookie },
     method: "POST",
   });
+
+const startImportJob = (app: ReturnType<typeof createApp>, cookie: string, projectId: string) =>
+  app.request(`/api/v1/integrations/shutterfly/projects/${projectId}/imports`, {
+    headers: { cookie },
+    method: "POST",
+  });
+
+const waitForImportJob = async (
+  app: ReturnType<typeof createApp>,
+  cookie: string,
+  importId: string,
+) => {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const response = await app.request(`/api/v1/integrations/shutterfly/imports/${importId}`, {
+      headers: { cookie },
+    });
+
+    expect(response.status).toBe(200);
+
+    const job = shutterflyImportJobResponseSchema.parse(await response.json());
+
+    if (job.status !== "running") {
+      return job;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  throw new Error(`Import ${importId} did not finish`);
+};
 
 const countAssets = (repositories: Repositories, accountId: string) =>
   repositories.assets.listForAccount(accountId).length;
@@ -521,6 +550,81 @@ describe("Shutterfly integration routes", () => {
       error: { code: "shutterfly_not_connected" },
     });
     expect((await importProject(app, cookie, "1999999999999")).status).toBe(404);
+  });
+
+  it("reports import progress through each step, ending with every page built", async () => {
+    const { app, repositories, shutterfly } = await createTestApp();
+    const cookie = await register(app);
+    const accountId = repositories.accounts.findByPrimaryEmail("maker@example.com")?.id ?? "";
+    const progress: ShutterflyImportProgress[] = [];
+
+    await connect(app, cookie, validRefreshToken);
+    await shutterfly.importProject(accountId, "1000000000001", (update) => progress.push(update));
+
+    const steps = [...new Set(progress.map((update) => update.step))];
+    const fractions = progress.map((update) => update.fraction);
+
+    expect(steps).toEqual(["preparing", "photos", "stickers", "pages"]);
+    expect(fractions).toEqual([...fractions].sort((a, b) => a - b));
+    expect(progress.find((update) => update.step === "photos")).toMatchObject({ total: 1 });
+    expect(progress.at(-1)).toEqual({ step: "pages", completed: 34, total: 34, fraction: 1 });
+  });
+
+  it("runs imports in the background and reports the imported book", async () => {
+    const { app } = await createTestApp();
+    const cookie = await register(app);
+
+    await connect(app, cookie, validRefreshToken);
+
+    const started = await startImportJob(app, cookie, "1000000000001");
+    const startedBody = shutterflyImportJobResponseSchema.parse(await started.json());
+    const restarted = shutterflyImportJobResponseSchema.parse(
+      await (await startImportJob(app, cookie, "1000000000001")).json(),
+    );
+
+    expect(started.status).toBe(202);
+    expect(startedBody).toMatchObject({ projectId: "1000000000001", status: "running" });
+    expect(restarted.id).toBe(startedBody.id);
+
+    const finished = await waitForImportJob(app, cookie, startedBody.id);
+
+    expect(finished).toMatchObject({
+      status: "completed",
+      progress: { step: "pages", completed: 34, total: 34, fraction: 1 },
+      error: null,
+    });
+    expect(finished.result?.book).toMatchObject({ title: "Fixture Layflat Book", pageCount: 34 });
+  });
+
+  it("reports failed background imports and hides imports from other accounts", async () => {
+    const { app } = await createTestApp();
+    const cookie = await register(app);
+    const otherCookie = await register(app, "other@example.com");
+
+    await connect(app, cookie, validRefreshToken);
+
+    const notConnected = await startImportJob(app, otherCookie, "1000000000001");
+
+    expect(notConnected.status).toBe(409);
+
+    const started = shutterflyImportJobResponseSchema.parse(
+      await (await startImportJob(app, cookie, "1999999999999")).json(),
+    );
+    const finished = await waitForImportJob(app, cookie, started.id);
+    const otherAccount = await app.request(
+      `/api/v1/integrations/shutterfly/imports/${started.id}`,
+      { headers: { cookie: otherCookie } },
+    );
+
+    expect(finished).toMatchObject({
+      status: "failed",
+      result: null,
+      error: { code: "shutterfly_project_not_found" },
+    });
+    expect(otherAccount.status).toBe(404);
+    expect(await otherAccount.json()).toMatchObject({
+      error: { code: "shutterfly_import_not_found" },
+    });
   });
 
   it("adds imported image backgrounds to the book's photos", async () => {

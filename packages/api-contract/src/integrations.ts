@@ -50,11 +50,50 @@ export const shutterflyImportResponseSchema = z
   })
   .openapi("ShutterflyImportResponse");
 
+export const shutterflyImportStepSchema = z
+  .enum(["preparing", "photos", "stickers", "backgrounds", "pages"])
+  .openapi("ShutterflyImportStep", {
+    description:
+      "The step an import is on: reading the project, downloading photos, importing stickers, importing backgrounds, or building pages.",
+  });
+
+export const shutterflyImportJobResponseSchema = z
+  .object({
+    id: z.string().openapi({ example: "shutterfly_import_6f1c2d9e-5b1a-4c55-9a9f-2f1d4b7e8c01" }),
+    projectId: z.string().openapi({ example: "1219497168070" }),
+    status: z.enum(["running", "completed", "failed"]).openapi({ example: "running" }),
+    progress: z.object({
+      step: shutterflyImportStepSchema,
+      completed: z.number().int().nonnegative().openapi({
+        description: "Items finished in the current step.",
+        example: 12,
+      }),
+      total: z.number().int().nonnegative().openapi({
+        description: "Items in the current step, or 0 when the step has no countable items.",
+        example: 48,
+      }),
+      fraction: z.number().min(0).max(1).openapi({
+        description: "Overall progress across every step, from 0 to 1.",
+        example: 0.24,
+      }),
+    }),
+    result: shutterflyImportResponseSchema
+      .nullable()
+      .openapi({ description: "The imported book once the import has completed." }),
+    error: z
+      .object({ code: z.string(), message: z.string() })
+      .nullable()
+      .openapi({ description: "Why the import failed, once it has failed." }),
+  })
+  .openapi("ShutterflyImportJobResponse");
+
 export type ShutterflyConnectionResponse = z.infer<typeof shutterflyConnectionResponseSchema>;
 export type ShutterflyConnectRequest = z.infer<typeof shutterflyConnectRequestSchema>;
 export type ShutterflyProjectResponse = z.infer<typeof shutterflyProjectResponseSchema>;
 export type ShutterflyProjectListResponse = z.infer<typeof shutterflyProjectListResponseSchema>;
 export type ShutterflyImportResponse = z.infer<typeof shutterflyImportResponseSchema>;
+export type ShutterflyImportStep = z.infer<typeof shutterflyImportStepSchema>;
+export type ShutterflyImportJobResponse = z.infer<typeof shutterflyImportJobResponseSchema>;
 
 const errorContent = {
   content: {
@@ -152,6 +191,45 @@ export const shutterflyProjectImportRoute = createRoute({
       description:
         "Imports a Shutterfly photo book as a new Zakka book with its photos, text, backgrounds, and stickers.",
       content: { "application/json": { schema: shutterflyImportResponseSchema } },
+    },
+    ...shutterflyErrorResponses,
+  },
+});
+
+export const shutterflyProjectImportJobRoute = createRoute({
+  method: "post",
+  path: "/api/v1/integrations/shutterfly/projects/{projectId}/imports",
+  tags: ["Integrations"],
+  request: {
+    params: projectParamsSchema,
+  },
+  responses: {
+    202: {
+      description:
+        "Starts importing a Shutterfly photo book in the background. Poll the returned import for progress. Starting an import of a project that is already being imported returns the running import.",
+      content: { "application/json": { schema: shutterflyImportJobResponseSchema } },
+    },
+    ...shutterflyErrorResponses,
+  },
+});
+
+export const shutterflyImportJobRoute = createRoute({
+  method: "get",
+  path: "/api/v1/integrations/shutterfly/imports/{importId}",
+  tags: ["Integrations"],
+  request: {
+    params: z.object({
+      importId: z
+        .string()
+        .regex(/^[A-Za-z0-9_-]{1,128}$/)
+        .openapi({ param: { name: "importId", in: "path" } }),
+    }),
+  },
+  responses: {
+    200: {
+      description:
+        "Returns the progress of a Shutterfly import, and the imported book once it has finished. Finished imports are kept for 15 minutes.",
+      content: { "application/json": { schema: shutterflyImportJobResponseSchema } },
     },
     ...shutterflyErrorResponses,
   },

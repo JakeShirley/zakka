@@ -76,6 +76,21 @@ export type ShutterflyImportResult = {
   warnings: string[];
 };
 
+export type ShutterflyImportStep = "preparing" | "photos" | "stickers" | "backgrounds" | "pages";
+
+export type ShutterflyImportProgress = {
+  step: ShutterflyImportStep;
+  /** Items finished in the current step. */
+  completed: number;
+  /** Items in the current step, or 0 when the step has no countable items. */
+  total: number;
+  /** Overall progress across every step, from 0 to 1. */
+  fraction: number;
+};
+
+/** Share of the overall progress bar spent downloading; building pages fills the rest. */
+const downloadProgressShare = 0.95;
+
 export type ShutterflyIntegration = ReturnType<typeof createShutterflyIntegration>;
 
 type StoredCredentials = { refreshToken: string };
@@ -633,7 +648,10 @@ export const createShutterflyIntegration = (options: {
     importProject: async (
       accountId: string,
       projectId: string,
+      onProgress?: (progress: ShutterflyImportProgress) => void,
     ): Promise<ShutterflyImportResult> => {
+      onProgress?.({ step: "preparing", completed: 0, total: 0, fraction: 0 });
+
       const project = await withSession(accountId, (session) =>
         client.getProject(session, projectId),
       );
@@ -686,10 +704,41 @@ export const createShutterflyIntegration = (options: {
         }
       }
 
+      const downloadTotal =
+        references.photos.length +
+        references.stickerAssetIds.length +
+        references.backgroundAssetIds.length;
+      let downloadsCompleted = 0;
+      const downloadFraction = () =>
+        downloadTotal === 0
+          ? downloadProgressShare
+          : (downloadsCompleted / downloadTotal) * downloadProgressShare;
+      const runDownloadStep = <Input, Output>(
+        step: ShutterflyImportStep,
+        inputs: readonly Input[],
+        worker: (input: Input) => Promise<Output>,
+      ): Promise<Output[]> => {
+        let completed = 0;
+
+        if (inputs.length > 0) {
+          onProgress?.({ step, completed, total: inputs.length, fraction: downloadFraction() });
+        }
+
+        return mapWithConcurrency(inputs, downloadConcurrency, async (input) => {
+          const output = await worker(input);
+
+          completed += 1;
+          downloadsCompleted += 1;
+          onProgress?.({ step, completed, total: inputs.length, fraction: downloadFraction() });
+
+          return output;
+        });
+      };
+
       const photoAssetIds = new Map(
-        await mapWithConcurrency(
+        await runDownloadStep(
+          "photos",
           references.photos,
-          downloadConcurrency,
           async (photo) =>
             [
               photo.mediaId,
@@ -703,17 +752,17 @@ export const createShutterflyIntegration = (options: {
         return stickerPackId;
       };
       const stickerIds = new Map(
-        await mapWithConcurrency(
+        await runDownloadStep(
+          "stickers",
           references.stickerAssetIds,
-          downloadConcurrency,
           async (id) =>
             [id, await importSticker(accountId, designAssets.get(id), getPackId)] as const,
         ),
       );
       const backgrounds = new Map(
-        await mapWithConcurrency(
+        await runDownloadStep(
+          "backgrounds",
           references.backgroundAssetIds,
-          downloadConcurrency,
           async (id) => [id, await importBackground(accountId, designAssets.get(id))] as const,
         ),
       );
@@ -747,6 +796,19 @@ export const createShutterflyIntegration = (options: {
         coverSpreadEnabled: true,
       });
 
+      const pageTotal = mapped.pages.length;
+      const reportPages = (completed: number) =>
+        onProgress?.({
+          step: "pages",
+          completed,
+          total: pageTotal,
+          fraction:
+            downloadProgressShare +
+            (pageTotal === 0 ? 1 : completed / pageTotal) * (1 - downloadProgressShare),
+        });
+
+      reportPages(0);
+
       for (const [sortOrder, page] of mapped.pages.entries()) {
         const record = repositories.pages.create({
           accountId,
@@ -757,6 +819,7 @@ export const createShutterflyIntegration = (options: {
         });
 
         repositories.books.addPage({ accountId, bookId: book.id, pageId: record.id, sortOrder });
+        reportPages(sortOrder + 1);
       }
 
       const importedAssetIds = [
