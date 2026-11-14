@@ -8,10 +8,11 @@ import { apiClient } from "../../apiClient";
 import { Panel, WorkspaceHeader } from "../../components/layout";
 import { getErrorMessage } from "../../lib/errors";
 import type { AuthSession } from "../../types";
+import { AboutPanel } from "./AboutPanel";
 import { AppearancePanel } from "./AppearancePanel";
 import { ShutterflyIntegrationPanel } from "./ShutterflyIntegrationPanel";
 
-const settingsTabs = ["account", "appearance", "integrations", "logs"] as const;
+const settingsTabs = ["account", "appearance", "integrations", "logs", "about"] as const;
 
 type SettingsTab = (typeof settingsTabs)[number];
 
@@ -78,6 +79,7 @@ export function SettingsView({ session }: { session: AuthSession }) {
         <Tab value="appearance">Appearance</Tab>
         <Tab value="integrations">Integrations</Tab>
         <Tab value="logs">Logs</Tab>
+        <Tab value="about">About</Tab>
       </TabList>
 
       {selectedTab === "account" ? (
@@ -115,6 +117,8 @@ export function SettingsView({ session }: { session: AuthSession }) {
         <div className="settings-grid settings-integrations-grid">
           <ShutterflyIntegrationPanel />
         </div>
+      ) : selectedTab === "about" ? (
+        <AboutPanel />
       ) : (
         <div className="settings-log-shell">
           <Panel title="Server Logs" {...(logs.length ? { count: String(logs.length) } : {})}>

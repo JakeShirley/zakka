@@ -13,6 +13,7 @@ import {
   healthResponseSchema,
   pageResponseSchema,
   serverLogListResponseSchema,
+  systemInfoResponseSchema,
 } from "@zakka/api-contract";
 import { createPageDocument, createPhotoLayer, createTextLayer } from "@zakka/editor-core";
 import { makeFixedClock } from "@zakka/test-utils";
@@ -441,6 +442,45 @@ describe("api app", () => {
     expect(await emptyPatchResponse.json()).toEqual({ uiTheme: "sakura" });
     expect(await reloadedResponse.json()).toEqual({ uiTheme: "sakura" });
     expect(await otherAccountResponse.json()).toEqual({ uiTheme: "system" });
+  });
+
+  it("reports system info with uptime to authenticated users", async () => {
+    let now = fixedDate.getTime();
+    const connection = createDatabaseConnection({ databasePath: ":memory:" });
+    const rootDir = mkdtempSync(join(tmpdir(), "scrapbook-api-"));
+
+    connections.push(connection);
+    tempDirs.push(rootDir);
+    runMigrations(connection.sqlite);
+
+    const clock = () => new Date(now);
+    const app = createApp({
+      clock,
+      repositories: createRepositories(connection.db, {
+        clock,
+        pageDocuments: createPageDocumentStore({ rootDir }),
+      }),
+    });
+
+    const unauthenticatedResponse = await app.request("/api/v1/system/info");
+    expect(unauthenticatedResponse.status).toBe(401);
+
+    const cookie = await registerAccount(app, {
+      displayName: "Ada Lovelace",
+      email: "ada@example.com",
+    });
+    now += 90_500;
+
+    const response = await app.request("/api/v1/system/info", { headers: { cookie } });
+    expect(response.status).toBe(200);
+
+    const body = systemInfoResponseSchema.parse(await response.json());
+    expect(body).toMatchObject({
+      service: "zakka-api",
+      startedAt: fixedDate.toISOString(),
+      uptimeSeconds: 90,
+      nodeVersion: process.version,
+    });
   });
 
   it("uploads images, stores metadata, lists assets, and streams original and variants", async () => {

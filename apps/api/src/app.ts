@@ -76,6 +76,8 @@ import {
   serverLogEntryResponseSchema,
   serverLogListResponseSchema,
   serverLogListRoute,
+  systemInfoResponseSchema,
+  systemInfoRoute,
   customStickerContentRoute,
   customStickerFavoriteRoute,
   customStickerListResponseSchema,
@@ -104,7 +106,11 @@ import {
   shutterflyConnectionRoute,
   shutterflyConnectRoute,
   shutterflyDisconnectRoute,
+  shutterflyImportJobResponseSchema,
+  shutterflyImportJobRoute,
+  type ShutterflyImportResponse,
   shutterflyImportResponseSchema,
+  shutterflyProjectImportJobRoute,
   shutterflyProjectImportRoute,
   shutterflyProjectListResponseSchema,
   shutterflyProjectListRoute,
@@ -163,6 +169,10 @@ import type {
 import { readStaticAsset } from "./static.js";
 import { CredentialDecryptError } from "./integrations/credential-cipher.js";
 import { ShutterflyAuthError, ShutterflyRequestError } from "./integrations/shutterfly/client.js";
+import {
+  createShutterflyImportJobs,
+  type ShutterflyImportJob,
+} from "./integrations/shutterfly/import-jobs.js";
 import {
   type ShutterflyIntegration,
   ShutterflyInvalidTokenError,
@@ -693,6 +703,7 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     staticAssetsDir: createOptions.staticAssetsDir,
     storage: createOptions.storage,
   };
+  const startedAt = options.clock();
 
   app.use("*", async (context, next) => {
     const requestId = context.req.header("x-request-id") ?? crypto.randomUUID();
@@ -765,6 +776,37 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
       .reverse();
 
     return context.json(serverLogListResponseSchema.parse({ level, logs }), 200);
+  });
+
+  app.openapi(systemInfoRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "auth_unavailable", "Auth is unavailable"),
+        500,
+      );
+    }
+
+    if (!getAuthenticatedSession(context, options.repositories)) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const body = systemInfoResponseSchema.parse({
+      service: "zakka-api",
+      version: packageVersion,
+      startedAt: startedAt.toISOString(),
+      uptimeSeconds: Math.max(
+        0,
+        Math.floor((options.clock().getTime() - startedAt.getTime()) / 1000),
+      ),
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+    });
+
+    return context.json(body, 200);
   });
 
   app.openapi(registerRoute, async (context) => {
@@ -2840,54 +2882,79 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     });
   });
 
-  const toShutterflyErrorResponse = (context: ApiContext, error: unknown) => {
+  const describeShutterflyError = (
+    error: unknown,
+  ): { status: 400 | 404 | 409 | 502; code: string; message: string } | null => {
     if (error instanceof ShutterflyInvalidTokenError) {
-      return context.json(
-        createErrorResponse(context, "shutterfly_token_invalid", error.message),
-        400,
-      );
+      return { status: 400, code: "shutterfly_token_invalid", message: error.message };
     }
 
     if (error instanceof ShutterflyProjectNotSupportedError) {
-      return context.json(
-        createErrorResponse(context, "shutterfly_project_unsupported", error.message),
-        400,
-      );
+      return { status: 400, code: "shutterfly_project_unsupported", message: error.message };
     }
 
     if (error instanceof ShutterflyNotConnectedError) {
-      return context.json(
-        createErrorResponse(context, "shutterfly_not_connected", error.message),
-        409,
-      );
+      return { status: 409, code: "shutterfly_not_connected", message: error.message };
     }
 
     if (error instanceof ShutterflyAuthError || error instanceof CredentialDecryptError) {
-      return context.json(
-        createErrorResponse(
-          context,
-          "shutterfly_reconnect_required",
-          "Shutterfly sign-in expired. Reconnect your Shutterfly account in Settings.",
-        ),
-        409,
-      );
+      return {
+        status: 409,
+        code: "shutterfly_reconnect_required",
+        message: "Shutterfly sign-in expired. Reconnect your Shutterfly account in Settings.",
+      };
     }
 
     if (error instanceof ShutterflyRequestError) {
       return error.status === 404
-        ? context.json(
-            createErrorResponse(
-              context,
-              "shutterfly_project_not_found",
-              "Shutterfly project not found",
-            ),
-            404,
-          )
-        : context.json(createErrorResponse(context, "shutterfly_unavailable", error.message), 502);
+        ? {
+            status: 404,
+            code: "shutterfly_project_not_found",
+            message: "Shutterfly project not found",
+          }
+        : { status: 502, code: "shutterfly_unavailable", message: error.message };
     }
 
-    throw error;
+    return null;
   };
+
+  const toShutterflyErrorResponse = (context: ApiContext, error: unknown) => {
+    const described = describeShutterflyError(error);
+
+    if (!described) {
+      throw error;
+    }
+
+    return context.json(
+      createErrorResponse(context, described.code, described.message),
+      described.status,
+    );
+  };
+
+  const shutterflyImports = createShutterflyImportJobs<ShutterflyImportResponse>({
+    clock: options.clock,
+    describeError: (error) => {
+      const described = describeShutterflyError(error);
+
+      if (described) {
+        return { code: described.code, message: described.message };
+      }
+
+      console.error(error);
+
+      return { code: "internal_error", message: "Unexpected server error" };
+    },
+  });
+
+  const toShutterflyImportJobResponse = (job: ShutterflyImportJob<ShutterflyImportResponse>) =>
+    shutterflyImportJobResponseSchema.parse({
+      id: job.id,
+      projectId: job.projectId,
+      status: job.status,
+      progress: job.progress,
+      result: job.result,
+      error: job.error,
+    });
 
   const requireShutterfly = (context: ApiContext) => {
     if (!options.repositories) {
@@ -3049,6 +3116,69 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     } catch (error) {
       return toShutterflyErrorResponse(context, error);
     }
+  });
+
+  app.openapi(shutterflyProjectImportJobRoute, (context) => {
+    const required = requireShutterfly(context);
+
+    if ("response" in required) {
+      return required.response;
+    }
+
+    const repositories = options.repositories;
+
+    if (!options.storage || !repositories) {
+      return context.json(
+        createErrorResponse(context, "assets_unavailable", "Asset storage is unavailable"),
+        500,
+      );
+    }
+
+    if (!required.shutterfly.getStatus(required.accountId).connected) {
+      return context.json(
+        createErrorResponse(
+          context,
+          "shutterfly_not_connected",
+          "Connect your Shutterfly account before importing.",
+        ),
+        409,
+      );
+    }
+
+    const projectId = context.req.valid("param").projectId;
+    const job = shutterflyImports.start(required.accountId, projectId, async (onProgress) => {
+      const result = await required.shutterfly.importProject(
+        required.accountId,
+        projectId,
+        onProgress,
+      );
+
+      return shutterflyImportResponseSchema.parse({
+        book: toBookResponse(result.book, repositories),
+        warnings: result.warnings,
+      });
+    });
+
+    return context.json(toShutterflyImportJobResponse(job), 202);
+  });
+
+  app.openapi(shutterflyImportJobRoute, (context) => {
+    const required = requireShutterfly(context);
+
+    if ("response" in required) {
+      return required.response;
+    }
+
+    const job = shutterflyImports.get(required.accountId, context.req.valid("param").importId);
+
+    if (!job) {
+      return context.json(
+        createErrorResponse(context, "shutterfly_import_not_found", "Shutterfly import not found"),
+        404,
+      );
+    }
+
+    return context.json(toShutterflyImportJobResponse(job), 200);
   });
 
   app.doc("/api/v1/openapi.json", {

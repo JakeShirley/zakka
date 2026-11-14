@@ -52,11 +52,11 @@ import {
   type ServerLogLevel,
   type ServerLogListResponse,
   type ShutterflyConnectionResponse,
-  type ShutterflyImportResponse,
+  type ShutterflyImportJobResponse,
   type ShutterflyProjectListResponse,
   serverLogListResponseSchema,
   shutterflyConnectionResponseSchema,
-  shutterflyImportResponseSchema,
+  shutterflyImportJobResponseSchema,
   shutterflyProjectListResponseSchema,
   type StickerPackCreateRequest,
   type StickerPackListResponse,
@@ -64,6 +64,8 @@ import {
   type StickerPackResponse,
   stickerPackListResponseSchema,
   stickerPackResponseSchema,
+  type SystemInfoResponse,
+  systemInfoResponseSchema,
 } from "@zakka/api-contract";
 
 export class ApiClientError extends Error {
@@ -130,6 +132,9 @@ export type ApiClient = ReturnType<typeof createApiClient>;
 export const createApiClient = (baseUrl = defaultBaseUrl) => ({
   getHealth: (): Promise<HealthResponse> =>
     requestJson(baseUrl, healthResponseSchema, "/api/v1/health"),
+
+  getSystemInfo: (): Promise<SystemInfoResponse> =>
+    requestJson(baseUrl, systemInfoResponseSchema, "/api/v1/system/info"),
 
   listServerLogs: (level: ServerLogLevel, limit = 200): Promise<ServerLogListResponse> =>
     requestJson(
@@ -379,12 +384,19 @@ export const createApiClient = (baseUrl = defaultBaseUrl) => ({
       "/api/v1/integrations/shutterfly/projects",
     ),
 
-  importShutterflyProject: (projectId: string): Promise<ShutterflyImportResponse> =>
+  startShutterflyImport: (projectId: string): Promise<ShutterflyImportJobResponse> =>
     requestJson(
       baseUrl,
-      shutterflyImportResponseSchema,
-      `/api/v1/integrations/shutterfly/projects/${encodeURIComponent(projectId)}/import`,
+      shutterflyImportJobResponseSchema,
+      `/api/v1/integrations/shutterfly/projects/${encodeURIComponent(projectId)}/imports`,
       { method: "POST" },
+    ),
+
+  getShutterflyImport: (importId: string): Promise<ShutterflyImportJobResponse> =>
+    requestJson(
+      baseUrl,
+      shutterflyImportJobResponseSchema,
+      `/api/v1/integrations/shutterfly/imports/${encodeURIComponent(importId)}`,
     ),
 
   createBook: (input: BookCreateRequest): Promise<BookResponse> =>

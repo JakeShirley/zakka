@@ -680,6 +680,10 @@ textarea:focus-visible {
   background: var(--sb-neutral-background);
 }
 
+.settings-log-toolbar.settings-about-toolbar {
+  align-items: center;
+}
+
 .settings-log-loading {
   display: flex;
   align-items: center;
@@ -692,6 +696,62 @@ textarea:focus-visible {
 
 .settings-integrations-grid {
   grid-template-columns: minmax(280px, 640px);
+}
+
+.settings-about-intro {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+  padding: 16px;
+}
+
+.settings-about-intro p {
+  margin: 0;
+  color: #202426;
+}
+
+.settings-about-status {
+  color: #687174;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.copilot-badge {
+  display: inline-flex;
+  overflow: hidden;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  box-shadow: 0 0 0 1px rgb(31 35 40 / 15%);
+}
+
+.copilot-badge:focus-visible {
+  outline: 2px solid #24766e;
+  outline-offset: 2px;
+}
+
+.copilot-badge-label,
+.copilot-badge-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+}
+
+.copilot-badge-label {
+  color: #ffffff;
+  background: #57606a;
+}
+
+.copilot-badge-value {
+  color: #ffffff;
+  background: #1f2328;
+}
+
+.copilot-badge:hover .copilot-badge-value {
+  background: #8250df;
 }
 
 .integration-panel,
@@ -822,6 +882,30 @@ textarea:focus-visible {
 .shutterfly-project-copy span:last-child {
   color: var(--sb-text-muted);
   font-size: 0.8rem;
+}
+
+.shutterfly-import-progress {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 6px;
+}
+
+.shutterfly-import-progress-copy {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #4f595c;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.shutterfly-import-progress-copy span:last-child {
+  font-variant-numeric: tabular-nums;
+}
+
+.shutterfly-import-progress progress {
+  width: 100%;
+  accent-color: #24766e;
 }
 
 .shutterfly-import-result {
@@ -1393,6 +1477,10 @@ textarea:focus-visible {
   overflow-wrap: anywhere;
   margin: 0;
   color: var(--sb-text-strong);
+}
+
+.settings-about-intro + .metadata-list {
+  padding-top: 0;
 }
 
 .page-list button {

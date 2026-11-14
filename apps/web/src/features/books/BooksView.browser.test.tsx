@@ -47,9 +47,16 @@ describe("BooksView Shutterfly import", () => {
         },
       ],
     });
-    vi.spyOn(apiClient, "importShutterflyProject").mockResolvedValue({
-      book: { ...importedBook, pages: [], spreads: [] },
-      warnings: ["Skipped spine text because Zakka books have no spine"],
+    vi.spyOn(apiClient, "startShutterflyImport").mockResolvedValue({
+      id: "shutterfly_import_1",
+      projectId: "1219497168070",
+      status: "completed",
+      progress: { step: "pages", completed: 34, total: 34, fraction: 1 },
+      result: {
+        book: { ...importedBook, pages: [], spreads: [] },
+        warnings: ["Skipped spine text because Zakka books have no spine"],
+      },
+      error: null,
     });
 
     await render(
