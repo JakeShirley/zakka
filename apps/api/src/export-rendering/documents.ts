@@ -86,6 +86,10 @@ const createImageDataUri = async (input: {
 
 const mapTileKey = (tile: MapTile): string => `${tile.provider}/${tile.z}/${tile.x}/${tile.y}`;
 
+// Caps how long a cold tile cache or an unresponsive provider can hold up an export. Tiles
+// still missing at the deadline are left as gaps.
+const exportTileDeadlineMs = 60_000;
+
 const loadMapGeography = async (detail: MapGeographyDetail): Promise<MapGeography> => {
   if (detail === "high") {
     const { getDetailedMapGeography } = await import("@zakka/editor-core/map-data-detailed");
@@ -124,13 +128,22 @@ const prepareMapLayers = async (
     for (const tile of getMapLayerTiles(layer)) tiles.set(mapTileKey(tile), tile);
   }
 
+  const deadline = AbortSignal.timeout(exportTileDeadlineMs);
+  const pastDeadline = new Promise<null>((resolvePastDeadline) =>
+    deadline.addEventListener("abort", () => resolvePastDeadline(null), { once: true }),
+  );
+
   await Promise.all([
     ...[...details].map(async (detail) => {
       geography.set(detail, await loadMapGeography(detail));
     }),
     ...[...tiles].map(async ([key, tile]) => {
       try {
-        const image = await mapTiles?.getTile(tile);
+        // Racing the deadline also bounds tiles already being fetched for another request.
+        const image = await Promise.race([
+          mapTiles?.getTile(tile, { signal: deadline }),
+          pastDeadline,
+        ]);
 
         if (image) {
           tileHrefs.set(key, `data:${image.mimeType};base64,${image.buffer.toString("base64")}`);

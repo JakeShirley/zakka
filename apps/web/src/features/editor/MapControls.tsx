@@ -16,6 +16,8 @@ import {
   mapStylePresets,
   mapTileDetails,
   mapTileProviders,
+  maxMapMarkers,
+  maxMapRoutes,
   resolveMapLayerStyle,
   resolveMapLayerView,
 } from "@zakka/editor-core";
@@ -346,8 +348,10 @@ function MapPlacesControls({
   const [query, setQuery] = useState("");
   const places = useMapPlaceSearch(query);
   const searchId = useId();
+  const atPlaceLimit = layer.markers.length >= maxMapMarkers;
 
   const addPlace = (place: MapPlace) => {
+    if (atPlaceLimit) return;
     onChange({
       markers: [
         ...layer.markers,
@@ -385,8 +389,9 @@ function MapPlacesControls({
         <span>Add a place</span>
         <input
           autoComplete="off"
+          disabled={atPlaceLimit}
           id={searchId}
-          placeholder="Search cities"
+          placeholder={atPlaceLimit ? `Up to ${maxMapMarkers} places` : "Search cities"}
           type="search"
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}
@@ -562,10 +567,11 @@ function MapRoutesControls({
       }),
     });
   };
+  const atRouteLimit = layer.routes.length >= maxMapRoutes;
   const addRoute = () => {
     const from = layer.markers.at(-2);
     const to = layer.markers.at(-1);
-    if (!from || !to) return;
+    if (!from || !to || atRouteLimit) return;
     onChange({
       routes: [
         ...layer.routes,
@@ -592,7 +598,7 @@ function MapRoutesControls({
         </button>
         <button
           className="washi-tape-scale-reset-button"
-          disabled={layer.markers.length < 2}
+          disabled={layer.markers.length < 2 || atRouteLimit}
           type="button"
           onClick={addRoute}
         >

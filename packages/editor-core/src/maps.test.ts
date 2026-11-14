@@ -196,6 +196,24 @@ describe("map layers", () => {
     expect(zoomMapLayerView(vector, -3).zoom).toBe(0);
   });
 
+  it("hides globe markers and routes on the far side of the world", () => {
+    const paris = { id: "par", label: "Paris", latitude: 48.8566, longitude: 2.3522 };
+    const globe = createMapLayer({
+      markers: [paris, tokyo],
+      routes: [{ id: "r", fromMarkerId: "par", toMarkerId: "tyo", path: "straight" }],
+      style: "globe",
+      view: { mode: "custom", centerLongitude: 0, centerLatitude: 0, zoom: 0 },
+    });
+    const svg = renderMap(globe);
+    const routeD = svg.match(/data-map-route-id="r"[^>]*>.*?<path d="([^"]+)"/)?.[1] ?? "";
+
+    expect(svg).toContain('data-map-marker-id="par"');
+    expect(svg).not.toContain('data-map-marker-id="tyo"');
+    expect(routeD).not.toBe("");
+    // A straight screen-space segment would end at Tokyo's far-side projection.
+    expect(routeD).not.toMatch(/^M[-\d.]+ [-\d.]+L[-\d.]+ [-\d.]+$/);
+  });
+
   it("renders every style with land, markers, and labels", () => {
     for (const style of mapStyleIds) {
       const layer = createMapLayer({

@@ -1,5 +1,5 @@
 import { FluentProvider, webLightTheme } from "@fluentui/react-components";
-import { createMapLayer, type MapLayer } from "@zakka/editor-core";
+import { createMapLayer, type MapLayer, maxMapMarkers, maxMapRoutes } from "@zakka/editor-core";
 import { useState } from "react";
 import { describe, expect, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
@@ -109,5 +109,33 @@ describe("MapControls", () => {
     await expect
       .element(page.getByRole("list", { name: "Highlighted countries" }))
       .not.toBeInTheDocument();
+  });
+
+  test("stops adding places and routes at the map limits", async () => {
+    const markers = Array.from({ length: maxMapMarkers }, (_, index) => ({
+      id: `m${index}`,
+      label: `Place ${index}`,
+      latitude: (index % 80) - 40,
+      longitude: index * 3 - 150,
+    }));
+    await renderControls(
+      createMapLayer({
+        id: "map",
+        width: 1200,
+        height: 800,
+        markers,
+        routes: Array.from({ length: maxMapRoutes }, (_, index) => ({
+          id: `r${index}`,
+          fromMarkerId: "m0",
+          toMarkerId: "m1",
+        })),
+      }),
+    );
+
+    await expect.element(searchBox()).toBeDisabled();
+    await expect.element(page.getByRole("button", { name: "Add route" })).toBeDisabled();
+    await expect
+      .element(page.getByRole("button", { name: "Connect places in order" }))
+      .toBeEnabled();
   });
 });

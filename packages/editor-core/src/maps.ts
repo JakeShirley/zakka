@@ -3,6 +3,7 @@ import {
   type GeoProjection,
   geoCentroid,
   geoContains,
+  geoDistance,
   geoEquirectangular,
   geoGraticule10,
   geoInterpolate,
@@ -640,6 +641,21 @@ const quadraticArc = (from: Point, to: Point, bulge = 0.22): Curve & { control: 
   };
 };
 
+/**
+ * Whether a point faces the viewer. A globe still projects far-side points to finite
+ * coordinates; only geometry streamed through `geoPath` is clipped to its visible hemisphere.
+ */
+const isOnVisibleFace = (projection: GeoProjection, coordinates: [number, number]): boolean => {
+  const clipAngle = projection.clipAngle();
+
+  // d3 reports 0 (not null) for projections without hemisphere clipping.
+  if (!clipAngle) return true;
+
+  const [lambda, phi] = projection.rotate();
+
+  return geoDistance(coordinates, [-lambda, -phi]) <= (clipAngle * Math.PI) / 180;
+};
+
 const routeCurve = (
   kind: MapRoute["path"],
   from: MapMarker,
@@ -647,18 +663,34 @@ const routeCurve = (
   projection: GeoProjection,
   path: ReturnType<typeof geoPath>,
 ): Curve | null => {
-  if (kind === "geodesic") {
-    const interpolate = geoInterpolate(markerCoordinates(from), markerCoordinates(to));
+  const fromCoordinates = markerCoordinates(from);
+  const toCoordinates = markerCoordinates(to);
+  const bothVisible =
+    isOnVisibleFace(projection, fromCoordinates) && isOnVisibleFace(projection, toCoordinates);
+
+  // Straight and arc routes are drawn in screen space, so a route reaching the far side of a
+  // globe follows its clipped great circle instead.
+  if (kind === "geodesic" || !bothVisible) {
+    const interpolate = geoInterpolate(fromCoordinates, toCoordinates);
     const d = path({
       type: "LineString",
-      coordinates: [markerCoordinates(from), markerCoordinates(to)],
+      coordinates: [fromCoordinates, toCoordinates],
     } satisfies GeoPermissibleObjects);
 
-    return d ? { d, pointAt: (t) => projection(interpolate(t)) } : null;
+    return d
+      ? {
+          d,
+          pointAt: (t) => {
+            const point = interpolate(t);
+
+            return isOnVisibleFace(projection, point) ? projection(point) : null;
+          },
+        }
+      : null;
   }
 
-  const start = projection(markerCoordinates(from));
-  const end = projection(markerCoordinates(to));
+  const start = projection(fromCoordinates);
+  const end = projection(toCoordinates);
 
   if (!start || !end) {
     return null;
@@ -937,9 +969,11 @@ const renderMarkers = (
 
   return layer.markers
     .map((marker) => {
-      const point = projection(markerCoordinates(marker));
+      const coordinates = markerCoordinates(marker);
+      const point = projection(coordinates);
 
       if (!point || !Number.isFinite(point[0]) || !Number.isFinite(point[1])) return "";
+      if (!isOnVisibleFace(projection, coordinates)) return "";
 
       const icon = marker.icon ?? style.preset.markerIcon;
       const color = marker.color ?? style.colors.marker;

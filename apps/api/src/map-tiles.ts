@@ -6,7 +6,11 @@ import { getMapTileUrl, type MapTile, mapTileProviders } from "@zakka/editor-cor
 export type MapTileImage = { buffer: Buffer; mimeType: "image/jpeg" | "image/png" };
 
 export type MapTileSource = {
-  getTile: (tile: MapTile) => Promise<MapTileImage | null>;
+  /**
+   * Aborting `signal` drops the request if it is still queued for an upstream slot and cancels
+   * its fetch, resolving to null.
+   */
+  getTile: (tile: MapTile, options?: { signal?: AbortSignal }) => Promise<MapTileImage | null>;
 };
 
 export class MapTileRangeError extends Error {
@@ -61,25 +65,44 @@ export const createMapTileSource = (options: {
   const waiting: Array<() => void> = [];
   let activeFetches = 0;
 
-  const withUpstreamSlot = async <T>(task: () => Promise<T>): Promise<T> => {
+  /** Resolves false, without taking a slot, if `signal` aborts first. */
+  const acquireUpstreamSlot = (signal: AbortSignal | undefined): Promise<boolean> => {
+    if (signal?.aborted) return Promise.resolve(false);
+
     if (activeFetches < maxConcurrentUpstreamFetches) {
       activeFetches += 1;
-    } else {
-      // A finishing fetch hands its slot straight to the next waiter.
-      await new Promise<void>((resolveSlot) => waiting.push(resolveSlot));
+      return Promise.resolve(true);
     }
 
-    try {
-      return await task();
-    } finally {
-      const next = waiting.shift();
+    return new Promise((resolveSlot) => {
+      const onAbort = () => {
+        const index = waiting.indexOf(grant);
 
-      if (next) next();
-      else activeFetches -= 1;
-    }
+        if (index >= 0) waiting.splice(index, 1);
+        resolveSlot(false);
+      };
+      const grant = () => {
+        signal?.removeEventListener("abort", onAbort);
+        resolveSlot(true);
+      };
+
+      waiting.push(grant);
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
   };
 
-  const load = async (tile: MapTile): Promise<MapTileImage | null> => {
+  const releaseUpstreamSlot = () => {
+    // A finishing fetch hands its slot straight to the next waiter.
+    const next = waiting.shift();
+
+    if (next) next();
+    else activeFetches -= 1;
+  };
+
+  const load = async (
+    tile: MapTile,
+    signal: AbortSignal | undefined,
+  ): Promise<MapTileImage | null> => {
     const cachePath = join(cacheDir, tile.provider, String(tile.z), String(tile.x), `${tile.y}`);
 
     try {
@@ -91,14 +114,21 @@ export const createMapTileSource = (options: {
       // Not cached yet.
     }
 
-    const buffer = await withUpstreamSlot(async () => {
+    if (!(await acquireUpstreamSlot(signal))) return null;
+
+    let buffer: Buffer | null;
+
+    try {
+      const timeout = AbortSignal.timeout(fetchTimeoutMs);
       const response = await fetchTile(getMapTileUrl(tile), {
         headers: { "user-agent": options.userAgent ?? defaultUserAgent },
-        signal: AbortSignal.timeout(fetchTimeoutMs),
+        signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
       });
 
-      return response.ok ? Buffer.from(await response.arrayBuffer()) : null;
-    });
+      buffer = response.ok ? Buffer.from(await response.arrayBuffer()) : null;
+    } finally {
+      releaseUpstreamSlot();
+    }
 
     if (!buffer) return null;
 
@@ -116,7 +146,7 @@ export const createMapTileSource = (options: {
   };
 
   return {
-    getTile: (tile) => {
+    getTile: (tile, requestOptions) => {
       if (!isMapTileInRange(tile)) {
         return Promise.reject(new MapTileRangeError(tile));
       }
@@ -126,7 +156,7 @@ export const createMapTileSource = (options: {
 
       if (existing) return existing;
 
-      const request = load(tile).finally(() => pending.delete(key));
+      const request = load(tile, requestOptions?.signal).finally(() => pending.delete(key));
 
       pending.set(key, request);
 

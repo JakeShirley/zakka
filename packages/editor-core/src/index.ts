@@ -517,6 +517,9 @@ const defaultMapView = {
   zoom: 0,
 };
 
+export const maxMapMarkers = 100;
+export const maxMapRoutes = 100;
+
 export const mapLayerSchema = pageLayerBaseSchema.extend({
   kind: z.literal("map"),
   style: z.enum(mapStyleIds),
@@ -554,8 +557,8 @@ export const mapLayerSchema = pageLayerBaseSchema.extend({
     .array(z.string().regex(/^[A-Z0-9]{3}$/))
     .max(80)
     .default([]),
-  markers: z.array(mapMarkerSchema).max(100).default([]),
-  routes: z.array(mapRouteSchema).max(100).default([]),
+  markers: z.array(mapMarkerSchema).max(maxMapMarkers).default([]),
+  routes: z.array(mapRouteSchema).max(maxMapRoutes).default([]),
   labelFontFamily: z.string().min(1).max(120).optional(),
   /** Multiplies marker, route, and label sizes. */
   symbolScale: z.number().finite().min(0.25).max(4).transform(roundToNearestHundredth).default(1),

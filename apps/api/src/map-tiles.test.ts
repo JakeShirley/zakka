@@ -79,6 +79,37 @@ describe("map tile source", () => {
       }),
     ).resolves.toBeNull();
   });
+
+  it("drops queued fetches and cancels in-flight ones when the caller aborts", async () => {
+    const png = await createTilePng();
+    const fetchTile = vi.fn<typeof fetch>(async (_url, init) => {
+      if (fetchTile.mock.calls.length > 4) return new Response(new Uint8Array(png));
+
+      return new Promise<Response>((_resolve, reject) =>
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
+      );
+    });
+    const source = createMapTileSource({ cacheDir: await createTempDir(), fetch: fetchTile });
+    const controller = new AbortController();
+    const requests = Array.from({ length: 6 }, (_, x) =>
+      source.getTile({ provider: "osm", x, y: 0, z: 3 }, { signal: controller.signal }),
+    );
+
+    await vi.waitFor(() => expect(fetchTile).toHaveBeenCalledTimes(4));
+    controller.abort();
+    const results = await Promise.allSettled(requests);
+
+    // Cache misses resolve in any order, so which four requests won a slot varies.
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(4);
+    expect(results.filter((result) => result.status === "fulfilled")).toEqual(
+      Array(2).fill({ status: "fulfilled", value: null }),
+    );
+    expect(fetchTile).toHaveBeenCalledTimes(4);
+    await expect(source.getTile({ provider: "osm", x: 7, y: 0, z: 3 })).resolves.toEqual({
+      buffer: png,
+      mimeType: "image/png",
+    });
+  });
 });
 
 describe("map tile route", () => {
