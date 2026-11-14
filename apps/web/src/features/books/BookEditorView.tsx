@@ -23,6 +23,7 @@ import {
   reorderLayer,
   resizePageDocument,
   type StickerDefinition,
+  setPageBackground,
   updateCanvas,
   updateLayer,
   type WashiTapeDesign,
@@ -36,6 +37,10 @@ import { apiClient } from "../../apiClient";
 import { AppModal, ProcessingBanner, WorkspaceHeader } from "../../components/layout";
 import { getErrorMessage } from "../../lib/errors";
 import type { Asset, BookDetail, ExportJob, PageDetail } from "../../types";
+import {
+  type BackgroundApplyTarget,
+  PageBackgroundPanel,
+} from "../backgrounds/PageBackgroundPanel";
 import {
   type ArrangeSettings,
   alignReferenceLabels,
@@ -97,11 +102,17 @@ import {
   getBookPageSizeKey,
 } from "./pageSizes";
 import {
+  adjustBackgrounds,
+  applySharedBackground,
+  getLinkedBackgroundPages,
+} from "./spreadBackgrounds";
+import {
   fillPhotoPlaceholderAcrossSpread,
   getSpreadPageContexts,
   layerOverlapsPageCanvas,
   replacePageDocument,
   type SpreadLayerSyncResult,
+  type SpreadPageContext,
   syncLayerAcrossSpread,
 } from "./spreadLayers";
 
@@ -237,6 +248,9 @@ export function BookEditorView() {
   const [isLibraryPickerOpen, setIsLibraryPickerOpen] = useState(false);
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false);
   const [isWashiTapeGalleryOpen, setIsWashiTapeGalleryOpen] = useState(false);
+  const [isBackgroundPanelOpen, setIsBackgroundPanelOpen] = useState(false);
+  const [backgroundApplyTarget, setBackgroundApplyTarget] =
+    useState<BackgroundApplyTarget>("spread");
   const [pngExportTarget, setPngExportTarget] = useState<PngExportTarget | null>(null);
   const [draggedPageIds, setDraggedPageIds] = useState<string[]>([]);
   const [markedPageIds, setMarkedPageIds] = useState<string[]>([]);
@@ -731,6 +745,126 @@ export function BookEditorView() {
 
     editPageDocument(pageId, updateCanvas(page.document, { backgroundColor }));
   };
+
+  const canApplyBackgroundToSpread =
+    viewMode === "spread" &&
+    visibleSpreadPages.length > 1 &&
+    visibleSpreadPages.some((spreadPage) => spreadPage.pageId === activePageId);
+
+  /** Pages a background choice, colour, or removal applies to, with their offset in the spread. */
+  const getBackgroundTargetPages = (): SpreadPageContext[] => {
+    if (!activePage) {
+      return [];
+    }
+
+    if (canApplyBackgroundToSpread && backgroundApplyTarget === "spread") {
+      return visibleSpreadPages;
+    }
+
+    return [{ offsetX: 0, page: activePage, pageId: activePage.id }];
+  };
+
+  /**
+   * Pages sharing the active page's background frame, which must change scale together. The
+   * link follows the book's spread even in single-page view so edits never split a spread
+   * background.
+   */
+  const getLinkedPagesForActiveBackground = (): SpreadPageContext[] => {
+    if (!activePage) {
+      return [];
+    }
+
+    const spreadPages = getSpreadPageContexts(pageDetails, activeSpread?.pageIds ?? []);
+    const isInSpread = spreadPages.some((spreadPage) => spreadPage.pageId === activePage.id);
+
+    return getLinkedBackgroundPages(
+      isInSpread ? spreadPages : [{ offsetX: 0, page: activePage, pageId: activePage.id }],
+      activePage.id,
+    );
+  };
+
+  const editPageDocuments = (
+    documents: ReadonlyMap<string, PageDocument>,
+    historyMode: EditHistoryMode = "record",
+  ) => {
+    if (documents.size === 0) {
+      return;
+    }
+
+    recordEditorHistory(historyMode);
+    setPageDetails((currentDetails) => {
+      const nextDetails = new Map(currentDetails);
+
+      for (const [pageId, document] of documents) {
+        const page = nextDetails.get(pageId);
+
+        if (page) {
+          nextDetails.set(pageId, replacePageDocument(page, document));
+        }
+      }
+
+      return nextDetails;
+    });
+    setPagesStatus([...documents.keys()], "unsaved");
+  };
+
+  const selectPageBackground = (backgroundId: string) => {
+    editPageDocuments(applySharedBackground(getBackgroundTargetPages(), backgroundId));
+  };
+
+  const removePageBackground = () => {
+    editPageDocuments(
+      new Map(
+        getBackgroundTargetPages().map((target) => [
+          target.pageId,
+          setPageBackground(target.page.document, null),
+        ]),
+      ),
+    );
+  };
+
+  const changePageBackgroundScale = (scale: number) => {
+    const targets = getLinkedPagesForActiveBackground();
+
+    editPageDocuments(
+      adjustBackgrounds(targets, { scale }),
+      coalesceEdits(`background-scale:${targets.map((target) => target.pageId).join(",")}`),
+    );
+  };
+
+  const changePageBackgroundRotation = (rotation: number) => {
+    const targets = getLinkedPagesForActiveBackground();
+
+    editPageDocuments(
+      adjustBackgrounds(targets, { rotation }),
+      coalesceEdits(`background-rotation:${targets.map((target) => target.pageId).join(",")}`),
+    );
+  };
+
+  const changeTargetBackgroundColor = (backgroundColor: string) => {
+    const targets = getBackgroundTargetPages();
+
+    editPageDocuments(
+      new Map(
+        targets.map((target) => [
+          target.pageId,
+          updateCanvas(target.page.document, { backgroundColor }),
+        ]),
+      ),
+      coalesceEdits(`background-color:${targets.map((target) => target.pageId).join(",")}`),
+    );
+  };
+
+  const openBackgroundPanel = () => {
+    setSelectedLayerIds([]);
+    setIsBackgroundPanelOpen(true);
+  };
+
+  useEffect(() => {
+    if (selectedLayerIds.length > 0) {
+      setIsBackgroundPanelOpen(false);
+    }
+  }, [selectedLayerIds]);
 
   const unsavedPageIds = useMemo(
     () =>
@@ -1996,10 +2130,59 @@ export function BookEditorView() {
                       />
                     ),
                 }
-              : null
+              : isBackgroundPanelOpen && activePage
+                ? {
+                    actions: (
+                      <div className="editor-edit-pane-actions">
+                        <Button
+                          appearance="subtle"
+                          size="small"
+                          icon={<ArrowUndoRegular />}
+                          aria-label="Undo"
+                          title="Undo (Ctrl/Cmd+Z)"
+                          disabled={!canUndo}
+                          onClick={undoBookEdit}
+                        />
+                        <Button
+                          appearance="subtle"
+                          size="small"
+                          icon={<ArrowRedoRegular />}
+                          aria-label="Redo"
+                          title="Redo (Ctrl/Cmd+Shift+Z)"
+                          disabled={!canRedo}
+                          onClick={redoBookEdit}
+                        />
+                        <Button
+                          appearance="subtle"
+                          size="small"
+                          icon={<DismissRegular />}
+                          aria-label="Close backgrounds"
+                          title="Close"
+                          onClick={() => setIsBackgroundPanelOpen(false)}
+                        />
+                      </div>
+                    ),
+                    title: "Backgrounds",
+                    content: (
+                      <PageBackgroundPanel
+                        applyTarget={backgroundApplyTarget}
+                        background={activePage.document.canvas.background ?? null}
+                        backgroundColor={activePage.document.canvas.backgroundColor}
+                        canApplyToSpread={canApplyBackgroundToSpread}
+                        onApplyTargetChange={setBackgroundApplyTarget}
+                        onBackgroundColorChange={changeTargetBackgroundColor}
+                        onRemove={removePageBackground}
+                        onRotationChange={changePageBackgroundRotation}
+                        onScaleChange={changePageBackgroundScale}
+                        onSelect={selectPageBackground}
+                      />
+                    ),
+                  }
+                : null
           }
           onAddMap={addMap}
           onAddText={addText}
+          onOpenBackgroundPanel={openBackgroundPanel}
           onOpenLibraryPicker={() => setIsLibraryPickerOpen(true)}
           onOpenStickerPicker={() => setIsStickerPickerOpen(true)}
           onOpenWashiTapePicker={() => setIsWashiTapeGalleryOpen(true)}

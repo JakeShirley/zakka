@@ -333,6 +333,77 @@ describe("PNG page exports", () => {
     }
   });
 
+  it("renders custom and built-in texture page backgrounds", async () => {
+    const customBackgroundId = "custom_background_export_pixels";
+    const fixture = await createExportFixture(
+      createPageDocument({
+        canvas: {
+          background: {
+            backgroundId: `custom:${customBackgroundId}`,
+            height: 320,
+            scale: 1,
+            width: 160,
+            x: 0,
+            y: 0,
+          },
+          backgroundColor: "#f7f1e4",
+          height: 320,
+          width: 320,
+        },
+      }),
+    );
+
+    try {
+      fixture.repositories.customBackgrounds.create({
+        accountId: testAccountId,
+        byteSize: 1,
+        checksumSha256: "a".repeat(64),
+        height: 32,
+        id: customBackgroundId,
+        mimeType: "image/png",
+        name: "Red",
+        source: "upload",
+        storageKey: testAssetStorageKey,
+        thumbnailStorageKey: testAssetStorageKey,
+        width: 32,
+      });
+
+      const rendered = await renderPageExport({
+        accountId: testAccountId,
+        format: "png",
+        pageId: testPageId,
+        preset: "print",
+        repositories: fixture.repositories,
+        storage: fixture.storage,
+      });
+      const image = await decodePng(rendered.buffer);
+
+      expectColorNear(pixelAt(image, 40, 160), photoRed, 12);
+      expectColorNear(pixelAt(image, 280, 160), scrapbookBackground);
+    } finally {
+      fixture.connection.close();
+    }
+
+    const textured = await renderDocumentPng(
+      createPageDocument({
+        canvas: {
+          background: {
+            backgroundId: "zakka:kraft-paper",
+            height: 320,
+            scale: 1,
+            width: 320,
+            x: 0,
+            y: 0,
+          },
+          height: 320,
+          width: 320,
+        },
+      }),
+    );
+
+    expectColorNear(pixelAt(textured, 160, 160), { blue: 93, green: 144, red: 191 }, 60);
+  });
+
   it("clips photo layers with every supported mask shape", async () => {
     const maskCases: Array<{
       inside: Array<[number, number]>;

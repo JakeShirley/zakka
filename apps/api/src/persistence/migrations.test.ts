@@ -23,6 +23,7 @@ describe("SQLite migrations", () => {
         "0012_add_custom_washi_tapes",
         "0013_add_integrations",
         "0014_add_account_preferences",
+        "0015_add_custom_backgrounds",
       ]);
       expect(runMigrations(connection.sqlite)).toEqual([]);
       expect(getAppliedMigrations(connection.sqlite)).toEqual([
@@ -40,6 +41,7 @@ describe("SQLite migrations", () => {
         "0012_add_custom_washi_tapes",
         "0013_add_integrations",
         "0014_add_account_preferences",
+        "0015_add_custom_backgrounds",
       ]);
 
       const tableNames = connection.sqlite
@@ -58,6 +60,7 @@ describe("SQLite migrations", () => {
         "book_assets",
         "book_pages",
         "books",
+        "custom_backgrounds",
         "custom_stickers",
         "custom_washi_tapes",
         "exports",

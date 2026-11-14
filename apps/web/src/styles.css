@@ -6498,6 +6498,224 @@ button.washi-tape-tile:focus-visible {
   }
 }
 
+.backgrounds-page {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.background-gallery {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  min-width: 0;
+}
+
+.panel > .background-gallery {
+  padding: 16px;
+}
+
+.background-gallery .background-gallery-toolbar {
+  grid-template-columns: minmax(0, 1fr);
+  border-bottom: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.background-gallery-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.background-gallery-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.background-gallery-heading h4 {
+  margin: 0;
+  color: var(--sb-neutral-foreground);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.background-gallery-section > .empty-state {
+  margin: 0;
+}
+
+.background-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.background-tile-wrap {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.background-tile {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--sb-neutral-stroke-2);
+  border-radius: 8px;
+  padding: 6px;
+  color: var(--sb-neutral-foreground);
+  font: inherit;
+  text-align: left;
+  background: var(--sb-neutral-background);
+}
+
+button.background-tile {
+  cursor: pointer;
+}
+
+button.background-tile:hover,
+button.background-tile:focus-visible {
+  border-color: var(--sb-brand-foreground);
+  box-shadow: 0 10px 20px rgb(from var(--sb-shadow-color) r g b / 10%);
+}
+
+.background-tile-wrap[data-selected] .background-tile {
+  border-color: var(--sb-select-foreground);
+  box-shadow: 0 0 0 2px var(--sb-select-tint-strong);
+}
+
+.background-swatch {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--sb-neutral-background-3);
+}
+
+.background-swatch > svg,
+.background-swatch > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.background-tile-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.background-tile-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.background-tile-copy span:first-child {
+  font-weight: 700;
+}
+
+.background-tile-copy span:last-child:not(:first-child) {
+  color: var(--sb-neutral-foreground-3);
+  font-size: 0.82rem;
+}
+
+.background-tile-actions,
+.background-rename-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.background-rename-form > :first-child {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.background-gallery[data-layout="rail"] {
+  gap: 12px;
+}
+
+.background-gallery[data-layout="rail"] .background-grid {
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+}
+
+.background-gallery[data-layout="rail"] .background-tile {
+  padding: 3px;
+  border-radius: 6px;
+}
+
+.background-gallery[data-layout="rail"] .background-tile-copy {
+  font-size: 0.7rem;
+}
+
+.background-gallery[data-layout="rail"] .background-gallery-heading h4 {
+  font-size: 0.8rem;
+}
+
+.page-background-panel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.page-background-target-choices {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.page-background-target-choices .arrange-choice {
+  min-height: 32px;
+  font-size: 0.74rem;
+}
+
+.page-background-current {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.page-background-current > .empty-state {
+  margin: 0;
+}
+
+.page-background-current-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-background-current-name {
+  overflow: hidden;
+  font-size: 0.84rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-background-scale {
+  display: grid;
+  gap: 4px;
+}
+
+.page-background-color-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--sb-neutral-foreground-2);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
 .settings-appearance-grid {
   grid-template-columns: minmax(280px, 820px);
 }
