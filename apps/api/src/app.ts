@@ -114,6 +114,7 @@ import {
   shutterflyProjectImportRoute,
   shutterflyProjectListResponseSchema,
   shutterflyProjectListRoute,
+  mapTileRoute,
 } from "@zakka/api-contract";
 import {
   createBookSpreads,
@@ -144,6 +145,7 @@ import {
   verifyPassword,
 } from "./auth.js";
 import { ExportRenderError, renderBookExport, renderPageExport } from "./exports.js";
+import { isMapTileInRange, type MapTileImage, type MapTileSource } from "./map-tiles.js";
 import {
   OwnershipError,
   type Repositories,
@@ -213,6 +215,8 @@ export type CreateAppOptions = {
   staticAssetsDir?: string;
   /** Present only when SHUTTERFLY_API_KEY is configured. */
   shutterfly?: ShutterflyIntegration;
+  /** Proxies and caches raster tiles for tile-style map layers. */
+  mapTiles?: MapTileSource;
 };
 
 type ApiContext = Context<ApiBindings>;
@@ -698,6 +702,7 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
   const serverLogEntries: ServerLogEntryResponse[] = [];
   const options = {
     clock: createOptions.clock ?? defaultClock,
+    mapTiles: createOptions.mapTiles,
     repositories: createOptions.repositories,
     sessionCookieSecure: createOptions.sessionCookieSecure,
     sessionTtlMs: createOptions.sessionTtlMs ?? defaultSessionTtlMs,
@@ -2494,6 +2499,52 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     });
   });
 
+  app.openapi(mapTileRoute, async (context) => {
+    if (!options.repositories || !options.mapTiles) {
+      return context.json(
+        createErrorResponse(context, "map_tiles_unavailable", "Map tiles are unavailable"),
+        500,
+      );
+    }
+
+    if (!getAuthenticatedSession(context, options.repositories)) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const tile = context.req.valid("param");
+
+    if (!isMapTileInRange(tile)) {
+      return context.json(
+        createErrorResponse(context, "map_tile_out_of_range", "Map tile is outside the tile grid"),
+        400,
+      );
+    }
+
+    let image: MapTileImage | null;
+
+    try {
+      image = await options.mapTiles.getTile(tile);
+    } catch {
+      image = null;
+    }
+
+    if (!image) {
+      return context.json(
+        createErrorResponse(context, "map_tile_unavailable", "The map tile provider failed"),
+        502,
+      );
+    }
+
+    return context.body(toArrayBuffer(image.buffer), 200, {
+      "cache-control": "private, max-age=604800, immutable",
+      "content-length": String(image.buffer.byteLength),
+      "content-type": image.mimeType,
+    });
+  });
+
   app.openapi(customStickerFavoriteRoute, (context) => {
     if (!options.repositories) {
       return context.json(
@@ -2750,6 +2801,7 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
             format: input.format,
             includeBackground: input.includeBackground ?? true,
             pageId: input.pageId,
+            ...(options.mapTiles ? { mapTiles: options.mapTiles } : {}),
             preset: input.preset,
             repositories: options.repositories,
             storage: options.storage,
@@ -2760,6 +2812,7 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
             ...(input.dpi === undefined ? {} : { dpi: input.dpi }),
             format: input.format,
             includeBackground: input.includeBackground ?? true,
+            ...(options.mapTiles ? { mapTiles: options.mapTiles } : {}),
             preset: input.preset,
             repositories: options.repositories,
             storage: options.storage,

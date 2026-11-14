@@ -3,6 +3,7 @@ import {
   AddRegular,
   EmojiSparkleRegular,
   ImageAddRegular,
+  MapRegular,
   TextTRegular,
 } from "@fluentui/react-icons";
 import type { ReactNode } from "react";
@@ -21,6 +22,7 @@ type AssetRailCommonProps = {
   isPhotoPickerDisabled?: boolean;
   isStickerPickerDisabled?: boolean;
   inspector?: AssetRailInspector | null;
+  onAddMap: () => void;
   onAddText: () => void;
   onOpenStickerPicker: () => void;
   onOpenWashiTapePicker: () => void;
@@ -47,6 +49,7 @@ export function AssetRail(props: AssetRailProps) {
     isPhotoPickerDisabled = false,
     isStickerPickerDisabled = false,
     inspector,
+    onAddMap,
     onAddText,
     onOpenStickerPicker,
     onOpenWashiTapePicker,
@@ -95,6 +98,14 @@ export function AssetRail(props: AssetRailProps) {
           onClick={onOpenStickerPicker}
         >
           Add sticker
+        </Button>
+        <Button
+          type="button"
+          className="secondary-button full-width-button"
+          icon={<MapRegular />}
+          onClick={onAddMap}
+        >
+          Add map
         </Button>
         {isReferencedMode ? (
           <Button

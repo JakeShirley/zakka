@@ -119,6 +119,24 @@ The script also stores each family's license in `vendor/fonts/google-fonts/licen
 
 The script drops `ccmp`, `liga`, or `rlig` from a font when those features contain lookups opentype.js cannot run, because opentype.js would otherwise throw while laying out text.
 
+## Maps
+
+Map layers come in eight styles (`packages/editor-core/src/map-styles.ts`). Atlas, Vintage, Scrapbook pastel, Midnight, Minimal, and Globe are vector styles. `packages/editor-core/src/maps.ts` renders them with d3-geo from bundled [Natural Earth](https://www.naturalearthdata.com/) data, which is in the public domain. The web canvas and server exports render the same SVG, so exports are resolution independent. The renderer switches from the 50m data to the 10m data when the view is zoomed in. Both data sets load lazily in the web app.
+
+A selected map shows a hand pan handle and a zoom bar on the canvas, like photos. `panMapLayerView` and `zoomMapLayerView` in `maps.ts` turn a fitted view into a custom center and zoom. On the Globe style, panning spins the globe. `getMapZoomRange` caps vector styles at zoom 12 and tile styles at zoom 18.
+The vendored files in `packages/editor-core/vendor/maps/` are TopoJSON world data and a `places.tsv` city index for place search. To refresh them from the pinned Natural Earth commit:
+
+```sh
+cd packages/editor-core
+node scripts/vendor-map-data.mjs
+```
+
+`scripts/generate-map-data.mjs` runs during the editor-core build. It turns the vendored files into the `@zakka/editor-core/map-data`, `map-data-detailed`, and `map-places` modules.
+
+Street map (OpenStreetMap) and Topographic (Esri World Topo) are raster tile styles. The browser and the export renderer fetch tiles through the authenticated `GET /api/v1/map-tiles/{provider}/{z}/{x}/{y}` proxy. The proxy caches tiles on disk in `$ZAKKA_DATA_DIR/map-tiles`, and exports inline the cached tiles. The layer's tile detail picks the tile zoom per printed size. Fine detail maps each tile pixel to one 300 DPI page unit, and the large-label setting trades detail for bigger map text. Neither provider serves high-DPI tiles, so tile styles stay sharpest at Fine detail.
+
+Both tile providers have usage policies: the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/) and [Esri's terms of use](https://www.esri.com/en-us/legal/terms/full-master-agreement). Keep the attribution that the renderer draws on each tile map. The proxy limits concurrent upstream requests and reuses cached tiles, but heavy deployments should still review those policies.
+
 ## UI Themes
 
 App themes change only the app chrome. Books and page content keep their own colors. Each account stores its theme (`uiTheme` in `/api/v1/account/preferences`), and the browser caches it in localStorage so the first paint uses the right colors.

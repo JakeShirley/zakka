@@ -1,6 +1,8 @@
 import {
   getTextLayerRenderedBounds,
   type PageLayer,
+  type MapLayer,
+  panMapLayerView,
   type PhotoLayer,
   type TextLayer,
 } from "@zakka/editor-core";
@@ -330,6 +332,18 @@ export const panPhotoLayer = (
   const nextOffsetY = startOffset.offsetY + (localDelta.y * 2 * flipY) / (imageHeight * scale);
   return clampPhotoPanOffset(layer, { offsetX: nextOffsetX, offsetY: nextOffsetY });
 };
+
+// Drag the map content inside its frame; the pointer delta is converted into the layer's
+// rotated local space so the map follows the hand.
+export const panMapLayer = (
+  layer: MapLayer,
+  pointer: CanvasPoint,
+  startPointer: CanvasPoint,
+): MapLayer["view"] =>
+  panMapLayerView(
+    layer,
+    rotatePoint({ x: pointer.x - startPointer.x, y: pointer.y - startPointer.y }, -layer.rotation),
+  );
 
 // Clamp a pan offset so the source image continues to cover the crop frame
 // at the layer's current scale.

@@ -624,6 +624,12 @@ const shutterflyProjects = [
   },
 ];
 
+// A flat 1x1 PNG keeps raster map styles deterministic without reaching tile servers.
+const mapTilePng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mPQ2rELAALkAZ6aXXkGAAAAAElFTkSuQmCC",
+  "base64",
+);
+
 const scenarios: ScreenshotScenario[] = [
   {
     authenticated: false,
@@ -780,6 +786,27 @@ const scenarios: ScreenshotScenario[] = [
       await page.getByLabel("Relative to").selectOption("largest");
       await horizontalChoices.getByRole("button", { name: "Center", exact: true }).click();
       await expect(page.getByTestId("arrange-preview")).toBeVisible();
+    },
+    viewports: ["desktop"],
+    waitFor: waitForBookEditor,
+  },
+  {
+    name: "book-editor-map",
+    path: "/books/book_summer",
+    prepare: async (page) => {
+      // Map layers are absent on merge-base; stage them only when the editor offers them.
+      const addMapButton = page.getByRole("button", { name: "Add map" });
+      if (!(await isVisible(addMapButton))) return;
+      await addMapButton.click();
+      const placeSearch = page.getByRole("searchbox", { name: "Add a place" });
+      for (const place of ["Kyoto", "Tokyo", "Seoul"]) {
+        await placeSearch.fill(place);
+        await expect(page.getByRole("list", { name: "Place results" })).toBeVisible();
+        await placeSearch.press("Enter");
+      }
+      await page.getByRole("button", { name: "Connect places in order" }).click();
+      await page.getByText("Vintage", { exact: true }).click();
+      await expect(page.locator('.canvas-layer[data-kind="map"]')).toBeVisible();
     },
     viewports: ["desktop"],
     waitFor: waitForBookEditor,
@@ -1104,6 +1131,11 @@ async function installMockApi(
 
     if (assetSvgs.has(pathName)) {
       await route.fulfill({ body: assetSvgs.get(pathName), contentType: "image/svg+xml" });
+      return;
+    }
+
+    if (pathName.startsWith("/api/v1/map-tiles/")) {
+      await route.fulfill({ body: mapTilePng, contentType: "image/png" });
       return;
     }
 

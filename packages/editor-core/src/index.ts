@@ -1,7 +1,21 @@
-import type { Font, Path, PathCommand } from "opentype.js";
+import type { Font } from "opentype.js";
 import { z } from "zod";
 
 import { defaultTextFontFamily, getBundledEditorFont } from "./fonts.js";
+import type { MapGeography, MapGeographyDetail } from "./map-geography.js";
+import {
+  type MapTile,
+  mapMarkerIcons,
+  mapMarkerLabelPositions,
+  mapProjectionIds,
+  mapRouteDecorations,
+  mapRouteLineStyles,
+  mapRoutePaths,
+  mapStyleIds,
+  mapTileDetails,
+} from "./map-styles.js";
+import { getMapLayerGeographyDetail, renderMapLayerContent } from "./maps.js";
+import { escapeXml, pathData } from "./svg-path.js";
 import { parseRichText, type RichTextRun } from "./text-markdown.js";
 
 export {
@@ -14,6 +28,52 @@ export {
   loveYaLikeASisterFontFamily,
 } from "./fonts.js";
 
+export type {
+  MapCountry,
+  MapGeoBounds,
+  MapGeography,
+  MapGeographyDetail,
+  MapGeographyFeature,
+} from "./map-geography.js";
+export {
+  getMapStylePreset,
+  getMapTileUrl,
+  type MapMarkerIcon,
+  type MapProjection,
+  type MapRouteDecoration,
+  type MapRouteLineStyle,
+  type MapRoutePath,
+  type MapStyleColors,
+  type MapStyleFeatures,
+  type MapStyleId,
+  type MapStylePreset,
+  type MapTile,
+  type MapTileDetail,
+  type MapTileProvider,
+  mapMarkerIcons,
+  mapMarkerLabelPositions,
+  mapProjectionIds,
+  mapRouteDecorations,
+  mapRouteLineStyles,
+  mapRoutePaths,
+  mapStyleIds,
+  mapStylePresets,
+  mapTileDetails,
+  mapTileProviderIds,
+  mapTileProviders,
+} from "./map-styles.js";
+export {
+  findMapCountryIds,
+  getMapLayerGeographyDetail,
+  getMapLayerTiles,
+  getMapZoomRange,
+  type MapView,
+  panMapLayerView,
+  type ResolvedMapStyle,
+  resolveMapLayerStyle,
+  resolveMapLayerView,
+  zoomMapLayerView,
+} from "./maps.js";
 export {
   annotateInlineMarkdown,
   type MarkdownSpan,
@@ -409,11 +469,127 @@ export const washiTapeLayerSchema = pageLayerBaseSchema.extend({
   tile: washiTapeTileSchema.default(defaultWashiTapeTile),
 });
 
+const mapItemIdSchema = z.string().min(1).max(80);
+const latitudeSchema = z.number().finite().min(-90).max(90).transform(roundToNearestTenThousandth);
+const longitudeSchema = z
+  .number()
+  .finite()
+  .min(-180)
+  .max(180)
+  .transform(roundToNearestTenThousandth);
+// View centers need far more precision than markers so street-level pans don't snap.
+const roundToMapCenterPrecision = (value: number): number => {
+  const rounded = Math.round(value * 1e7) / 1e7;
+
+  return Object.is(rounded, -0) ? 0 : rounded;
+};
+const centerLatitudeSchema = z
+  .number()
+  .finite()
+  .min(-90)
+  .max(90)
+  .transform(roundToMapCenterPrecision);
+const centerLongitudeSchema = z
+  .number()
+  .finite()
+  .min(-180)
+  .max(180)
+  .transform(roundToMapCenterPrecision);
+
+export const mapMarkerSchema = z.object({
+  id: mapItemIdSchema,
+  label: z.string().max(120),
+  sublabel: z.string().max(160).default(""),
+  latitude: latitudeSchema,
+  longitude: longitudeSchema,
+  /** Omitted icons and colors follow the map style. */
+  icon: z.enum(mapMarkerIcons).optional(),
+  color: colorSchema.optional(),
+  labelPosition: z.enum(mapMarkerLabelPositions).default("below"),
+});
+
+export const mapRouteSchema = z.object({
+  id: mapItemIdSchema,
+  fromMarkerId: mapItemIdSchema,
+  toMarkerId: mapItemIdSchema,
+  /** Omitted path, line, decoration, and color settings follow the map style. */
+  path: z.enum(mapRoutePaths).optional(),
+  lineStyle: z.enum(mapRouteLineStyles).optional(),
+  decoration: z.enum(mapRouteDecorations).optional(),
+  color: colorSchema.optional(),
+});
+
+export const mapViewSchema = z.object({
+  /** `fit` frames every marker and route automatically; `custom` uses the stored center and zoom. */
+  mode: z.enum(["fit", "custom"]),
+  centerLongitude: centerLongitudeSchema,
+  centerLatitude: centerLatitudeSchema,
+  /** 0 shows the whole world across the layer width; each step doubles the scale. */
+  zoom: z.number().finite().min(0).max(18).transform(roundToNearestHundredth),
+});
+
+const defaultMapView = {
+  mode: "fit" as const,
+  centerLongitude: 0,
+  centerLatitude: 20,
+  zoom: 0,
+};
+
+export const maxMapMarkers = 100;
+export const maxMapRoutes = 100;
+
+export const mapLayerSchema = pageLayerBaseSchema.extend({
+  kind: z.literal("map"),
+  style: z.enum(mapStyleIds),
+  /** Overrides the style's projection for vector styles; tile styles always use Web Mercator. */
+  projection: z.enum(mapProjectionIds).optional(),
+  view: mapViewSchema.default(defaultMapView),
+  colors: z
+    .object({
+      background: colorSchema.optional(),
+      ocean: colorSchema.optional(),
+      land: colorSchema.optional(),
+      border: colorSchema.optional(),
+      highlight: colorSchema.optional(),
+      water: colorSchema.optional(),
+      graticule: colorSchema.optional(),
+      route: colorSchema.optional(),
+      marker: colorSchema.optional(),
+      label: colorSchema.optional(),
+      halo: colorSchema.optional(),
+    })
+    .default({}),
+  features: z
+    .object({
+      borders: z.boolean().optional(),
+      lakes: z.boolean().optional(),
+      rivers: z.boolean().optional(),
+      graticule: z.boolean().optional(),
+      states: z.boolean().optional(),
+      texture: z.boolean().optional(),
+      frame: z.boolean().optional(),
+    })
+    .default({}),
+  /** Natural Earth `ADM0_A3` country codes to fill with the highlight color. */
+  highlightedCountries: z
+    .array(z.string().regex(/^[A-Z0-9]{3}$/))
+    .max(80)
+    .default([]),
+  markers: z.array(mapMarkerSchema).max(maxMapMarkers).default([]),
+  routes: z.array(mapRouteSchema).max(maxMapRoutes).default([]),
+  labelFontFamily: z.string().min(1).max(120).optional(),
+  /** Multiplies marker, route, and label sizes. */
+  symbolScale: z.number().finite().min(0.25).max(4).transform(roundToNearestHundredth).default(1),
+  /** Raster tile styles: trades tile label size against sharpness. */
+  tileDetail: z.enum(mapTileDetails).default("standard"),
+});
+
 export const pageLayerSchema = z.discriminatedUnion("kind", [
   photoLayerSchema,
   textLayerSchema,
   stickerLayerSchema,
   washiTapeLayerSchema,
+  mapLayerSchema,
 ]);
 
 export const pageDocumentSchema = z.object({
@@ -433,6 +609,10 @@ export type TextLayer = z.infer<typeof textLayerSchema>;
 export type StickerLayer = z.infer<typeof stickerLayerSchema>;
 export type WashiTapeLayer = z.infer<typeof washiTapeLayerSchema>;
 export type WashiTapeDesign = z.infer<typeof washiTapeDesignSchema>;
+export type MapLayer = z.infer<typeof mapLayerSchema>;
+export type MapMarker = z.infer<typeof mapMarkerSchema>;
+export type MapRoute = z.infer<typeof mapRouteSchema>;
+export type MapLayerView = z.infer<typeof mapViewSchema>;
 export type PageLayerKind = PageLayer["kind"];
 
 export type RenderPageSvgOptions = {
@@ -442,6 +622,13 @@ export type RenderPageSvgOptions = {
   resolveStickerSvg?: (layer: StickerLayer) => StickerSvg | null | undefined;
   resolveStickerHref?: (layer: StickerLayer) => string | null | undefined;
   resolveWashiTapeHref?: (layer: WashiTapeLayer) => string | null | undefined;
+  /**
+   * Bundled map geography for vector map styles. Return null while it is still loading;
+   * a missing high-detail dataset falls back to low detail.
+   */
+  resolveMapGeography?: (detail: MapGeographyDetail) => MapGeography | null | undefined;
+  /** Image href (URL or data URI) for a raster map tile. */
+  resolveMapTileHref?: (tile: MapTile) => string | null | undefined;
   /**
    * Draws empty photo placeholders (photo layers without an asset) so an editor can show where a
    * photo goes. Exports leave this off so placeholders do not print.
@@ -532,6 +719,31 @@ export type CreateStickerLayerInput = Partial<
   stickerId?: string;
 };
 
+export type CreateMapLayerInput = Partial<
+  Pick<
+    z.input<typeof mapLayerSchema>,
+    | "colors"
+    | "features"
+    | "height"
+    | "highlightedCountries"
+    | "id"
+    | "labelFontFamily"
+    | "locked"
+    | "markers"
+    | "opacity"
+    | "projection"
+    | "rotation"
+    | "routes"
+    | "style"
+    | "symbolScale"
+    | "tileDetail"
+    | "view"
+    | "width"
+    | "x"
+    | "y"
+  >
+>;
+
 export type CreateWashiTapeLayerInput = Partial<
   Pick<
     WashiTapeLayer,
@@ -591,14 +803,6 @@ const createRandomId = (): string => {
 const createLayerId = (): string => `layer_${createRandomId()}`;
 
 const parseDocument = (document: PageDocument): PageDocument => pageDocumentSchema.parse(document);
-
-const escapeXml = (value: string): string =>
-  value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
 
 const svgIdPart = (value: string): string => {
   const sanitized = value.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -1779,54 +1983,6 @@ const renderTextLayerSvg = (
   };
 };
 
-const pathNumber = (value: number): string | null => {
-  if (!Number.isFinite(value)) {
-    return null;
-  }
-
-  const roundedValue = Math.round(value * 100) / 100;
-
-  return String(Object.is(roundedValue, -0) ? 0 : roundedValue);
-};
-
-const pathCommandData = (command: PathCommand): string | null => {
-  switch (command.type) {
-    case "M":
-    case "L": {
-      const x = pathNumber(command.x);
-      const y = pathNumber(command.y);
-
-      return x && y ? `${command.type}${x} ${y}` : null;
-    }
-    case "C": {
-      const x1 = pathNumber(command.x1);
-      const y1 = pathNumber(command.y1);
-      const x2 = pathNumber(command.x2);
-      const y2 = pathNumber(command.y2);
-      const x = pathNumber(command.x);
-      const y = pathNumber(command.y);
-
-      return x1 && y1 && x2 && y2 && x && y ? `C${x1} ${y1} ${x2} ${y2} ${x} ${y}` : null;
-    }
-    case "Q": {
-      const x1 = pathNumber(command.x1);
-      const y1 = pathNumber(command.y1);
-      const x = pathNumber(command.x);
-      const y = pathNumber(command.y);
-
-      return x1 && y1 && x && y ? `Q${x1} ${y1} ${x} ${y}` : null;
-    }
-    case "Z":
-      return "Z";
-  }
-};
-
-const pathData = (path: Path): string =>
-  path.commands
-    .map(pathCommandData)
-    .filter((commandData): commandData is string => commandData !== null)
-    .join("");
-
 const renderBundledFontTextLayerSvg = (
   layer: TextLayer,
   bundledFont: Font,
@@ -2207,6 +2363,30 @@ const renderWashiTapeLayerSvg = (
   };
 };
 
+const renderMapLayerSvg = (
+  layer: MapLayer,
+  index: number,
+  options: RenderPageSvgOptions,
+): { body: string; defs: string } => {
+  const detail = getMapLayerGeographyDetail(layer);
+  const geography = detail
+    ? (options.resolveMapGeography?.(detail) ??
+      (detail === "high" ? options.resolveMapGeography?.("low") : null))
+    : null;
+  const rendered = renderMapLayerContent(layer, {
+    geography,
+    idBase: options.idPrefix
+      ? createSvgId(options.idPrefix, "map", index)
+      : createSvgId("map", index),
+    resolveTileHref: (tile) => options.resolveMapTileHref?.(tile),
+  });
+
+  return {
+    defs: rendered.defs,
+    body: `<g data-layer-id="${escapeXml(layer.id)}" opacity="${layer.opacity}" transform="${layerTransform(layer)}"><g data-layer-local-transform="true" transform="translate(${layer.x} ${layer.y})">${rendered.body}</g></g>`,
+  };
+};
+
 export const renderPageDocumentSvg = (
   document: PageDocument,
   options: RenderPageSvgOptions = {},
@@ -2247,6 +2427,14 @@ export const renderPageDocumentSvg = (
         bodies.push(rendered.body);
       }
 
+      continue;
+    }
+
+    if (layer.kind === "map") {
+      const rendered = renderMapLayerSvg(layer, index, options);
+
+      defs.push(rendered.defs);
+      bodies.push(rendered.body);
       continue;
     }
 
@@ -2366,6 +2554,30 @@ export const createWashiTapeLayer = (input: CreateWashiTapeLayerInput): WashiTap
         ? { ...legacyPhotoWashiTapePattern, assetId: input.assetId }
         : defaultWashiTapePattern),
     tile: input.tile ? { ...defaultWashiTapeTile, ...input.tile } : defaultWashiTapeTile,
+  });
+
+export const createMapLayer = (input: CreateMapLayerInput = {}): MapLayer =>
+  mapLayerSchema.parse({
+    id: input.id ?? createLayerId(),
+    kind: "map",
+    x: input.x ?? 240,
+    y: input.y ?? 240,
+    width: input.width ?? 1500,
+    height: input.height ?? 1000,
+    rotation: input.rotation ?? 0,
+    opacity: input.opacity ?? 1,
+    locked: input.locked ?? false,
+    style: input.style ?? "atlas",
+    projection: input.projection,
+    view: input.view ?? defaultMapView,
+    colors: input.colors ?? {},
+    features: input.features ?? {},
+    highlightedCountries: input.highlightedCountries ?? [],
+    markers: input.markers ?? [],
+    routes: input.routes ?? [],
+    labelFontFamily: input.labelFontFamily,
+    symbolScale: input.symbolScale ?? 1,
+    tileDetail: input.tileDetail ?? "standard",
   });
 
 export const resetPhotoLayerEdits = (layer: PhotoLayer): PhotoLayer =>
@@ -2628,6 +2840,9 @@ export const resizePageDocument = (
                 spacing: layer.bubble.spacing * textScale,
               },
             }
+          : {}),
+        ...(layer.kind === "map"
+          ? { symbolScale: Math.min(4, Math.max(0.25, layer.symbolScale * textScale)) }
           : {}),
         ...(layer.kind === "photo"
           ? {
