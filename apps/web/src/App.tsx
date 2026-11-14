@@ -32,6 +32,7 @@ import { ImageGridView } from "./features/image-grid/ImageGridView";
 import { LibraryView } from "./features/library/LibraryView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { StickerPacksView } from "./features/stickers/StickerPacksView";
+import { useTheme } from "./features/theme/ThemeProvider";
 import { WashiTapeIcon, WashiTapeView } from "./features/washi-tape/WashiTapeView";
 import { appVersion } from "./generated/changelog";
 import { getErrorMessage } from "./lib/errors";
@@ -164,9 +165,16 @@ function ProtectedShell({
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(getInitialSidebarCollapsed);
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+  const { syncPreference } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const editorLayout = /^\/books\/[^/]+\/?$/.test(location.pathname) ? "book" : undefined;
+
+  useEffect(() => {
+    syncPreference(async () => (await apiClient.getAccountPreferences()).uiTheme).catch(() => {
+      // Keep the device-cached theme when account preferences cannot be loaded.
+    });
+  }, [syncPreference]);
 
   const toggleSidebar = () => {
     setIsSidebarCollapsed((currentValue) => {

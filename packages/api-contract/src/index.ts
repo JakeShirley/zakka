@@ -1,3 +1,4 @@
+export * from "./account-preferences.js";
 export * from "./albums.js";
 export * from "./assets.js";
 export * from "./auth.js";

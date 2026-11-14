@@ -402,6 +402,47 @@ describe("api app", () => {
     ]);
   });
 
+  it("stores the UI theme preference per account", async () => {
+    const app = createTestApp();
+    const cookie = await registerAccount(app, {
+      displayName: "Ada Lovelace",
+      email: "ada@example.com",
+    });
+    const otherCookie = await registerAccount(app, {
+      displayName: "Grace Hopper",
+      email: "grace@example.com",
+    });
+    const patchPreferences = (body: unknown, sessionCookie: string) =>
+      app.request("/api/v1/account/preferences", {
+        body: JSON.stringify(body),
+        headers: { cookie: sessionCookie, "content-type": "application/json" },
+        method: "PATCH",
+      });
+
+    const unauthenticatedResponse = await app.request("/api/v1/account/preferences");
+    const defaultResponse = await app.request("/api/v1/account/preferences", {
+      headers: { cookie },
+    });
+    const invalidResponse = await patchPreferences({ uiTheme: "neon" }, cookie);
+    const patchResponse = await patchPreferences({ uiTheme: "sakura" }, cookie);
+    const emptyPatchResponse = await patchPreferences({}, cookie);
+    const reloadedResponse = await app.request("/api/v1/account/preferences", {
+      headers: { cookie },
+    });
+    const otherAccountResponse = await app.request("/api/v1/account/preferences", {
+      headers: { cookie: otherCookie },
+    });
+
+    expect(unauthenticatedResponse.status).toBe(401);
+    expect(await defaultResponse.json()).toEqual({ uiTheme: "system" });
+    expect(invalidResponse.status).toBe(400);
+    expect(patchResponse.status).toBe(200);
+    expect(await patchResponse.json()).toEqual({ uiTheme: "sakura" });
+    expect(await emptyPatchResponse.json()).toEqual({ uiTheme: "sakura" });
+    expect(await reloadedResponse.json()).toEqual({ uiTheme: "sakura" });
+    expect(await otherAccountResponse.json()).toEqual({ uiTheme: "system" });
+  });
+
   it("uploads images, stores metadata, lists assets, and streams original and variants", async () => {
     const app = await createTestAppWithStorage();
     const cookie = await registerAccount(app, {
