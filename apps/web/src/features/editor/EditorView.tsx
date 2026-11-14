@@ -9,6 +9,7 @@ import {
 } from "@fluentui/react-icons";
 import {
   addLayer,
+  createMapLayer,
   createPhotoLayer,
   createStickerLayer,
   createTextLayer,
@@ -37,6 +38,7 @@ import { LayerInspector } from "./LayerInspector";
 import {
   PageCanvas,
   formatLayerKindLabel,
+  getNewMapLayerFrame,
   type ReorderLayerCommand,
   type SelectionPanel,
 } from "./PageCanvas";
@@ -173,6 +175,12 @@ export function EditorView() {
   const addText = () => {
     if (!document) return;
     const layer = createTextLayer({ text: "New text" });
+    editDocument(addLayer(document, layer));
+    setSelectedLayerIds([layer.id]);
+  };
+  const addMap = () => {
+    if (!document) return;
+    const layer = createMapLayer(getNewMapLayerFrame(document));
     editDocument(addLayer(document, layer));
     setSelectedLayerIds([layer.id]);
   };
@@ -426,6 +434,7 @@ export function EditorView() {
                 }
               : null
           }
+          onAddMap={addMap}
           onAddText={addText}
           onOpenPhotoPicker={() => setPhotoPickerMode({ kind: "photo" })}
           onOpenStickerPicker={() => setIsStickerPickerOpen(true)}

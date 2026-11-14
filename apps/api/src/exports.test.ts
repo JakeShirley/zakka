@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  createMapLayer,
   createPageDocument,
   createPhotoLayer,
   createTextLayer,
@@ -13,6 +14,7 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
 import { type ExportStorage, renderBookExport, renderPageExport } from "./exports.js";
+import type { MapTileSource } from "./map-tiles.js";
 import { createDatabaseConnection } from "./persistence/database.js";
 import { runMigrations } from "./persistence/migrations.js";
 import { createRepositories } from "./persistence/repositories.js";
@@ -200,13 +202,17 @@ const createExportFixture = async (
   }
 };
 
-const renderDocumentPng = async (document: PageDocument): Promise<DecodedPng> => {
+const renderDocumentPng = async (
+  document: PageDocument,
+  options: { mapTiles?: MapTileSource } = {},
+): Promise<DecodedPng> => {
   const fixture = await createExportFixture(document);
 
   try {
     const rendered = await renderPageExport({
       accountId: testAccountId,
       format: "png",
+      ...options,
       pageId: testPageId,
       preset: "print",
       repositories: fixture.repositories,
@@ -567,5 +573,77 @@ describe("PNG page exports", () => {
     } finally {
       fixture.connection.close();
     }
+  });
+});
+
+describe("map exports", () => {
+  const atlasOcean = { blue: 227, green: 211, red: 169 };
+  const atlasLand = { blue: 210, green: 234, red: 233 };
+  const tileGreen = { blue: 40, green: 200, red: 30 };
+  const mapBox = { height: 320, width: 480, x: 0, y: 0 };
+  const isNear = (expected: Rgb) => (pixel: Rgb) =>
+    Math.abs(pixel.red - expected.red) <= 6 &&
+    Math.abs(pixel.green - expected.green) <= 6 &&
+    Math.abs(pixel.blue - expected.blue) <= 6;
+  const mapDocument = (style: "atlas" | "osm") =>
+    createPageDocument({
+      canvas: { backgroundColor: "#ffffff", height: 320, width: 480 },
+      layers: [
+        createMapLayer({
+          height: 320,
+          id: "map",
+          markers: [
+            { id: "lis", label: "Lisbon", latitude: 38.72, longitude: -9.14 },
+            { id: "ath", label: "Athens", latitude: 37.98, longitude: 23.73 },
+          ],
+          style,
+          width: 480,
+          x: 0,
+          y: 0,
+        }),
+      ],
+    });
+
+  it("draws vector styles from the bundled geography", async () => {
+    const image = await renderDocumentPng(mapDocument("atlas"));
+
+    expect(countPixels(image, mapBox, isNear(atlasOcean))).toBeGreaterThan(10_000);
+    expect(countPixels(image, mapBox, isNear(atlasLand))).toBeGreaterThan(10_000);
+  });
+
+  it("inlines raster tiles from the tile source and tolerates missing tiles", async () => {
+    const tile = await sharp({
+      create: {
+        background: { alpha: 1, b: tileGreen.blue, g: tileGreen.green, r: tileGreen.red },
+        channels: 4,
+        height: 256,
+        width: 256,
+      },
+    })
+      .png()
+      .toBuffer();
+    const requested: string[] = [];
+    const image = await renderDocumentPng(mapDocument("osm"), {
+      mapTiles: {
+        getTile: async ({ x, y, z }) => {
+          requested.push(`${z}/${x}/${y}`);
+
+          return { buffer: tile, mimeType: "image/png" };
+        },
+      },
+    });
+
+    expect(requested.length).toBeGreaterThan(0);
+    expect(countPixels(image, mapBox, isNear(tileGreen))).toBeGreaterThan(mapBox.width * 200);
+
+    const withoutTiles = await renderDocumentPng(mapDocument("osm"), {
+      mapTiles: {
+        getTile: async () => {
+          throw new Error("offline");
+        },
+      },
+    });
+
+    expect(countPixels(withoutTiles, mapBox, isNear(tileGreen))).toBe(0);
   });
 });

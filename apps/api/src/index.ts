@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { serve } from "@hono/node-server";
 import { loadConfig } from "@zakka/config";
 
@@ -9,6 +11,7 @@ import {
 } from "./dev-account.js";
 import { loadOrCreateCredentialCipher } from "./integrations/credential-cipher.js";
 import { createShutterflyIntegration } from "./integrations/shutterfly/service.js";
+import { createMapTileSource } from "./map-tiles.js";
 import { createDatabaseConnection } from "./persistence/database.js";
 import { createPageDocumentStore } from "./persistence/page-documents.js";
 import { createRepositories } from "./persistence/repositories.js";
@@ -43,6 +46,7 @@ const shutterfly = config.SHUTTERFLY_API_KEY
 
 const staticAssetsDir = process.env.WEB_ASSETS_DIR;
 const app = createApp({
+  mapTiles: createMapTileSource({ cacheDir: join(config.ZAKKA_DATA_DIR, "map-tiles") }),
   repositories,
   ...(shutterfly ? { shutterfly } : {}),
   ...(config.SESSION_COOKIE_SECURE === undefined

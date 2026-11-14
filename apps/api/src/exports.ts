@@ -10,6 +10,7 @@ import {
   type ExportStorage,
   type RenderedExport,
 } from "./export-rendering/types.js";
+import type { MapTileSource } from "./map-tiles.js";
 import type { Repositories } from "./persistence/repositories.js";
 import type { PageRecord } from "./persistence/schema.js";
 
@@ -20,6 +21,7 @@ type ExportRendererInput = {
   dpi?: number;
   format: ExportFormat;
   includeBackground?: boolean;
+  mapTiles?: MapTileSource;
   preset: ExportPreset;
   repositories: Repositories;
   storage: ExportStorage;
@@ -39,6 +41,7 @@ const renderStoredPageSvg = async (input: ExportRendererInput & { page: PageReco
       ? {}
       : { includeBackground: input.includeBackground }),
     ...createRasterRenderSettings(input),
+    ...(input.mapTiles ? { mapTiles: input.mapTiles } : {}),
     preset: input.preset,
     repositories: input.repositories,
     storage: input.storage,
@@ -62,6 +65,7 @@ export const renderPageExport = async (
     ...(input.includeBackground === undefined
       ? {}
       : { includeBackground: input.includeBackground }),
+    ...(input.mapTiles ? { mapTiles: input.mapTiles } : {}),
     page,
     repositories: input.repositories,
     storage: input.storage,
@@ -99,6 +103,7 @@ export const renderBookExport = async (
         ...(input.includeBackground === undefined
           ? {}
           : { includeBackground: input.includeBackground }),
+        ...(input.mapTiles ? { mapTiles: input.mapTiles } : {}),
         page,
         repositories: input.repositories,
         storage: input.storage,

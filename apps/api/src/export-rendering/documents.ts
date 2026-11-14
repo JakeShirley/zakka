@@ -1,6 +1,12 @@
 import type { ExportPreset } from "@zakka/api-contract";
 import {
+  getMapLayerGeographyDetail,
+  getMapLayerTiles,
   isCustomStickerId,
+  type MapGeography,
+  type MapGeographyDetail,
+  type MapLayer,
+  type MapTile,
   type PageDocument,
   type PhotoLayer,
   renderPageDocumentSvg,
@@ -10,6 +16,7 @@ import { getStickerSvg } from "@zakka/editor-core/stickers";
 import sharp from "sharp";
 
 import { createSharpInputBuffer } from "../image-decoding.js";
+import type { MapTileSource } from "../map-tiles.js";
 import type { Repositories } from "../persistence/repositories.js";
 import type { PageRecord } from "../persistence/schema.js";
 import { type RasterRenderSettings, renderScaleForSettings } from "./raster.js";
@@ -77,6 +84,66 @@ const createImageDataUri = async (input: {
   return `data:${rendered.mimeType};base64,${rendered.buffer.toString("base64")}`;
 };
 
+const mapTileKey = (tile: MapTile): string => `${tile.provider}/${tile.z}/${tile.x}/${tile.y}`;
+
+const loadMapGeography = async (detail: MapGeographyDetail): Promise<MapGeography> => {
+  if (detail === "high") {
+    const { getDetailedMapGeography } = await import("@zakka/editor-core/map-data-detailed");
+
+    return getDetailedMapGeography();
+  }
+
+  const { getMapGeography } = await import("@zakka/editor-core/map-data");
+
+  return getMapGeography();
+};
+
+/**
+ * Resolves everything map layers need before the synchronous SVG render: the bundled
+ * geography for vector styles and every raster tile inlined as a data URI, so the
+ * rasterizer never reaches the network and exported tiles match the editor exactly.
+ */
+const prepareMapLayers = async (
+  layers: MapLayer[],
+  mapTiles: MapTileSource | undefined,
+): Promise<{
+  geography: Map<MapGeographyDetail, MapGeography>;
+  tileHrefs: Map<string, string>;
+}> => {
+  const geography = new Map<MapGeographyDetail, MapGeography>();
+  const tileHrefs = new Map<string, string>();
+  const details = new Set<MapGeographyDetail>();
+  const tiles = new Map<string, MapTile>();
+
+  for (const layer of layers) {
+    const detail = getMapLayerGeographyDetail(layer);
+
+    if (detail) details.add(detail);
+    if (!mapTiles) continue;
+
+    for (const tile of getMapLayerTiles(layer)) tiles.set(mapTileKey(tile), tile);
+  }
+
+  await Promise.all([
+    ...[...details].map(async (detail) => {
+      geography.set(detail, await loadMapGeography(detail));
+    }),
+    ...[...tiles].map(async ([key, tile]) => {
+      try {
+        const image = await mapTiles?.getTile(tile);
+
+        if (image) {
+          tileHrefs.set(key, `data:${image.mimeType};base64,${image.buffer.toString("base64")}`);
+        }
+      } catch {
+        // A missing tile leaves a gap rather than failing the whole export.
+      }
+    }),
+  ]);
+
+  return { geography, tileHrefs };
+};
+
 export const parsePageDocument = async (page: PageRecord): Promise<PageDocument> => {
   const { pageDocumentSchema } = await import("@zakka/editor-core");
 
@@ -88,6 +155,7 @@ export const renderPageSvg = async (input: {
   document: PageDocument;
   dpi?: number;
   includeBackground?: boolean;
+  mapTiles?: MapTileSource;
   preset: ExportPreset;
   repositories: Repositories;
   storage: ExportStorage;
@@ -164,10 +232,17 @@ export const renderPageSvg = async (input: {
     }
   }
 
+  const maps = await prepareMapLayers(
+    input.document.layers.filter((layer): layer is MapLayer => layer.kind === "map"),
+    input.mapTiles,
+  );
+
   return renderPageDocumentSvg(input.document, {
     ...(input.includeBackground === undefined
       ? {}
       : { includeBackground: input.includeBackground }),
+    resolveMapGeography: (detail) => maps.geography.get(detail),
+    resolveMapTileHref: (tile) => maps.tileHrefs.get(mapTileKey(tile)),
     resolvePhotoHref: (layer: PhotoLayer) => photoHrefs.get(layer.id),
     resolveStickerSvg: (layer) =>
       isCustomStickerId(layer.stickerId) ? null : getStickerSvg(layer.stickerId),

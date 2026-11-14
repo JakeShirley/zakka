@@ -13,13 +13,20 @@ import {
   TextTRegular,
 } from "@fluentui/react-icons";
 import {
+  getMapLayerGeographyDetail,
+  getMapZoomRange,
+  isCustomStickerId,
+  type MapGeography,
+  type MapGeographyDetail,
+  type MapTile,
   type PageDocument,
   type PageLayer,
   type PhotoLayer,
-  isCustomStickerId,
   renderPageDocumentSvg,
+  resolveMapLayerView,
   type StickerSvg,
   type WashiTapeLayer,
+  zoomMapLayerView,
 } from "@zakka/editor-core";
 import type {
   CSSProperties,
@@ -51,6 +58,7 @@ import {
   type MultiSelectionResizeHandle,
   multiSelectionResizeHandles,
   normalizeRotation,
+  panMapLayer,
   panPhotoLayer,
   resizeHandles,
   resizeLayerFromHandle,
@@ -156,7 +164,33 @@ export const formatLayerKindLabel = (kind: PageLayer["kind"]): string =>
       ? "Text"
       : kind === "sticker"
         ? "Sticker"
-        : "Washi tape";
+        : kind === "map"
+          ? "Map"
+          : "Washi tape";
+
+/** A 3:2 map frame centered on the page, about 70% of the page width. */
+export const getNewMapLayerFrame = (
+  document: PageDocument,
+): { height: number; width: number; x: number; y: number } => {
+  const { width: canvasWidth, height: canvasHeight } = document.canvas;
+  const width = Math.round(Math.min(canvasWidth * 0.7, (canvasHeight * 0.7 * 3) / 2));
+  const height = Math.round((width * 2) / 3);
+
+  return {
+    height,
+    width,
+    x: Math.round((canvasWidth - width) / 2),
+    y: Math.round((canvasHeight - height) / 2),
+  };
+};
+
+export const resolveMapTileHref = (tile: MapTile): string =>
+  `/api/v1/map-tiles/${tile.provider}/${tile.z}/${tile.x}/${tile.y}`;
+
+const loadMapGeography = async (detail: MapGeographyDetail): Promise<MapGeography> =>
+  detail === "high"
+    ? (await import("@zakka/editor-core/map-data-detailed")).getDetailedMapGeography()
+    : (await import("@zakka/editor-core/map-data")).getMapGeography();
 
 const nativeBrowserImageMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -192,13 +226,13 @@ export type SelectLayerOptions = { additive?: boolean };
 const PHOTO_SCALE_MIN = 1;
 const PHOTO_SCALE_MAX = 5;
 const PHOTO_SCALE_STEP = 0.1;
-/** Gap kept between the zoom pill and the photo edges or pan handle; mirrors the CSS `bottom` inset. */
-const PHOTO_SCALE_SLIDER_INSET = 10;
+/** Map zoom is logarithmic (each whole step doubles the scale), so buttons move a quarter step. */
+const MAP_ZOOM_BUTTON_STEP = 0.25;
+const MAP_ZOOM_SLIDER_STEP = 0.05;
+/** Gap kept between the zoom pill and the layer edges or pan handle; mirrors the CSS `bottom` inset. */
+const ZOOM_SLIDER_INSET = 10;
 /** Mirrors the `.transform-pan-handle` CSS size. */
-const PHOTO_PAN_HANDLE_SIZE = 36;
-
-const clampPhotoScale = (value: number): number =>
-  Math.min(PHOTO_SCALE_MAX, Math.max(PHOTO_SCALE_MIN, Math.round(value * 10) / 10));
+const PAN_HANDLE_SIZE = 36;
 
 /**
  * The slider is laid out in the photo's rotated box, so a mostly upside-down photo needs the
@@ -213,22 +247,38 @@ const getPhotoScaleSliderOutsidePlacement = (
   return awayFromToolbar === "above" ? "below" : "above";
 };
 
-function PhotoScaleSlider({
-  layer,
+function LayerZoomSlider({
+  buttonStep,
+  label,
+  max,
+  min,
   outsidePlacement,
+  sliderStep,
+  subject,
+  title,
+  value,
   onChange,
 }: {
-  layer: PhotoLayer;
-  /** Side of the frame to use when the photo is too small to hold the slider (opposite the layer toolbar). */
+  buttonStep: number;
+  /** Accessible name of the range input, e.g. "Photo zoom". */
+  label: string;
+  max: number;
+  min: number;
+  /** Side of the frame to use when the layer is too small to hold the slider (opposite the layer toolbar). */
   outsidePlacement: "above" | "below";
-  onChange: (scale: number) => void;
+  sliderStep: number;
+  /** Noun used in the zoom button labels, e.g. "photo" in "Zoom photo in". */
+  subject: string;
+  title: string;
+  value: number;
+  onChange: (value: number) => void;
 }) {
-  const scale = layer.photoTransform.scale;
   const sliderRef = useRef<HTMLDivElement>(null);
   const [fitsInside, setFitsInside] = useState(true);
   const commit = (next: number) => {
-    const clamped = clampPhotoScale(next);
-    if (clamped !== scale) onChange(clamped);
+    const clamped = Math.min(max, Math.max(min, Math.round(next / sliderStep) * sliderStep));
+    const rounded = Math.round(clamped * 1000) / 1000;
+    if (rounded !== value) onChange(rounded);
   };
 
   useLayoutEffect(() => {
@@ -236,14 +286,14 @@ function PhotoScaleSlider({
     const frame = slider?.parentElement;
     if (!slider || !frame) return;
     const updatePlacement = () => {
-      const panHandleHalfHeight = PHOTO_PAN_HANDLE_SIZE / 2;
+      const panHandleHalfHeight = PAN_HANDLE_SIZE / 2;
       const frameWidth = frame.clientWidth;
       const frameHeight = frame.clientHeight;
       // Layout sizes (not bounding rects) so the check ignores layer rotation.
-      const fitsWidth = slider.offsetWidth + PHOTO_SCALE_SLIDER_INSET * 2 <= frameWidth;
+      const fitsWidth = slider.offsetWidth + ZOOM_SLIDER_INSET * 2 <= frameWidth;
       const fitsHeight =
-        frameHeight / 2 + panHandleHalfHeight + PHOTO_SCALE_SLIDER_INSET <=
-        frameHeight - PHOTO_SCALE_SLIDER_INSET - slider.offsetHeight;
+        frameHeight / 2 + panHandleHalfHeight + ZOOM_SLIDER_INSET <=
+        frameHeight - ZOOM_SLIDER_INSET - slider.offsetHeight;
       setFitsInside(fitsWidth && fitsHeight);
     };
     updatePlacement();
@@ -262,32 +312,32 @@ function PhotoScaleSlider({
     >
       <button
         type="button"
-        aria-label="Zoom photo out"
+        aria-label={`Zoom ${subject} out`}
         className="transform-scale-button"
         title="Zoom out"
-        disabled={scale <= PHOTO_SCALE_MIN}
-        onClick={() => commit(scale - PHOTO_SCALE_STEP)}
+        disabled={value <= min}
+        onClick={() => commit(value - buttonStep)}
       >
         <SubtractRegular />
       </button>
       <input
-        aria-label="Photo zoom"
+        aria-label={label}
         className="transform-scale-range"
-        max={PHOTO_SCALE_MAX}
-        min={PHOTO_SCALE_MIN}
-        step={PHOTO_SCALE_STEP}
-        title={`Zoom ${(scale * 100).toFixed(0)}%`}
+        max={max}
+        min={min}
+        step={sliderStep}
+        title={title}
         type="range"
-        value={scale}
+        value={value}
         onChange={(event) => commit(Number(event.currentTarget.value))}
       />
       <button
         type="button"
-        aria-label="Zoom photo in"
+        aria-label={`Zoom ${subject} in`}
         className="transform-scale-button"
         title="Zoom in"
-        disabled={scale >= PHOTO_SCALE_MAX}
-        onClick={() => commit(scale + PHOTO_SCALE_STEP)}
+        disabled={value >= max}
+        onClick={() => commit(value + buttonStep)}
       >
         <AddRegular />
       </button>
@@ -384,6 +434,9 @@ export function PageCanvas({
     null,
   );
   const [stickerSvgById, setStickerSvgById] = useState<Map<string, StickerSvg>>(new Map());
+  const [mapGeographyByDetail, setMapGeographyByDetail] = useState<
+    Map<MapGeographyDetail, MapGeography>
+  >(new Map());
   const interactiveLayers = useMemo<InteractiveCanvasLayer[]>(
     () => mergeCanvasLayers(document.layers, previewLayers),
     [document.layers, previewLayers],
@@ -394,6 +447,17 @@ export function PageCanvas({
         interactiveLayers.flatMap(({ layer }) =>
           layer.kind === "sticker" && !isCustomStickerId(layer.stickerId) ? [layer.stickerId] : [],
         ),
+      ),
+    ],
+    [interactiveLayers],
+  );
+  const mapGeographyDetails = useMemo(
+    () => [
+      ...new Set(
+        interactiveLayers.flatMap(({ layer }) => {
+          const detail = layer.kind === "map" ? getMapLayerGeographyDetail(layer) : null;
+          return detail ? [detail] : [];
+        }),
       ),
     ],
     [interactiveLayers],
@@ -455,9 +519,18 @@ export function PageCanvas({
             ? `/api/v1/custom-stickers/${layer.stickerId.slice("custom:".length)}/content`
             : null,
         resolveWashiTapeHref: (layer) => resolveBrowserWashiTapeHref(assetById, layer),
+        resolveMapGeography: (detail) => mapGeographyByDetail.get(detail),
+        resolveMapTileHref,
         ...(panPreviewLayerId ? { panPreviewLayerIds: new Set([panPreviewLayerId]) } : {}),
       }),
-    [assetById, renderedDocument, stickerSvgById, svgIdPrefix, panPreviewLayerId],
+    [
+      assetById,
+      mapGeographyByDetail,
+      renderedDocument,
+      stickerSvgById,
+      svgIdPrefix,
+      panPreviewLayerId,
+    ],
   );
   const contextLayerIndex = contextMenu
     ? document.layers.findIndex((layer) => layer.id === contextMenu.layerId)
@@ -512,6 +585,8 @@ export function PageCanvas({
       ? "above"
       : "below";
   const selectedPhotoLayer = selectedLayer?.kind === "photo" ? selectedLayer : null;
+  const selectedMapLayer = selectedLayer?.kind === "map" ? selectedLayer : null;
+  const zoomSliderLayer = selectedPhotoLayer ?? selectedMapLayer;
   const getLayerBoxStyle = (layer: PageLayer): CSSProperties => ({
     left: `${(layer.x / document.canvas.width) * 100}%`,
     top: `${(layer.y / document.canvas.height) * 100}%`,
@@ -613,6 +688,34 @@ export function PageCanvas({
       isCancelled = true;
     };
   }, [stickerIds, stickerSvgById]);
+
+  useEffect(() => {
+    const missingDetails = mapGeographyDetails.filter(
+      (detail) => !mapGeographyByDetail.has(detail),
+    );
+
+    if (missingDetails.length === 0) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    for (const detail of missingDetails) {
+      loadMapGeography(detail).then((geography) => {
+        if (isCancelled) {
+          return;
+        }
+
+        setMapGeographyByDetail((current) =>
+          current.has(detail) ? current : new Map(current).set(detail, geography),
+        );
+      });
+    }
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [mapGeographyByDetail, mapGeographyDetails]);
 
   useEffect(() => {
     if (activeTransform) setActiveSelectionPanel(null);
@@ -835,6 +938,11 @@ export function PageCanvas({
           offsetX: nextOffset.offsetX,
           offsetY: nextOffset.offsetY,
         },
+      } as Partial<PageLayer>;
+    }
+    if (transform.mode === "pan" && transform.startLayer.kind === "map") {
+      return {
+        view: panMapLayer(transform.startLayer, pointer, transform.startPointer),
       } as Partial<PageLayer>;
     }
     if (transform.mode === "resize" && transform.handle) {
@@ -1286,6 +1394,17 @@ export function PageCanvas({
                         <HandLeftRegular />
                       </button>
                     ) : null}
+                    {layer.kind === "map" ? (
+                      <button
+                        type="button"
+                        aria-label="Click and drag to move the map"
+                        className="transform-pan-handle"
+                        title="Click and drag to move the map"
+                        onPointerDown={(event) => startTransform(event, layer, "pan")}
+                      >
+                        <HandLeftRegular />
+                      </button>
+                    ) : null}
                   </>
                 ) : null}
                 {isInlineEditingText ? (
@@ -1325,39 +1444,67 @@ export function PageCanvas({
             </div>
           );
         })}
-        {selectedPhotoLayer && !selectedPhotoLayer.locked ? (
+        {zoomSliderLayer && !zoomSliderLayer.locked ? (
           // Rendered above every layer so neighbouring hitboxes can't steal clicks when the slider
-          // sits outside a small photo; the box mirrors the layer's geometry and rotation.
+          // sits outside a small layer; the box mirrors the layer's geometry and rotation.
           <div
             className="canvas-layer-controls"
-            data-layer-id={selectedPhotoLayer.id}
+            data-layer-id={zoomSliderLayer.id}
             style={{
-              ...getLayerBoxStyle(selectedPhotoLayer),
+              ...getLayerBoxStyle(zoomSliderLayer),
               zIndex: displayedInteractiveLayers.length + 1,
-              opacity: selectedPhotoLayer.opacity,
+              opacity: zoomSliderLayer.opacity,
             }}
           >
-            <PhotoScaleSlider
-              layer={selectedPhotoLayer}
-              outsidePlacement={getPhotoScaleSliderOutsidePlacement(
-                selectedPhotoLayer.rotation,
-                selectedLayerMenuPlacement,
-              )}
-              onChange={(scale) => {
-                const layer = selectedPhotoLayer;
-                const nextPhotoTransform = { ...layer.photoTransform, scale };
-                const clampedOffset = clampPhotoPanOffset(
-                  { ...layer, photoTransform: nextPhotoTransform },
-                  {
-                    offsetX: layer.photoTransform.offsetX,
-                    offsetY: layer.photoTransform.offsetY,
-                  },
-                );
-                changeLayer(layer.id, {
-                  photoTransform: { ...nextPhotoTransform, ...clampedOffset },
-                } as Partial<PageLayer>);
-              }}
-            />
+            {selectedPhotoLayer ? (
+              <LayerZoomSlider
+                buttonStep={PHOTO_SCALE_STEP}
+                label="Photo zoom"
+                max={PHOTO_SCALE_MAX}
+                min={PHOTO_SCALE_MIN}
+                outsidePlacement={getPhotoScaleSliderOutsidePlacement(
+                  selectedPhotoLayer.rotation,
+                  selectedLayerMenuPlacement,
+                )}
+                sliderStep={PHOTO_SCALE_STEP}
+                subject="photo"
+                title={`Zoom ${(selectedPhotoLayer.photoTransform.scale * 100).toFixed(0)}%`}
+                value={selectedPhotoLayer.photoTransform.scale}
+                onChange={(scale) => {
+                  const layer = selectedPhotoLayer;
+                  const nextPhotoTransform = { ...layer.photoTransform, scale };
+                  const clampedOffset = clampPhotoPanOffset(
+                    { ...layer, photoTransform: nextPhotoTransform },
+                    {
+                      offsetX: layer.photoTransform.offsetX,
+                      offsetY: layer.photoTransform.offsetY,
+                    },
+                  );
+                  changeLayer(layer.id, {
+                    photoTransform: { ...nextPhotoTransform, ...clampedOffset },
+                  } as Partial<PageLayer>);
+                }}
+              />
+            ) : selectedMapLayer ? (
+              <LayerZoomSlider
+                buttonStep={MAP_ZOOM_BUTTON_STEP}
+                label="Map zoom"
+                {...getMapZoomRange(selectedMapLayer)}
+                outsidePlacement={getPhotoScaleSliderOutsidePlacement(
+                  selectedMapLayer.rotation,
+                  selectedLayerMenuPlacement,
+                )}
+                sliderStep={MAP_ZOOM_SLIDER_STEP}
+                subject="map"
+                title={`Zoom ${resolveMapLayerView(selectedMapLayer).zoom.toFixed(1)}`}
+                value={resolveMapLayerView(selectedMapLayer).zoom}
+                onChange={(zoom) =>
+                  changeLayer(selectedMapLayer.id, {
+                    view: zoomMapLayerView(selectedMapLayer, zoom),
+                  } as Partial<PageLayer>)
+                }
+              />
+            ) : null}
           </div>
         ) : null}
       </div>

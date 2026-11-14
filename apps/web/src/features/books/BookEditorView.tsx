@@ -12,6 +12,7 @@ import {
   createPageDocument,
   createPhotoLayer,
   createStickerLayer,
+  createMapLayer,
   createTextLayer,
   createWashiTapeLayer,
   deleteLayer,
@@ -54,6 +55,7 @@ import {
   type ArrangeCanvasPreview,
   type CanvasPreviewLayer,
   formatLayerKindLabel,
+  getNewMapLayerFrame,
   type ReorderLayerCommand,
   type SelectionPanel,
 } from "../editor/PageCanvas";
@@ -1113,6 +1115,16 @@ export function BookEditorView() {
     setSelectedLayerIds([layer.id]);
   };
 
+  const addMap = () => {
+    if (!activePage) {
+      return;
+    }
+
+    const layer = createMapLayer(getNewMapLayerFrame(activePage.document));
+    editPageDocument(activePage.id, addLayer(activePage.document, layer));
+    setSelectedLayerIds([layer.id]);
+  };
+
   const addPhotoFromDrop = (pageId: string, asset: Asset, point: { x: number; y: number }) => {
     const page = pageDetails.get(pageId);
     if (!page) return;
@@ -1886,6 +1898,7 @@ export function BookEditorView() {
                 }
               : null
           }
+          onAddMap={addMap}
           onAddText={addText}
           onOpenLibraryPicker={() => setIsLibraryPickerOpen(true)}
           onOpenStickerPicker={() => setIsStickerPickerOpen(true)}

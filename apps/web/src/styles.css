@@ -5465,6 +5465,205 @@ body {
   background: var(--sb-neutral-background-4);
 }
 
+.washi-tape-scale-reset-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.map-controls-section label:not(.checkbox-label, .map-color-swatch-field) {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.map-controls-section input[type="text"],
+.map-controls-section input[type="search"],
+.map-controls-section select {
+  min-width: 0;
+}
+
+.map-controls-hint {
+  margin: 0;
+  color: var(--sb-neutral-foreground-3);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.map-controls-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.map-style-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.map-style-option {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid var(--sb-neutral-stroke);
+  border-radius: 6px;
+  padding: 5px;
+  color: var(--sb-neutral-foreground);
+  background: var(--sb-neutral-background);
+  font-size: 0.75rem;
+  font-weight: 650;
+  position: relative;
+  cursor: pointer;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.map-style-option:hover {
+  background: var(--sb-neutral-background-4);
+}
+
+.map-style-option:has(input:checked) {
+  border-color: var(--sb-brand-foreground);
+  box-shadow: 0 0 0 1px var(--sb-brand-foreground);
+}
+
+.map-style-option:has(input:focus-visible) {
+  outline: 2px solid var(--sb-brand-foreground);
+  outline-offset: 2px;
+}
+
+.map-style-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.map-style-swatch {
+  flex: none;
+  height: 18px;
+  border-bottom: 3px solid;
+  border-radius: 3px;
+}
+
+.map-place-results,
+.map-item-list,
+.map-chip-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.map-place-results button {
+  display: grid;
+  width: 100%;
+  border: 1px solid var(--sb-neutral-stroke-2);
+  border-radius: 5px;
+  padding: 4px 8px;
+  color: var(--sb-neutral-foreground);
+  background: var(--sb-neutral-background);
+  font-size: 0.75rem;
+  text-align: start;
+}
+
+.map-place-results button:hover {
+  background: var(--sb-neutral-background-4);
+}
+
+.map-place-results button span {
+  color: var(--sb-neutral-foreground-3);
+  font-size: 0.7rem;
+}
+
+.map-item {
+  border: 1px solid var(--sb-neutral-stroke-2);
+  border-radius: 6px;
+  background: var(--sb-neutral-background);
+}
+
+.map-item summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 8px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.map-item-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-item-body {
+  display: grid;
+  gap: 8px;
+  padding: 6px 8px 8px;
+  border-top: 1px solid var(--sb-neutral-stroke-2);
+}
+
+.map-color-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.map-color-field label,
+.map-color-swatch-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+}
+
+.map-color-field input[type="color"],
+.map-color-swatch-field input[type="color"] {
+  flex: none;
+  width: 28px;
+  height: 22px;
+  padding: 0;
+}
+
+.map-color-grid,
+.map-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.map-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.map-chip-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--sb-neutral-stroke-2);
+  border-radius: 999px;
+  padding: 1px 4px 1px 8px;
+  background: var(--sb-neutral-background);
+  font-size: 0.72rem;
+}
+
+.map-chip-list button {
+  border: 0;
+  padding: 0 4px;
+  color: var(--sb-neutral-foreground-3);
+  background: none;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
 .canvas-layer[data-selected="true"] .canvas-layer-content {
   border-color: var(--sb-brand-foreground);
   box-shadow: 0 0 0 2px rgb(from var(--sb-brand) r g b / 18%);

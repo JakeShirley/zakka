@@ -1,8 +1,10 @@
 import {
+  createMapLayer,
   createPhotoLayer,
   createStickerLayer,
   createTextLayer,
   type PageLayer,
+  resolveMapLayerView,
 } from "@zakka/editor-core";
 import { describe, expect, test } from "vitest";
 import { page, userEvent } from "vitest/browser";
@@ -363,6 +365,58 @@ describe("photo handles", () => {
 
     expect(probe.selectedLayerIds).toEqual(["photo"]);
     expect(probe.activeSelectionPanel).toBe("edit");
+  });
+});
+
+describe("map handles", () => {
+  const mapLayer = (overrides: Partial<Parameters<typeof createMapLayer>[0]> = {}) =>
+    createMapLayer({
+      id: "map",
+      markers: [
+        { id: "par", label: "Paris", latitude: 48.9, longitude: 2.4 },
+        { id: "rom", label: "Rome", latitude: 41.9, longitude: 12.5 },
+      ],
+      style: "atlas",
+      x: 400,
+      y: 400,
+      width: 1200,
+      height: 900,
+      ...overrides,
+    });
+
+  test("dragging the pan handle moves the map content and keeps the frame in place", async () => {
+    const { layer } = await renderCanvas({ layers: [mapLayer()], selectedLayerIds: ["map"] });
+    const fitted = resolveMapLayerView(mapLayer());
+
+    await dragOnCanvas(layerHandle("map", "Click and drag to move the map"), { x: 0.05, y: 0.05 });
+
+    const { view } = layer("map", "map");
+    expect(view.mode).toBe("custom");
+    if (view.mode !== "custom") return;
+    // Dragging right and down reveals content to the west and north.
+    expect(view.centerLongitude).toBeLessThan(fitted.centerLongitude);
+    expect(view.centerLatitude).toBeGreaterThan(fitted.centerLatitude);
+    expect(view.zoom).toBe(fitted.zoom);
+    expect(layer("map")).toMatchObject({ x: 400, y: 400, width: 1200, height: 900 });
+  });
+
+  test("the zoom pill zooms a fitted map around its center and stops at the style limit", async () => {
+    const { layer } = await renderCanvas({ layers: [mapLayer()], selectedLayerIds: ["map"] });
+    const fitted = resolveMapLayerView(mapLayer());
+
+    await page.getByRole("button", { name: "Zoom map in" }).click();
+
+    expect(layer("map", "map").view).toEqual({
+      mode: "custom",
+      centerLatitude: expect.closeTo(fitted.centerLatitude, 3),
+      centerLongitude: expect.closeTo(fitted.centerLongitude, 3),
+      zoom: expect.closeTo(fitted.zoom + 0.25, 1),
+    });
+
+    await page.getByRole("slider", { name: "Map zoom" }).fill("12");
+
+    expect(layer("map", "map").view).toMatchObject({ zoom: 12 });
+    await expect.element(page.getByRole("button", { name: "Zoom map in" })).toBeDisabled();
   });
 });
 

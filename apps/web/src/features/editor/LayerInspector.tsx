@@ -1,6 +1,7 @@
-import type { PageLayer, PhotoLayer, WashiTapeLayer } from "@zakka/editor-core";
+import type { MapLayer, PageLayer, PhotoLayer, WashiTapeLayer } from "@zakka/editor-core";
 
 import { NumericInput } from "../../components/NumericInput";
+import { MapControls } from "./MapControls";
 import { PhotoControls } from "./PhotoControls";
 import { TextControls } from "./TextControls";
 import { WashiTapeControls } from "./WashiTapeControls";
@@ -20,6 +21,7 @@ export function LayerInspector({
   const updatePhotoLayer = (update: Partial<PhotoLayer>) => onChange(update as Partial<PageLayer>);
   const updateWashiTapeLayer = (update: Partial<WashiTapeLayer>) =>
     onChange(update as Partial<PageLayer>);
+  const updateMapLayer = (update: Partial<MapLayer>) => onChange(update as Partial<PageLayer>);
 
   return (
     <form className="inspector-form">
@@ -56,6 +58,7 @@ export function LayerInspector({
           onChoosePhoto={onChooseWashiTapePhoto}
         />
       ) : null}
+      {layer.kind === "map" ? <MapControls layer={layer} onChange={updateMapLayer} /> : null}
       <fieldset className="inspector-section layer-inspector-section">
         <legend>Transform</legend>
         <div className="layer-controls-grid">

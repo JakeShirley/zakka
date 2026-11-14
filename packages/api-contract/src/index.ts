@@ -7,6 +7,7 @@ export * from "./exports.js";
 export * from "./health.js";
 export * from "./integrations.js";
 export * from "./logs.js";
+export * from "./map-tiles.js";
 export * from "./pages.js";
 export * from "./shared.js";
 export * from "./sticker-packs.js";
