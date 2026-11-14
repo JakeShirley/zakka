@@ -3039,6 +3039,10 @@ export const resizePageDocument = (
     scaleY,
   } = getPageResizeContentRect(parsedDocument.canvas, canvas, options);
   const textScale = Math.min(scaleX, scaleY);
+  // The background always fills the page, so its frame follows the page size rather than the
+  // content area. Every page of a spread then moves its shared frame by the same amount.
+  const pageRatioX = canvas.width / parsedDocument.canvas.width;
+  const pageRatioY = canvas.height / parsedDocument.canvas.height;
   // Scaled effect values are clamped to their schema bounds so large resizes cannot throw.
   const scaleWithin = (value: number, scale: number, min: number, max: number) =>
     Math.min(max, Math.max(min, value * scale));
@@ -3053,10 +3057,10 @@ export const resizePageDocument = (
         ? {
             background: {
               ...background,
-              x: background.x * scaleX + offsetX,
-              y: background.y * scaleY + offsetY,
-              width: background.width * scaleX,
-              height: background.height * scaleY,
+              x: background.x * pageRatioX,
+              y: background.y * pageRatioY,
+              width: background.width * pageRatioX,
+              height: background.height * pageRatioY,
               scale: scaleWithin(background.scale, textScale, 0.1, 8),
             },
           }

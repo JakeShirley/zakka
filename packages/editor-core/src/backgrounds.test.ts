@@ -142,4 +142,23 @@ describe("page backgrounds", () => {
       resizePageDocument(document, { width: 500, height: 400 }, { mode: "fit" }).canvas.background,
     ).toEqual(frame("zakka:gingham-red", { x: -500, width: 1000, height: 400, scale: 0.5 }));
   });
+
+  it("keeps a shared spread frame aligned when the page aspect ratio changes", () => {
+    const narrow = { width: 600, height: 400 };
+    const shared = { width: 1200, height: 400 };
+    const [left, right] = [0, -600].map(
+      (x) =>
+        resizePageDocument(
+          setPageBackground(
+            createPageDocument({ canvas: narrow }),
+            frame("custom:custom_background_1", { x, ...shared }),
+          ),
+          { width: 800, height: 400 },
+          { mode: "fit" },
+        ).canvas.background,
+    );
+
+    expect(left).toMatchObject({ x: 0, width: 1600, height: 400 });
+    expect(right).toMatchObject({ x: -800, width: 1600, height: 400 });
+  });
 });

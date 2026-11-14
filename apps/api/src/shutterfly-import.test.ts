@@ -658,6 +658,37 @@ describe("Shutterfly integration routes", () => {
     expect(repositories.customBackgrounds.listForAccount(accountId)).toHaveLength(1);
   });
 
+  it("shares one library background between concurrent imports", async () => {
+    const { app, repositories } = await createTestApp();
+    const cookie = await register(app);
+    const accountId = repositories.accounts.findByPrimaryEmail("maker@example.com")?.id ?? "";
+
+    await connect(app, cookie, validRefreshToken);
+
+    const responses = await Promise.all([
+      importProject(app, cookie, "1000000000002"),
+      importProject(app, cookie, "1000000000002"),
+    ]);
+    const backgroundIds = await Promise.all(
+      responses.map(async (response) => {
+        const body = shutterflyImportResponseSchema.parse(await response.json());
+        const pageOne = body.book.pages.find((page) => page.page.title === "Page 1");
+        const page = pageResponseSchema.parse(
+          await (
+            await app.request(`/api/v1/pages/${pageOne?.pageId}`, { headers: { cookie } })
+          ).json(),
+        );
+
+        return page.document.canvas.background?.backgroundId;
+      }),
+    );
+    const library = repositories.customBackgrounds.listForAccount(accountId);
+
+    expect(responses.map((response) => response.status)).toEqual([201, 201]);
+    expect(library).toHaveLength(1);
+    expect(backgroundIds).toEqual([`custom:${library[0]?.id}`, `custom:${library[0]?.id}`]);
+  });
+
   it("does not restore a connection that was removed while a token refresh was in flight", async () => {
     const { app, clock, fake } = await createTestApp();
     const cookie = await register(app);

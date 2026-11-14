@@ -764,18 +764,21 @@ export function BookEditorView() {
     return [{ offsetX: 0, page: activePage, pageId: activePage.id }];
   };
 
-  /** Pages sharing the active page's background frame, which must change scale together. */
+  /**
+   * Pages sharing the active page's background frame, which must change scale together. The
+   * link follows the book's spread even in single-page view so edits never split a spread
+   * background.
+   */
   const getLinkedPagesForActiveBackground = (): SpreadPageContext[] => {
     if (!activePage) {
       return [];
     }
 
-    const isInSpread = visibleSpreadPages.some((spreadPage) => spreadPage.pageId === activePage.id);
+    const spreadPages = getSpreadPageContexts(pageDetails, activeSpread?.pageIds ?? []);
+    const isInSpread = spreadPages.some((spreadPage) => spreadPage.pageId === activePage.id);
 
     return getLinkedBackgroundPages(
-      viewMode === "spread" && isInSpread
-        ? visibleSpreadPages
-        : [{ offsetX: 0, page: activePage, pageId: activePage.id }],
+      isInSpread ? spreadPages : [{ offsetX: 0, page: activePage, pageId: activePage.id }],
       activePage.id,
     );
   };

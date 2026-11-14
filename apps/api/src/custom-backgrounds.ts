@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-import { getBuiltInBackground } from "@zakka/editor-core";
+import { getBuiltInBackground, toCustomBackgroundId } from "@zakka/editor-core";
 import sharp from "sharp";
 
 import type { AssetStorage } from "./assets.js";
@@ -127,6 +127,24 @@ export const createCustomBackground = async (
     extension: ".jpg",
   });
 
+  // A concurrent import may have saved the same external background while this one was
+  // processing; reuse it so the unique external ID index is never violated.
+  const linkedMeanwhile = input.externalId
+    ? input.repositories.customBackgrounds.findByExternalId(
+        input.accountId,
+        input.source,
+        input.externalId,
+      )
+    : null;
+
+  if (linkedMeanwhile) {
+    await Promise.allSettled([
+      input.storage.remove(stored.key),
+      input.storage.remove(storedThumbnail.key),
+    ]);
+    return linkedMeanwhile;
+  }
+
   return input.repositories.customBackgrounds.create({
     accountId: input.accountId,
     name: input.name.trim().slice(0, 120) || "Background",
@@ -197,17 +215,30 @@ export const deleteCustomBackground = async (input: {
   backgroundId: string;
   repositories: Repositories;
   storage: AssetStorage;
-}): Promise<boolean> => {
+}): Promise<"deleted" | "in_use" | "not_found"> => {
+  if (
+    !input.repositories.customBackgrounds.findByIdForAccount(input.accountId, input.backgroundId)
+  ) {
+    return "not_found";
+  }
+
+  const pageBackgroundId = JSON.stringify(toCustomBackgroundId(input.backgroundId));
+  const inUse = input.repositories.pages
+    .listForAccount(input.accountId)
+    .some((page) => page.documentJson.includes(pageBackgroundId));
+
+  if (inUse) return "in_use";
+
   const deleted = input.repositories.customBackgrounds.delete(input);
 
-  if (!deleted) return false;
+  if (!deleted) return "not_found";
 
   await Promise.allSettled([
     input.storage.remove(deleted.storageKey),
     input.storage.remove(deleted.thumbnailStorageKey),
   ]);
 
-  return true;
+  return "deleted";
 };
 
 const editorCoreRequire = createRequire(import.meta.url);

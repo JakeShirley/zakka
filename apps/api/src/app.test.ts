@@ -1465,6 +1465,25 @@ describe("api app", () => {
     expect((await otherListResponse.json()).backgrounds).toEqual([]);
     expect(otherDeleteResponse.status).toBe(404);
 
+    const inUseDeleteResponse = await app.request(`/api/v1/custom-backgrounds/${created.id}`, {
+      headers: { cookie },
+      method: "DELETE",
+    });
+
+    expect(inUseDeleteResponse.status).toBe(409);
+    expect(await inUseDeleteResponse.json()).toMatchObject({
+      error: { code: "background_in_use" },
+    });
+
+    const ownPage = await ownPageResponse.json();
+    const clearPageResponse = await app.request(`/api/v1/pages/${ownPage.id}`, {
+      body: JSON.stringify({ document: createPageDocument() }),
+      headers: { cookie, "content-type": "application/json" },
+      method: "PATCH",
+    });
+
+    expect(clearPageResponse.status).toBe(200);
+
     const deleteResponse = await app.request(`/api/v1/custom-backgrounds/${created.id}`, {
       headers: { cookie },
       method: "DELETE",

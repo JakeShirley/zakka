@@ -397,6 +397,7 @@ const mapItemToPlacement = (
   itemKey: string,
   surface: ShutterflySurface,
   placement: PagePlacement,
+  itemPlacements: PagePlacement[],
 ) => {
   const page = context.pages[placement.pageIndex];
 
@@ -456,12 +457,24 @@ const mapItemToPlacement = (
         return;
       }
 
-      const imageFrame = applyTransform(backgroundImageRect(sourceRect, item), placement.transform);
+      const imageRect = backgroundImageRect(sourceRect, item);
       // Zakka clips a background only to the page, so keep Shutterfly's zoom only when its
-      // container would not crop the image any further on this page.
-      const frame = sameVisiblePageArea(imageFrame, rect, context.pageWidth, context.pageHeight)
-        ? imageFrame
-        : rect;
+      // container would not crop the image any further on any page it reaches. Deciding once
+      // for every page keeps a spread background's halves aligned at the fold.
+      const keepZoom = itemPlacements.every((itemPlacement) => {
+        const pageRect = applyTransform(sourceRect, itemPlacement.transform);
+
+        return (
+          !overlapsPage(pageRect, context.pageWidth, context.pageHeight) ||
+          sameVisiblePageArea(
+            applyTransform(imageRect, itemPlacement.transform),
+            pageRect,
+            context.pageWidth,
+            context.pageHeight,
+          )
+        );
+      });
+      const frame = keepZoom ? applyTransform(imageRect, placement.transform) : rect;
 
       if (normalizeRotation(rect.rot) !== 0) {
         warn(context, "Straightened rotated backgrounds", itemKey);
@@ -677,10 +690,17 @@ const mapSurface = (
   includeItem: (item: ShutterflyLayeredItem, placement: PagePlacement) => boolean = () => true,
 ) => {
   for (const [itemIndex, item] of surface.surfaceData.layeredItems.entries()) {
-    for (const placement of placements) {
-      if (includeItem(item, placement)) {
-        mapItemToPlacement(context, item, `${surfaceKey}_${itemIndex}`, surface, placement);
-      }
+    const itemPlacements = placements.filter((placement) => includeItem(item, placement));
+
+    for (const placement of itemPlacements) {
+      mapItemToPlacement(
+        context,
+        item,
+        `${surfaceKey}_${itemIndex}`,
+        surface,
+        placement,
+        itemPlacements,
+      );
     }
   }
 };

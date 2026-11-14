@@ -313,6 +313,44 @@ describe("mapShutterflyProject", () => {
     expect(right?.width).toBeCloseTo(left?.width ?? 0, 0);
   });
 
+  it("chooses one frame for both halves of a spread background", () => {
+    const withBackground = structuredClone(project);
+    const spread = withBackground.surfaceCategories
+      .find((category) => category.categoryName === "inside")
+      ?.surfaces.find((surface) => surface.surfaceNumber === "1");
+
+    if (!spread) {
+      throw new Error("Missing spread surface");
+    }
+
+    const { width, height } = spread.surfaceData.pageDetails;
+
+    // The zoomed image covers the whole spread, but its container stops partway into the right
+    // page, so only the left page could keep the zoomed frame on its own.
+    spread.surfaceData.layeredItems.unshift({
+      ...spread.surfaceData.layeredItems[0],
+      type: "background",
+      container: { x: 0, y: 0, w: width * 0.75, h: height, rot: 0 },
+      content: {
+        contentType: "Background",
+        userData: { assetId: "DA_spread", x: -width * 0.1, y: 0, w: width * 1.2, h: height },
+      },
+      layerMetadata: [],
+    } as (typeof spread.surfaceData.layeredItems)[number]);
+
+    const book = mapShutterflyProject(withBackground, {
+      ...resolvers,
+      background: () => ({ kind: "image", backgroundId: "custom:custom_background_spread" }),
+    });
+    const left = findPage(book, "Page 2").document.canvas.background;
+    const right = findPage(book, "Page 3").document.canvas.background;
+
+    expect(left?.x).toBeCloseTo(0, 0);
+    expect(left?.width).toBeCloseTo(book.pageWidth * 2 * 0.75, 0);
+    expect(right?.x).toBeCloseTo(-book.pageWidth, 0);
+    expect(right?.width).toBeCloseTo(left?.width ?? 0, 0);
+  });
+
   it("keeps rotated spread elements on both pages when their rotated bounds cross the gutter", () => {
     const rotated = structuredClone(project);
     const spread = rotated.surfaceCategories

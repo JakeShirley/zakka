@@ -145,6 +145,10 @@ export const customBackgroundDeleteRoute = createRoute({
   request: { params: customBackgroundParamsSchema },
   responses: {
     204: { description: "Deletes a custom background." },
+    409: {
+      description: "The background is still used by a page and cannot be deleted.",
+      content: errorContent,
+    },
     ...backgroundJsonResponses,
   },
 });

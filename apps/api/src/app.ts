@@ -2926,14 +2926,25 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     }
 
     const { backgroundId } = context.req.valid("param");
-    const deleted = await deleteCustomBackground({
+    const result = await deleteCustomBackground({
       accountId: authSession.account.id,
       backgroundId,
       repositories: options.repositories,
       storage: options.storage,
     });
 
-    if (!deleted) {
+    if (result === "in_use") {
+      return context.json(
+        createErrorResponse(
+          context,
+          "background_in_use",
+          "This background is used on a page. Remove it from those pages before deleting it.",
+        ),
+        409,
+      );
+    }
+
+    if (result === "not_found") {
       return context.json(
         createErrorResponse(context, "background_not_found", "Background not found"),
         404,
