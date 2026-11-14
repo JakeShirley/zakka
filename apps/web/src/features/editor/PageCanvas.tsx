@@ -301,11 +301,22 @@ type ActiveGroupTransform = {
   pointerId: number;
   startBox: GroupBoundingBox;
   startCenter: CanvasPoint;
+  startClientPointer: CanvasPoint;
   startLayers: PageLayer[];
   startPointer: CanvasPoint;
   startPointerAngle: number;
   handle?: MultiSelectionResizeHandle;
 };
+
+// Screen-space distance the pointer must travel before a press becomes a drag, so the
+// tail end of the mouse movement that lands a click doesn't nudge the selection.
+// Matches Inkscape's default drag tolerance.
+const DRAG_THRESHOLD_PX = 4;
+
+const hasPassedDragThreshold = (
+  start: CanvasPoint,
+  event: { clientX: number; clientY: number },
+): boolean => Math.hypot(event.clientX - start.x, event.clientY - start.y) >= DRAG_THRESHOLD_PX;
 
 export function PageCanvas({
   activeSelectionPanel = null,
@@ -360,6 +371,7 @@ export function PageCanvas({
     outerTransform: string | null;
   } | null>(null);
   const suppressNextClickRef = useRef(false);
+  const dragThresholdPassedRef = useRef(false);
   const [activeTransform, setActiveTransform] = useState<ActiveTransform | null>(null);
   const [activeTransformUpdate, setActiveTransformUpdate] = useState<Partial<PageLayer> | null>(
     null,
@@ -746,6 +758,7 @@ export function PageCanvas({
     if (!pointer) return;
     const center = getLayerCenter(layer);
     event.currentTarget.setPointerCapture(event.pointerId);
+    dragThresholdPassedRef.current = false;
     setActiveTransformUpdate(null);
     setActiveTransform({
       center,
@@ -753,6 +766,7 @@ export function PageCanvas({
       layerId: layer.id,
       mode,
       pointerId: event.pointerId,
+      startClientPointer: { x: event.clientX, y: event.clientY },
       startLayer: layer,
       startPointer: pointer,
       startPointerAngle: getAngle(center, pointer),
@@ -777,6 +791,7 @@ export function PageCanvas({
       y: multiSelectionBoundingBox.y + multiSelectionBoundingBox.height / 2,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
+    dragThresholdPassedRef.current = false;
     setActiveGroupTransformUpdates(null);
     setActiveGroupTransform({
       ...(handle ? { handle } : {}),
@@ -785,6 +800,7 @@ export function PageCanvas({
       pointerId: event.pointerId,
       startBox: multiSelectionBoundingBox,
       startCenter: center,
+      startClientPointer: { x: event.clientX, y: event.clientY },
       startLayers: movableLayers,
       startPointer: pointer,
       startPointerAngle: getAngle(center, pointer),
@@ -873,8 +889,18 @@ export function PageCanvas({
       ),
     };
   };
+  const passDragThreshold = (
+    startClientPointer: CanvasPoint,
+    event: ReactPointerEvent<HTMLElement>,
+  ): boolean => {
+    if (!dragThresholdPassedRef.current && hasPassedDragThreshold(startClientPointer, event)) {
+      dragThresholdPassedRef.current = true;
+    }
+    return dragThresholdPassedRef.current;
+  };
   const transformLayer = (event: ReactPointerEvent<HTMLElement>) => {
     if (activeGroupTransform && event.pointerId === activeGroupTransform.pointerId) {
+      if (!passDragThreshold(activeGroupTransform.startClientPointer, event)) return;
       const pointer = getCanvasPoint(event);
       if (!pointer) return;
       event.preventDefault();
@@ -887,6 +913,7 @@ export function PageCanvas({
       return;
     }
     if (!activeTransform || event.pointerId !== activeTransform.pointerId) return;
+    if (!passDragThreshold(activeTransform.startClientPointer, event)) return;
     const pointer = getCanvasPoint(event);
     if (!pointer) return;
     event.preventDefault();
@@ -902,7 +929,9 @@ export function PageCanvas({
   const stopTransform = (event: ReactPointerEvent<HTMLElement>) => {
     if (activeGroupTransform && event.pointerId === activeGroupTransform.pointerId) {
       const groupTransform = activeGroupTransform;
-      const pointer = getCanvasPoint(event);
+      const pointer = passDragThreshold(groupTransform.startClientPointer, event)
+        ? getCanvasPoint(event)
+        : null;
       const updates = pointer ? computeGroupUpdates(groupTransform, pointer) : null;
       setActiveGroupTransform(null);
       setActiveGroupTransformUpdates(null);
@@ -918,7 +947,9 @@ export function PageCanvas({
     }
     if (activeTransform?.pointerId !== event.pointerId) return;
     const transform = activeTransform;
-    const pointer = getCanvasPoint(event);
+    const pointer = passDragThreshold(transform.startClientPointer, event)
+      ? getCanvasPoint(event)
+      : null;
     const update = pointer ? getTransformUpdate(transform, pointer) : null;
 
     setActiveTransform(null);

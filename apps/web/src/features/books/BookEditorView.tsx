@@ -891,11 +891,12 @@ export function BookEditorView() {
   ) => {
     const page = pageDetails.get(pageId);
 
-    if (!page) {
+    if (!page || !update) {
+      endHistoryGroup();
       return;
     }
 
-    const nextDocument = update ? updateLayer(page.document, layerId, update) : page.document;
+    const nextDocument = updateLayer(page.document, layerId, update);
     const nextLayer = nextDocument.layers.find((layer) => layer.id === layerId);
 
     if (viewMode === "spread" && nextLayer && visiblePageIds.length > 1) {
@@ -910,10 +911,7 @@ export function BookEditorView() {
       return;
     }
 
-    if (update) {
-      editPageDocument(pageId, nextDocument, "group");
-    }
-
+    editPageDocument(pageId, nextDocument, "group");
     endHistoryGroup();
   };
 
