@@ -1,7 +1,11 @@
 import { Button, Spinner } from "@fluentui/react-components";
 import { ArrowDownloadRegular, BookOpenRegular, LinkRegular } from "@fluentui/react-icons";
-import type { ShutterflyConnectionResponse, ShutterflyProjectResponse } from "@zakka/api-contract";
-import { useEffect, useState } from "react";
+import type {
+  ShutterflyConnectionResponse,
+  ShutterflyImportJobResponse,
+  ShutterflyProjectResponse,
+} from "@zakka/api-contract";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { apiClient } from "../../apiClient";
@@ -9,9 +13,52 @@ import { AppModal } from "../../components/layout";
 import { getErrorMessage } from "../../lib/errors";
 
 type ImportResult = { bookId: string; title: string; warnings: string[] };
+type ImportProgress = ShutterflyImportJobResponse["progress"];
+
+const importPollIntervalMs = 500;
 
 const formatUpdatedAt = (updatedAt: string | null): string | null =>
   updatedAt ? `Edited ${new Date(updatedAt).toLocaleDateString()}` : null;
+
+const stepLabels: Record<ImportProgress["step"], string> = {
+  preparing: "Reading project from Shutterfly",
+  photos: "Downloading photos",
+  stickers: "Importing stickers",
+  backgrounds: "Importing backgrounds",
+  pages: "Building pages",
+};
+
+const formatImportProgress = (progress: ImportProgress | null): string => {
+  if (!progress) {
+    return "Starting import";
+  }
+
+  const label = stepLabels[progress.step];
+
+  return progress.total > 0 ? `${label} (${progress.completed} of ${progress.total})` : label;
+};
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function ImportProgressIndicator({ progress }: { progress: ImportProgress | null }) {
+  const isIndeterminate = !progress || progress.step === "preparing";
+  const percent = progress ? Math.round(progress.fraction * 100) : 0;
+  const label = formatImportProgress(progress);
+
+  return (
+    <div className="shutterfly-import-progress" role="status" aria-live="polite">
+      <div className="shutterfly-import-progress-copy">
+        <span>{label}</span>
+        {isIndeterminate ? null : <span>{percent}%</span>}
+      </div>
+      <progress
+        aria-label={label}
+        max={1}
+        value={isIndeterminate ? undefined : (progress?.fraction ?? 0)}
+      />
+    </div>
+  );
+}
 
 export function ShutterflyImportModal({
   onClose,
@@ -24,8 +71,18 @@ export function ShutterflyImportModal({
   const [connection, setConnection] = useState<ShutterflyConnectionResponse | null>(null);
   const [projects, setProjects] = useState<ShutterflyProjectResponse[] | null>(null);
   const [importingProjectId, setImportingProjectId] = useState<string | null>(null);
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -61,10 +118,32 @@ export function ShutterflyImportModal({
 
   const importProject = async (project: ShutterflyProjectResponse) => {
     setImportingProjectId(project.id);
+    setImportProgress(null);
     setError(null);
 
     try {
-      const response = await apiClient.importShutterflyProject(project.id);
+      let job = await apiClient.startShutterflyImport(project.id);
+
+      while (job.status === "running") {
+        if (!isMountedRef.current) {
+          return;
+        }
+
+        setImportProgress(job.progress);
+        await wait(importPollIntervalMs);
+        job = await apiClient.getShutterflyImport(job.id);
+      }
+
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      if (job.status === "failed" || !job.result) {
+        setError(job.error?.message ?? "Shutterfly import failed");
+        return;
+      }
+
+      const response = job.result;
 
       if (response.warnings.length === 0) {
         onOpenBook(response.book.id);
@@ -77,9 +156,14 @@ export function ShutterflyImportModal({
         warnings: response.warnings,
       });
     } catch (importError: unknown) {
-      setError(getErrorMessage(importError));
+      if (isMountedRef.current) {
+        setError(getErrorMessage(importError));
+      }
     } finally {
-      setImportingProjectId(null);
+      if (isMountedRef.current) {
+        setImportingProjectId(null);
+        setImportProgress(null);
+      }
     }
   };
 
@@ -194,15 +278,12 @@ export function ShutterflyImportModal({
                 >
                   {importingProjectId === project.id ? "Importing" : "Import"}
                 </Button>
+                {importingProjectId === project.id ? (
+                  <ImportProgressIndicator progress={importProgress} />
+                ) : null}
               </li>
             ))}
           </ul>
-        ) : null}
-
-        {isImporting ? (
-          <p className="integration-hint" role="status">
-            Downloading photos and building pages. Large books can take a minute.
-          </p>
         ) : null}
 
         {error ? (

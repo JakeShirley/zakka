@@ -1,5 +1,5 @@
 import { FluentProvider, webLightTheme } from "@fluentui/react-components";
-import type { BookResponse } from "@zakka/api-contract";
+import type { BookResponse, ShutterflyImportJobResponse } from "@zakka/api-contract";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 describe("ShutterflyImportModal", () => {
-  test("imports the chosen project and shows what could not be brought across", async () => {
+  const mockConnectedProjects = () => {
     vi.spyOn(apiClient, "getShutterflyConnection").mockResolvedValue({
       configured: true,
       connected: true,
@@ -60,23 +60,82 @@ describe("ShutterflyImportModal", () => {
         },
       ],
     });
-    const importProject = vi.spyOn(apiClient, "importShutterflyProject").mockResolvedValue({
-      book: importedBook,
-      warnings: ["Skipped spine text because Zakka books have no spine"],
-    });
+  };
+
+  const runningJob: ShutterflyImportJobResponse = {
+    id: "shutterfly_import_1",
+    projectId: "1219497168070",
+    status: "running",
+    progress: { step: "photos", completed: 1, total: 2, fraction: 0.475 },
+    result: null,
+    error: null,
+  };
+
+  test("shows import progress, then what could not be brought across", async () => {
+    mockConnectedProjects();
+    const startImport = vi.spyOn(apiClient, "startShutterflyImport").mockResolvedValue(runningJob);
+    let finishImport: (job: ShutterflyImportJobResponse) => void = () => undefined;
+    const getImport = vi.spyOn(apiClient, "getShutterflyImport").mockReturnValue(
+      new Promise((resolve) => {
+        finishImport = resolve;
+      }),
+    );
     const props = await renderModal();
 
     await expect.element(page.getByText("8x8 Deluxe Layflat Photo Book / 34 pages")).toBeVisible();
     await page.getByRole("button", { name: "Import Summer 2026" }).click();
 
+    await expect.element(page.getByText("Downloading photos (1 of 2)")).toBeVisible();
+    await expect.element(page.getByText("48%")).toBeVisible();
+    await expect
+      .element(page.getByRole("progressbar", { name: "Downloading photos (1 of 2)" }))
+      .toHaveAttribute("value", "0.475");
+    expect(startImport).toHaveBeenCalledWith("1219497168070");
+    await expect.poll(() => getImport.mock.calls.length, { timeout: 3000 }).toBe(1);
+    expect(getImport).toHaveBeenCalledWith("shutterfly_import_1");
+    await expect.element(page.getByRole("button", { name: "Close" }).first()).toBeDisabled();
+
+    finishImport({
+      ...runningJob,
+      status: "completed",
+      progress: { step: "pages", completed: 34, total: 34, fraction: 1 },
+      result: {
+        book: importedBook,
+        warnings: ["Skipped spine text because Zakka books have no spine"],
+      },
+    });
+
     await expect
       .element(page.getByText("Skipped spine text because Zakka books have no spine"))
       .toBeVisible();
-    expect(importProject).toHaveBeenCalledWith("1219497168070");
 
     await page.getByRole("button", { name: "Open book" }).click();
 
     expect(props.onOpenBook).toHaveBeenCalledWith("book_imported");
+  });
+
+  test("shows why a background import failed", async () => {
+    mockConnectedProjects();
+    vi.spyOn(apiClient, "startShutterflyImport").mockResolvedValue(runningJob);
+    vi.spyOn(apiClient, "getShutterflyImport").mockResolvedValue({
+      ...runningJob,
+      status: "failed",
+      error: {
+        code: "shutterfly_reconnect_required",
+        message: "Shutterfly sign-in expired. Reconnect your Shutterfly account in Settings.",
+      },
+    });
+    const props = await renderModal();
+
+    await page.getByRole("button", { name: "Import Summer 2026" }).click();
+
+    await expect
+      .element(page.getByRole("alert"), { timeout: 3000 })
+      .toHaveTextContent(
+        "Shutterfly sign-in expired. Reconnect your Shutterfly account in Settings.",
+      );
+    await expect.element(page.getByRole("button", { name: "Import Summer 2026" })).toBeEnabled();
+    expect(props.onOpenBook).not.toHaveBeenCalled();
   });
 
   test("sends users to Settings when Shutterfly is not connected", async () => {

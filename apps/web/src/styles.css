@@ -681,6 +681,30 @@ textarea:focus-visible {
   font-size: 0.8rem;
 }
 
+.shutterfly-import-progress {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 6px;
+}
+
+.shutterfly-import-progress-copy {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #4f595c;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.shutterfly-import-progress-copy span:last-child {
+  font-variant-numeric: tabular-nums;
+}
+
+.shutterfly-import-progress progress {
+  width: 100%;
+  accent-color: #24766e;
+}
+
 .shutterfly-import-result {
   display: grid;
   gap: 10px;

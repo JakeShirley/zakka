@@ -49,11 +49,11 @@ import {
   type ServerLogLevel,
   type ServerLogListResponse,
   type ShutterflyConnectionResponse,
-  type ShutterflyImportResponse,
+  type ShutterflyImportJobResponse,
   type ShutterflyProjectListResponse,
   serverLogListResponseSchema,
   shutterflyConnectionResponseSchema,
-  shutterflyImportResponseSchema,
+  shutterflyImportJobResponseSchema,
   shutterflyProjectListResponseSchema,
   type StickerPackCreateRequest,
   type StickerPackListResponse,
@@ -365,12 +365,19 @@ export const createApiClient = (baseUrl = defaultBaseUrl) => ({
       "/api/v1/integrations/shutterfly/projects",
     ),
 
-  importShutterflyProject: (projectId: string): Promise<ShutterflyImportResponse> =>
+  startShutterflyImport: (projectId: string): Promise<ShutterflyImportJobResponse> =>
     requestJson(
       baseUrl,
-      shutterflyImportResponseSchema,
-      `/api/v1/integrations/shutterfly/projects/${encodeURIComponent(projectId)}/import`,
+      shutterflyImportJobResponseSchema,
+      `/api/v1/integrations/shutterfly/projects/${encodeURIComponent(projectId)}/imports`,
       { method: "POST" },
+    ),
+
+  getShutterflyImport: (importId: string): Promise<ShutterflyImportJobResponse> =>
+    requestJson(
+      baseUrl,
+      shutterflyImportJobResponseSchema,
+      `/api/v1/integrations/shutterfly/imports/${encodeURIComponent(importId)}`,
     ),
 
   createBook: (input: BookCreateRequest): Promise<BookResponse> =>
