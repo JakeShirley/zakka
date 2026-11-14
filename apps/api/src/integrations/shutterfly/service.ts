@@ -1,7 +1,13 @@
-import { editorFontDefinitions, defaultTextFontFamily, type StickerId } from "@zakka/editor-core";
+import {
+  editorFontDefinitions,
+  defaultTextFontFamily,
+  type StickerId,
+  toCustomBackgroundId,
+} from "@zakka/editor-core";
 import sharp from "sharp";
 
 import { type AssetStorage, createAssetFromUpload } from "../../assets.js";
+import { createCustomBackground } from "../../custom-backgrounds.js";
 import { createCustomStickerFromUpload } from "../../custom-stickers.js";
 import type { Repositories } from "../../persistence/repositories.js";
 import type { BookRecord, IntegrationConnectionRecord } from "../../persistence/schema.js";
@@ -567,10 +573,14 @@ export const createShutterflyIntegration = (options: {
     }
 
     const externalId = `design:${asset.id}`;
-    const existing = repositories.integrations.findMediaLink(accountId, provider, externalId);
+    const existing = repositories.customBackgrounds.findByExternalId(
+      accountId,
+      "shutterfly",
+      externalId,
+    );
 
-    if (existing?.assetId && repositories.assets.findByIdForAccount(accountId, existing.assetId)) {
-      return { kind: "image", assetId: existing.assetId };
+    if (existing) {
+      return { kind: "image", backgroundId: toCustomBackgroundId(existing.id) };
     }
 
     const png = await downloadDesignImage(asset, backgroundRasterLongEdge, printSvg);
@@ -580,23 +590,17 @@ export const createShutterflyIntegration = (options: {
     }
 
     try {
-      const { asset: zakkaAsset } = await createAssetFromUpload({
+      const background = await createCustomBackground({
         accountId,
-        file: new File([new Uint8Array(png)], `${safeFileName(asset.name, asset.id)}.png`, {
-          type: "image/png",
-        }),
+        buffer: png,
+        externalId,
+        name: (asset.name ?? asset.id).slice(0, 120),
         repositories,
+        source: "shutterfly",
         storage: options.storage,
       });
 
-      repositories.integrations.createMediaLink({
-        accountId,
-        provider,
-        externalId,
-        assetId: zakkaAsset.id,
-      });
-
-      return { kind: "image", assetId: zakkaAsset.id };
+      return { kind: "image", backgroundId: toCustomBackgroundId(background.id) };
     } catch {
       return null;
     }
@@ -822,18 +826,13 @@ export const createShutterflyIntegration = (options: {
         reportPages(sortOrder + 1);
       }
 
-      const importedAssetIds = [
-        ...photoAssetIds.values(),
-        ...[...backgrounds.values()].map((background) =>
-          background?.kind === "image" ? background.assetId : null,
-        ),
-      ].filter((assetId): assetId is string => assetId !== null);
-
-      if (importedAssetIds.length > 0) {
+      if (photoAssetIds.size > 0) {
         repositories.books.addAssetsToBook({
           accountId,
           bookId: book.id,
-          assetIds: importedAssetIds,
+          assetIds: [...photoAssetIds.values()].filter(
+            (assetId): assetId is string => assetId !== null,
+          ),
         });
       }
 

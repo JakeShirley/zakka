@@ -10,6 +10,9 @@ export type CustomSticker = Awaited<
 export type CustomWashiTape = Awaited<
   ReturnType<typeof apiClient.listCustomWashiTapes>
 >["washiTapes"][number];
+export type CustomBackground = Awaited<
+  ReturnType<typeof apiClient.listCustomBackgrounds>
+>["backgrounds"][number];
 export type BookSummary = Awaited<ReturnType<typeof apiClient.listBooks>>["books"][number];
 export type BookDetail = Awaited<ReturnType<typeof apiClient.getBook>>;
 export type ExportJob = Awaited<ReturnType<typeof apiClient.createExport>>;

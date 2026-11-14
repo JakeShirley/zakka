@@ -294,6 +294,39 @@ export const customWashiTapes = sqliteTable(
   (table) => [index("custom_washi_tapes_account_id_idx").on(table.accountId)],
 );
 
+export const customBackgroundSources = ["upload", "shutterfly"] as const;
+export type CustomBackgroundSource = (typeof customBackgroundSources)[number];
+
+export const customBackgrounds = sqliteTable(
+  "custom_backgrounds",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    storageKey: text("storage_key").notNull(),
+    thumbnailStorageKey: text("thumbnail_storage_key").notNull(),
+    mimeType: text("mime_type").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    width: integer("width").notNull(),
+    height: integer("height").notNull(),
+    checksumSha256: text("checksum_sha256").notNull(),
+    source: text("source", { enum: customBackgroundSources }).notNull(),
+    externalId: text("external_id"),
+    ...timestampColumns(),
+  },
+  (table) => [
+    index("custom_backgrounds_account_id_idx").on(table.accountId),
+    uniqueIndex("custom_backgrounds_storage_key_unique").on(table.storageKey),
+    uniqueIndex("custom_backgrounds_external_unique").on(
+      table.accountId,
+      table.source,
+      table.externalId,
+    ),
+  ],
+);
+
 export const bookAssets = sqliteTable(
   "book_assets",
   {
@@ -409,6 +442,7 @@ export type AlbumAssetRecord = typeof albumAssets.$inferSelect;
 export type StickerPackRecord = typeof stickerPacks.$inferSelect;
 export type CustomStickerRecord = typeof customStickers.$inferSelect;
 export type CustomWashiTapeRecord = typeof customWashiTapes.$inferSelect;
+export type CustomBackgroundRecord = typeof customBackgrounds.$inferSelect;
 export type ExportJobRecord = typeof exportJobs.$inferSelect;
 export type IntegrationConnectionRecord = typeof integrationConnections.$inferSelect;
 export type ExternalMediaLinkRecord = typeof externalMediaLinks.$inferSelect;

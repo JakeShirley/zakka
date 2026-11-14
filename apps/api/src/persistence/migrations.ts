@@ -321,6 +321,30 @@ CREATE TABLE account_preferences (
 );
 `,
   },
+  {
+    id: "0015_add_custom_backgrounds",
+    sql: `
+CREATE TABLE custom_backgrounds (
+  id TEXT PRIMARY KEY NOT NULL CHECK (id GLOB 'custom_background_*'),
+  account_id TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  storage_key TEXT NOT NULL,
+  thumbnail_storage_key TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  byte_size INTEGER NOT NULL CHECK (byte_size >= 0),
+  width INTEGER NOT NULL CHECK (width > 0),
+  height INTEGER NOT NULL CHECK (height > 0),
+  checksum_sha256 TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('upload', 'shutterfly')),
+  external_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX custom_backgrounds_account_id_idx ON custom_backgrounds (account_id);
+CREATE UNIQUE INDEX custom_backgrounds_storage_key_unique ON custom_backgrounds (storage_key);
+CREATE UNIQUE INDEX custom_backgrounds_external_unique ON custom_backgrounds (account_id, source, external_id);
+`,
+  },
 ];
 
 export const ensureMigrationTable = (sqlite: Database.Database) => {

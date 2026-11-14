@@ -6,6 +6,7 @@ import {
   LayoutCellFourRegular,
   MapRegular,
   TextTRegular,
+  WallpaperRegular,
 } from "@fluentui/react-icons";
 import type { ReactNode } from "react";
 
@@ -28,6 +29,7 @@ type AssetRailCommonProps = {
   onOpenLayoutPicker?: (() => void) | undefined;
   onOpenStickerPicker: () => void;
   onOpenWashiTapePicker: () => void;
+  onOpenBackgroundPanel?: () => void;
 };
 
 type AssetRailModalProps = AssetRailCommonProps & {
@@ -56,6 +58,7 @@ export function AssetRail(props: AssetRailProps) {
     onOpenLayoutPicker,
     onOpenStickerPicker,
     onOpenWashiTapePicker,
+    onOpenBackgroundPanel,
   } = props;
   const isReferencedMode = props.mode === "referenced";
   const photoCount = isReferencedMode ? props.referencedAssets.length : props.assetCount;
@@ -110,6 +113,16 @@ export function AssetRail(props: AssetRailProps) {
         >
           Add map
         </Button>
+        {onOpenBackgroundPanel ? (
+          <Button
+            type="button"
+            className="secondary-button full-width-button"
+            icon={<WallpaperRegular />}
+            onClick={onOpenBackgroundPanel}
+          >
+            Backgrounds
+          </Button>
+        ) : null}
         {onOpenLayoutPicker ? (
           <Button
             type="button"
