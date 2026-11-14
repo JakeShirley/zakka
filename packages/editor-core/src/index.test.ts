@@ -238,6 +238,22 @@ describe("page document helpers", () => {
     ).toMatchObject({ x: 200, y: 300, width: 600, height: 600 });
   });
 
+  it("keeps scaled text within schema limits when filling a larger page", () => {
+    const text = createTextLayer({ id: "text_1", text: "Big", fontSize: 200 });
+    const document = createPageDocument({
+      canvas: { width: 2400, height: 2400 },
+      layers: [text],
+    });
+
+    const resized = resizePageDocument(
+      document,
+      { width: 3300, height: 2550 },
+      { mode: "fill", anchor: "center" },
+    );
+
+    expect(resized.layers[0]).toMatchObject({ kind: "text", fontSize: 240 });
+  });
+
   it("adds non-destructive photo edit metadata without changing the asset reference", () => {
     const photo = createPhotoLayer({
       assetId: "asset_1",

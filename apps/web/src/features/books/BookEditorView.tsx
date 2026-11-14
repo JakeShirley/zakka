@@ -1321,6 +1321,22 @@ export function BookEditorView() {
         nextPageSize &&
           (book.pageWidth !== nextPageSize.width || book.pageHeight !== nextPageSize.height),
       );
+      const resizedPages =
+        pageSizeChanged && nextPageSize
+          ? orderedPageIds
+              .map((pageId) => pageDetails.get(pageId))
+              .filter((page): page is PageDetail => Boolean(page))
+              .map((page) =>
+                replacePageDocument(
+                  page,
+                  resizePageDocument(
+                    page.document,
+                    { width: nextPageSize.width, height: nextPageSize.height },
+                    { anchor: pageResizeAnchor, mode: pageResizeMode },
+                  ),
+                ),
+              )
+          : [];
       const updatedBook = await apiClient.updateBook(book.id, {
         title: bookTitleDraft,
         coverSpreadEnabled: coverSpreadEnabledDraft,
@@ -1329,21 +1345,7 @@ export function BookEditorView() {
           : { pageWidth: pageSize.width, pageHeight: pageSize.height }),
       });
 
-      if (pageSizeChanged && nextPageSize) {
-        const resizedPages = orderedPageIds
-          .map((pageId) => pageDetails.get(pageId))
-          .filter((page): page is PageDetail => Boolean(page))
-          .map((page) =>
-            replacePageDocument(
-              page,
-              resizePageDocument(
-                page.document,
-                { width: nextPageSize.width, height: nextPageSize.height },
-                { anchor: pageResizeAnchor, mode: pageResizeMode },
-              ),
-            ),
-          );
-
+      if (resizedPages.length > 0) {
         setPageDetails((currentDetails) => {
           const nextDetails = new Map(currentDetails);
 

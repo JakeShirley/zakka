@@ -2664,6 +2664,9 @@ export const resizePageDocument = (
     scaleY,
   } = getPageResizeContentRect(parsedDocument.canvas, canvas, options);
   const textScale = Math.min(scaleX, scaleY);
+  // Scaled effect values are clamped to their schema bounds so large resizes cannot throw.
+  const scaleWithin = (value: number, scale: number, min: number, max: number) =>
+    Math.min(max, Math.max(min, value * scale));
 
   return parseDocument({
     ...parsedDocument,
@@ -2677,24 +2680,24 @@ export const resizePageDocument = (
         height: layer.height * scaleY,
         ...(layer.kind === "text"
           ? {
-              fontSize: layer.fontSize * textScale,
-              stroke: { ...layer.stroke, width: layer.stroke.width * textScale },
+              fontSize: scaleWithin(layer.fontSize, textScale, 6, 240),
+              stroke: { ...layer.stroke, width: scaleWithin(layer.stroke.width, textScale, 0, 80) },
               shadow: {
                 ...layer.shadow,
-                offsetX: layer.shadow.offsetX * scaleX,
-                offsetY: layer.shadow.offsetY * scaleY,
-                blur: layer.shadow.blur * textScale,
+                offsetX: scaleWithin(layer.shadow.offsetX, scaleX, -240, 240),
+                offsetY: scaleWithin(layer.shadow.offsetY, scaleY, -240, 240),
+                blur: scaleWithin(layer.shadow.blur, textScale, 0, 160),
               },
-              glow: { ...layer.glow, blur: layer.glow.blur * textScale },
+              glow: { ...layer.glow, blur: scaleWithin(layer.glow.blur, textScale, 0, 160) },
               background: {
                 ...layer.background,
-                padding: layer.background.padding * textScale,
-                radius: layer.background.radius * textScale,
+                padding: scaleWithin(layer.background.padding, textScale, 0, 120),
+                radius: scaleWithin(layer.background.radius, textScale, 0, 160),
               },
               bubble: {
                 ...layer.bubble,
-                padding: layer.bubble.padding * textScale,
-                spacing: layer.bubble.spacing * textScale,
+                padding: scaleWithin(layer.bubble.padding, textScale, 0, 120),
+                spacing: scaleWithin(layer.bubble.spacing, textScale, 0, 120),
               },
             }
           : {}),
@@ -2702,10 +2705,10 @@ export const resizePageDocument = (
           ? {
               shadow: {
                 ...layer.shadow,
-                offsetX: layer.shadow.offsetX * scaleX,
-                offsetY: layer.shadow.offsetY * scaleY,
-                blur: layer.shadow.blur * textScale,
-                spread: layer.shadow.spread * textScale,
+                offsetX: scaleWithin(layer.shadow.offsetX, scaleX, -400, 400),
+                offsetY: scaleWithin(layer.shadow.offsetY, scaleY, -400, 400),
+                blur: scaleWithin(layer.shadow.blur, textScale, 0, 400),
+                spread: scaleWithin(layer.shadow.spread, textScale, -120, 160),
               },
             }
           : {}),
