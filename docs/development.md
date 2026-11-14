@@ -125,7 +125,7 @@ Each page canvas can have a background (`canvas.background`) drawn under every l
 
 Background ids are `zakka:<slug>` for built-ins and `custom:<id>` for a user's own backgrounds. Built-ins are procedural SVG patterns and skies, plus seamless textures. Custom backgrounds are uploaded on the Backgrounds page or in the editor's Backgrounds panel, and Shutterfly imports add each project background to the library instead of creating a locked photo layer. Their files are private to the account and served from `/api/v1/custom-backgrounds/:id/content`.
 
-The textures are CC0 materials from [ambientCG](https://ambientcg.com/), vendored in `packages/editor-core/vendor/backgrounds/textures/` as a seamless JPEG tile and a thumbnail. The API serves them from `/api/v1/backgrounds/builtin/:slug/{content,thumbnail}`. To add a texture, add a row to `TEXTURES` in the vendor script and run it. It needs Pillow, downloads the materials, and regenerates `src/background-textures.ts`:
+The textures are CC0 materials from [ambientCG](https://ambientcg.com/), vendored in `packages/editor-core/vendor/backgrounds/textures/` as a seamless JPEG tile and a thumbnail. The API serves them from `/api/v1/backgrounds/builtin/:slug/{content,thumbnail}`. To add a texture, add a row to `TEXTURES` in the vendor script and run it. A row can give a tint colour to recolour a light material while keeping its grain; the cardstock colours are tinted from `Paper001`. The script needs Pillow, downloads the materials, and regenerates `src/background-textures.ts`:
 
 ```sh
 python3 -m pip install pillow
