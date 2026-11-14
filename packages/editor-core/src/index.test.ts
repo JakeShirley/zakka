@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { getBundledEditorFont } from "./fonts.js";
 import {
   addLayer,
   createBookSpreads,
@@ -692,7 +693,7 @@ describe("page document helpers", () => {
       fontDefinition.id.startsWith("google-"),
     );
 
-    expect(googleFontDefinitions).toHaveLength(53);
+    expect(googleFontDefinitions).toHaveLength(292);
     expect(googleFontDefinitions).toContainEqual(
       expect.objectContaining({
         family: loveYaLikeASisterFontFamily,
@@ -715,7 +716,7 @@ describe("page document helpers", () => {
       }),
     );
     expect(editorFontFaceCss).toContain("font-family:'Caslon Bold'");
-    expect(editorFontFaceCss).toContain("data:font/truetype;base64");
+    expect(editorFontFaceCss).toContain("data:font/woff;base64");
     expect(editorFontFaceCss).not.toContain("fonts.gstatic.com");
 
     const text = createTextLayer({
@@ -728,6 +729,38 @@ describe("page document helpers", () => {
     expect(svg).toContain('data-font-family="Caslon Bold"');
     expect(svg).toContain("<path");
     expect(svg).not.toContain("Bundled Google font");
+  });
+
+  // Rendering every bundled font takes longer than Vitest's default timeout.
+  it("renders Latin text as paths in every bundled editor font", { timeout: 60_000 }, () => {
+    const sampleText = "Hamburgefonstiv fi ffl 0123 “Café” — naïve façade €™ Œuvre";
+    const bundledFontDefinitions = editorFontDefinitions.filter(
+      (fontDefinition) => fontDefinition.id !== "system",
+    );
+
+    for (const fontDefinition of bundledFontDefinitions) {
+      const text = createTextLayer({
+        fontFamily: fontDefinition.family,
+        id: "text_1",
+        text: sampleText,
+        width: 4000,
+      });
+      const svg = renderPageDocumentSvg(createPageDocument({ layers: [text] }));
+
+      expect(svg, fontDefinition.family).toContain("<path");
+      expect(svg, fontDefinition.family).not.toContain(sampleText);
+      expect(svg, fontDefinition.family).not.toContain("NaN");
+    }
+  });
+
+  it("keeps extended Latin, Vietnamese, Cyrillic, and Greek glyphs in bundled fonts", () => {
+    const font = getBundledEditorFont("Helvetica Neue");
+
+    for (const character of "ąłřşő ệ Жж Ωω") {
+      if (character !== " ") {
+        expect(font?.charToGlyphIndex(character), character).toBeGreaterThan(0);
+      }
+    }
   });
 
   it("wraps fallback-font text to the layer width and clips to the bounding box", () => {

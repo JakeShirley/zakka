@@ -129,6 +129,67 @@ describe("mapShutterflyProject", () => {
     expect(sticker.width).toBeCloseTo(1444.6, 1);
   });
 
+  const withTextBackground = (rotation = 0) => {
+    const withBackground = structuredClone(project);
+
+    for (const category of withBackground.surfaceCategories) {
+      for (const surface of category.surfaces) {
+        for (const item of surface.surfaceData.layeredItems) {
+          if (item.type === "text" && item.content.userData.assetId === "DA_46646") {
+            item.content.userData.backgroundColor = "#818053";
+            item.content.userData.backgroundOpacity = 0.51;
+            item.container.rot = rotation;
+          }
+        }
+      }
+    }
+
+    const [background, text] = findPage(
+      mapShutterflyProject(withBackground, resolvers),
+      "Page 1",
+    ).document.layers.filter(
+      (layer): layer is Extract<PageLayer, { kind: "text" }> => layer.kind === "text",
+    );
+
+    if (!background || !text) {
+      throw new Error("Missing text layers");
+    }
+
+    return { background, text };
+  };
+  const topInset = 302.133 - (46 * 300) / 72;
+
+  it("imports a Shutterfly text background as its own layer at the source box", () => {
+    const { background, text } = withTextBackground();
+
+    expect(background).toMatchObject({
+      id: `${text.id}_background`,
+      text: "",
+      background: { enabled: true, color: "#818053", opacity: 0.51, padding: 0, radius: 0 },
+    });
+    expect(background.x).toBeCloseTo(715.5, 0);
+    expect(background.y).toBeCloseTo(445.95, 0);
+    expect(background.width).toBeCloseTo(954, 0);
+    expect(background.height).toBeCloseTo(477, 0);
+    expect(text).toMatchObject({ text: "Test test box", background: { enabled: false } });
+    expect(text.y).toBeCloseTo(445.95 + topInset, 0);
+    expect(text.y + text.height).toBeCloseTo(445.95 + 477, 0);
+  });
+
+  it("keeps rotated text inside its rotated Shutterfly box", () => {
+    const { background, text } = withTextBackground(90);
+    const boxCenter = { x: 715.5 + 954 / 2, y: 445.95 + 477 / 2 };
+
+    expect(background.rotation).toBe(90);
+    expect(background.x + background.width / 2).toBeCloseTo(boxCenter.x, 0);
+    expect(background.y + background.height / 2).toBeCloseTo(boxCenter.y, 0);
+    expect(text.rotation).toBe(90);
+    expect(text.height).toBeCloseTo(477 - topInset, 0);
+    // Rotating 90 degrees turns the box's downward axis to the left, so the text center moves left.
+    expect(text.x + text.width / 2).toBeCloseTo(boxCenter.x - topInset / 2, 0);
+    expect(text.y + text.height / 2).toBeCloseTo(boxCenter.y, 0);
+  });
+
   it("maps the front cover with its bordered photo and keeps spine content off the pages", () => {
     const book = mapShutterflyProject(project, resolvers);
     const frontLayers = findPage(book, "Front cover").document.layers;

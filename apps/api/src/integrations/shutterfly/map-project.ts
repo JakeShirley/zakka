@@ -115,6 +115,22 @@ const isSpreadSurface = (surface: ShutterflySurface, pageWidth: number): boolean
 const userDataString = (item: ShutterflyLayeredItem, key: string): string | null =>
   stringValue(item.content.userData[key]);
 
+/** Reads the fill Shutterfly draws across the whole text box, if any. */
+const textBackground = (item: ShutterflyLayeredItem): { color: string; opacity: number } | null => {
+  const color = userDataString(item, "backgroundColor");
+
+  if (!color || !hexColorPattern.test(color)) {
+    return null;
+  }
+
+  const opacity =
+    numberValue(item.content.userData.backgroundOpacity) ??
+    numberValue(item.content.userData.backgroundColorOpacity) ??
+    1;
+
+  return opacity > 0 ? { color: color.toLowerCase(), opacity: clamp(opacity, 0, 1) } : null;
+};
+
 const photoMediaId = (item: ShutterflyLayeredItem): string | null =>
   userDataString(item, "mediaId");
 
@@ -533,13 +549,45 @@ const mapItemToPlacement = (
         );
       }
 
+      const background = textBackground(item);
+
+      if (background) {
+        // Shutterfly fills its whole text box, while the text layer below starts at the first
+        // baseline, so the fill gets its own empty text layer at Shutterfly's box.
+        pushLayer(
+          context,
+          page,
+          createTextLayer({
+            ...common,
+            id: `${layerId}_background`,
+            text: "",
+            background: {
+              enabled: true,
+              color: background.color,
+              opacity: background.opacity,
+              padding: 0,
+              radius: 0,
+            },
+          }),
+        );
+      }
+
+      const height = Math.max(rect.h - topInset, fontSize * 1.2);
+      // Keep the shortened text layer where it sits inside Shutterfly's rotated box: Zakka
+      // rotates each layer about its own center, so move that center along the rotated y axis.
+      const centerOffset = topInset + height / 2 - rect.h / 2;
+      const radians = (common.rotation * Math.PI) / 180;
+      const centerX = rect.x + rect.w / 2 - centerOffset * Math.sin(radians);
+      const centerY = rect.y + rect.h / 2 + centerOffset * Math.cos(radians);
+
       pushLayer(
         context,
         page,
         createTextLayer({
           ...common,
-          y: rect.y + topInset,
-          height: Math.max(rect.h - topInset, fontSize * 1.2),
+          x: centerX - rect.w / 2,
+          y: centerY - height / 2,
+          height,
           text: escapedText.text,
           fontFamily: font.family,
           fontSize,

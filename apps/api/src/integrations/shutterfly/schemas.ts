@@ -155,6 +155,9 @@ export const shutterflyDesignAssetSchema = z.looseObject({
   id: z.string(),
   name: z.string().nullish(),
   assetType: z.string().nullish(),
+  availability: z.string().nullish(),
+  // Retired font assets point to the live font Shutterfly now renders in their place.
+  attributes: z.looseObject({ validNewFontId: z.string().nullish() }).nullish().catch(null),
   fill: z.string().nullish(),
   preview: z.string().nullish(),
   files: z
