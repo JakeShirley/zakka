@@ -203,21 +203,37 @@ describe("mapShutterflyProject", () => {
     expect(findPage(book, "Front cover").document.canvas.backgroundColor).toBe("#ffffff");
   });
 
-  it("skips empty photo placeholders and reports elements it could not import", () => {
+  it("imports empty photo wells as placeholders and reports elements it could not import", () => {
     const book = mapShutterflyProject(project, {
       ...resolvers,
       photoAssetId: () => null,
       stickerId: () => null,
     });
+    const placeholders = book.pages.flatMap((page) =>
+      page.document.layers.filter((layer) => layer.kind === "photo"),
+    );
+    const emptyWell = layerOfKind(findPage(book, "Page 20").document.layers, "photo");
 
-    expect(findPage(book, "Page 20").document.layers).toEqual([]);
+    expect(placeholders.length).toBeGreaterThan(0);
+    expect(placeholders.every((layer) => layer.assetId === undefined)).toBe(true);
+    expect(emptyWell).toMatchObject({ x: 0, y: 0, width: 2385, height: 2385 });
+    expect(emptyWell.crop).toMatchObject({ x: 0, y: 0, width: 1, height: 1 });
     expect(book.warnings).toEqual(
       expect.arrayContaining([
-        "Skipped photos that could not be downloaded (2)",
+        "Left empty photo placeholders for photos that could not be downloaded (2)",
         expect.stringContaining("Skipped stickers that could not be downloaded"),
         "Replaced Shutterfly fonts that have no Zakka equivalent with the default font",
       ]),
     );
+    expect(book.warnings.some((warning) => warning.startsWith("Skipped photos"))).toBe(false);
+  });
+
+  it("keeps empty photo wells as placeholders without a warning", () => {
+    const book = mapShutterflyProject(project, resolvers);
+    const emptyWell = layerOfKind(findPage(book, "Page 20").document.layers, "photo");
+
+    expect(emptyWell.assetId).toBeUndefined();
+    expect(book.warnings.some((warning) => warning.includes("photo placeholders"))).toBe(false);
   });
 
   it("maps separate front and back cover surfaces and keeps the first page on the right", () => {

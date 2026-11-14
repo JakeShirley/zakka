@@ -168,6 +168,11 @@ export const renderPageSvg = async (input: {
 
   for (const layer of input.document.layers) {
     if (layer.kind === "photo") {
+      // Empty photo placeholders have no asset and are left out of exports.
+      if (!layer.assetId) {
+        continue;
+      }
+
       const asset = input.repositories.assets.findByIdForAccount(input.accountId, layer.assetId);
 
       if (!asset) {

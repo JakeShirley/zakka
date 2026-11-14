@@ -8,14 +8,17 @@ import {
   DeleteRegular,
   EditRegular,
   HandLeftRegular,
+  ImageAddRegular,
   ImageBorderRegular,
   SubtractRegular,
   TextTRegular,
 } from "@fluentui/react-icons";
 import {
+  findPhotoPlaceholderAtPoint,
   getMapLayerGeographyDetail,
   getMapZoomRange,
   isCustomStickerId,
+  isPhotoPlaceholder,
   type MapGeography,
   type MapGeographyDetail,
   type MapTile,
@@ -79,6 +82,8 @@ export type CanvasPreviewLayer = {
   sourcePageId: string;
   stackIndex: number;
 };
+
+export type PhotoPlaceholderDropTarget = { layerId: string; pageId?: string };
 
 /** Dashed outlines showing where an arrange action will move layers. */
 export type ArrangeCanvasPreview = {
@@ -351,11 +356,22 @@ type ActiveGroupTransform = {
   pointerId: number;
   startBox: GroupBoundingBox;
   startCenter: CanvasPoint;
+  startClientPointer: CanvasPoint;
   startLayers: PageLayer[];
   startPointer: CanvasPoint;
   startPointerAngle: number;
   handle?: MultiSelectionResizeHandle;
 };
+
+// Screen-space distance the pointer must travel before a press becomes a drag, so the
+// tail end of the mouse movement that lands a click doesn't nudge the selection.
+// Matches Inkscape's default drag tolerance.
+const DRAG_THRESHOLD_PX = 4;
+
+const hasPassedDragThreshold = (
+  start: CanvasPoint,
+  event: { clientX: number; clientY: number },
+): boolean => Math.hypot(event.clientX - start.x, event.clientY - start.y) >= DRAG_THRESHOLD_PX;
 
 export function PageCanvas({
   activeSelectionPanel = null,
@@ -368,6 +384,7 @@ export function PageCanvas({
   onActiveSelectionPanelChange,
   onDeleteLayer,
   onChangeLayer,
+  onChoosePhoto,
   onDropAsset,
   onDropFiles,
   onReorderLayer,
@@ -388,8 +405,22 @@ export function PageCanvas({
   onActiveSelectionPanelChange?: ((panel: SelectionPanel | null) => void) | undefined;
   onDeleteLayer: (layerId: string) => void;
   onChangeLayer?: (layerId: string, update: Partial<PageLayer>) => void;
-  onDropAsset?: (assetId: string, canvasPoint: CanvasPoint) => void;
-  onDropFiles?: (files: File[], canvasPoint: CanvasPoint) => void;
+  /** Opens a photo picker to fill an empty photo placeholder. */
+  onChoosePhoto?: ((layerId: string) => void) | undefined;
+  /**
+   * `placeholder` is the empty photo placeholder under the drop point, if any. `pageId` is set
+   * when it is a spread preview layer owned by another page.
+   */
+  onDropAsset?: (
+    assetId: string,
+    canvasPoint: CanvasPoint,
+    placeholder?: PhotoPlaceholderDropTarget,
+  ) => void;
+  onDropFiles?: (
+    files: File[],
+    canvasPoint: CanvasPoint,
+    placeholder?: PhotoPlaceholderDropTarget,
+  ) => void;
   onReorderLayer: (layerId: string, command: ReorderLayerCommand) => void;
   onSelectPreviewLayer?: (pageId: string, layerId: string) => void;
   onSelectLayer: (layerId: string | null, options?: SelectLayerOptions) => void;
@@ -410,6 +441,7 @@ export function PageCanvas({
     outerTransform: string | null;
   } | null>(null);
   const suppressNextClickRef = useRef(false);
+  const dragThresholdPassedRef = useRef(false);
   const [activeTransform, setActiveTransform] = useState<ActiveTransform | null>(null);
   const [activeTransformUpdate, setActiveTransformUpdate] = useState<Partial<PageLayer> | null>(
     null,
@@ -512,7 +544,9 @@ export function PageCanvas({
     () =>
       renderPageDocumentSvg(renderedDocument, {
         idPrefix: svgIdPrefix,
-        resolvePhotoHref: (layer) => resolveBrowserPhotoHref(assetById.get(layer.assetId)),
+        resolvePhotoHref: (layer) =>
+          layer.assetId ? resolveBrowserPhotoHref(assetById.get(layer.assetId)) : null,
+        showPhotoPlaceholders: true,
         resolveStickerSvg: (layer) => stickerSvgById.get(layer.stickerId),
         resolveStickerHref: (layer) =>
           isCustomStickerId(layer.stickerId)
@@ -585,8 +619,11 @@ export function PageCanvas({
       ? "above"
       : "below";
   const selectedPhotoLayer = selectedLayer?.kind === "photo" ? selectedLayer : null;
+  const selectedPhotoPlaceholder =
+    selectedPhotoLayer && isPhotoPlaceholder(selectedPhotoLayer) ? selectedPhotoLayer : null;
   const selectedMapLayer = selectedLayer?.kind === "map" ? selectedLayer : null;
-  const zoomSliderLayer = selectedPhotoLayer ?? selectedMapLayer;
+  const zoomSliderLayer =
+    (selectedPhotoPlaceholder ? null : selectedPhotoLayer) ?? selectedMapLayer;
   const getLayerBoxStyle = (layer: PageLayer): CSSProperties => ({
     left: `${(layer.x / document.canvas.width) * 100}%`,
     top: `${(layer.y / document.canvas.height) * 100}%`,
@@ -614,7 +651,9 @@ export function PageCanvas({
     ? selectedLayer.kind === "text"
       ? 248
       : selectedLayer.kind === "photo"
-        ? 164
+        ? selectedPhotoPlaceholder && onChoosePhoto
+          ? 204
+          : 164
         : 68
     : 68;
   const selectedLayerMenuStyle: CSSProperties | undefined = selectedSelectionFrame
@@ -849,6 +888,7 @@ export function PageCanvas({
     if (!pointer) return;
     const center = getLayerCenter(layer);
     event.currentTarget.setPointerCapture(event.pointerId);
+    dragThresholdPassedRef.current = false;
     setActiveTransformUpdate(null);
     setActiveTransform({
       center,
@@ -856,6 +896,7 @@ export function PageCanvas({
       layerId: layer.id,
       mode,
       pointerId: event.pointerId,
+      startClientPointer: { x: event.clientX, y: event.clientY },
       startLayer: layer,
       startPointer: pointer,
       startPointerAngle: getAngle(center, pointer),
@@ -880,6 +921,7 @@ export function PageCanvas({
       y: multiSelectionBoundingBox.y + multiSelectionBoundingBox.height / 2,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
+    dragThresholdPassedRef.current = false;
     setActiveGroupTransformUpdates(null);
     setActiveGroupTransform({
       ...(handle ? { handle } : {}),
@@ -888,6 +930,7 @@ export function PageCanvas({
       pointerId: event.pointerId,
       startBox: multiSelectionBoundingBox,
       startCenter: center,
+      startClientPointer: { x: event.clientX, y: event.clientY },
       startLayers: movableLayers,
       startPointer: pointer,
       startPointerAngle: getAngle(center, pointer),
@@ -981,8 +1024,18 @@ export function PageCanvas({
       ),
     };
   };
+  const passDragThreshold = (
+    startClientPointer: CanvasPoint,
+    event: ReactPointerEvent<HTMLElement>,
+  ): boolean => {
+    if (!dragThresholdPassedRef.current && hasPassedDragThreshold(startClientPointer, event)) {
+      dragThresholdPassedRef.current = true;
+    }
+    return dragThresholdPassedRef.current;
+  };
   const transformLayer = (event: ReactPointerEvent<HTMLElement>) => {
     if (activeGroupTransform && event.pointerId === activeGroupTransform.pointerId) {
+      if (!passDragThreshold(activeGroupTransform.startClientPointer, event)) return;
       const pointer = getCanvasPoint(event);
       if (!pointer) return;
       event.preventDefault();
@@ -995,6 +1048,7 @@ export function PageCanvas({
       return;
     }
     if (!activeTransform || event.pointerId !== activeTransform.pointerId) return;
+    if (!passDragThreshold(activeTransform.startClientPointer, event)) return;
     const pointer = getCanvasPoint(event);
     if (!pointer) return;
     event.preventDefault();
@@ -1010,7 +1064,9 @@ export function PageCanvas({
   const stopTransform = (event: ReactPointerEvent<HTMLElement>) => {
     if (activeGroupTransform && event.pointerId === activeGroupTransform.pointerId) {
       const groupTransform = activeGroupTransform;
-      const pointer = getCanvasPoint(event);
+      const pointer = passDragThreshold(groupTransform.startClientPointer, event)
+        ? getCanvasPoint(event)
+        : null;
       const updates = pointer ? computeGroupUpdates(groupTransform, pointer) : null;
       setActiveGroupTransform(null);
       setActiveGroupTransformUpdates(null);
@@ -1026,7 +1082,9 @@ export function PageCanvas({
     }
     if (activeTransform?.pointerId !== event.pointerId) return;
     const transform = activeTransform;
-    const pointer = getCanvasPoint(event);
+    const pointer = passDragThreshold(transform.startClientPointer, event)
+      ? getCanvasPoint(event)
+      : null;
     const update = pointer ? getTransformUpdate(transform, pointer) : null;
 
     setActiveTransform(null);
@@ -1179,6 +1237,18 @@ export function PageCanvas({
     dragOverDepthRef.current = Math.max(0, dragOverDepthRef.current - 1);
     if (dragOverDepthRef.current === 0) setIsAssetDragOver(false);
   };
+  const findDropPlaceholder = (point: CanvasPoint): PhotoPlaceholderDropTarget | undefined => {
+    // Hit-test what the canvas shows, including placeholders projected from the facing page.
+    const hit = findPhotoPlaceholderAtPoint(
+      { ...document, layers: interactiveLayers.map((entry) => entry.layer) },
+      point,
+    );
+    if (!hit) return undefined;
+    const entry = interactiveLayers.find((item) => item.layer.id === hit.id);
+    return entry?.kind === "preview"
+      ? { layerId: hit.id, pageId: entry.sourcePageId }
+      : { layerId: hit.id };
+  };
   const handleAssetDrop = (event: ReactDragEvent<HTMLFieldSetElement>) => {
     if (!isAcceptedDragPayload(event)) return;
     event.preventDefault();
@@ -1186,12 +1256,13 @@ export function PageCanvas({
     setIsAssetDragOver(false);
     const point = getDropCanvasPoint(event);
     if (!point) return;
+    const placeholder = findDropPlaceholder(point);
     if (onDropFiles && hasFileDragPayload(event)) {
       const files = Array.from(event.dataTransfer.files).filter((file) =>
         file.type.startsWith("image/"),
       );
       if (files.length > 0) {
-        onDropFiles(files, point);
+        onDropFiles(files, point, placeholder);
         return;
       }
     }
@@ -1199,7 +1270,7 @@ export function PageCanvas({
     const assetId =
       event.dataTransfer.getData(assetDragMimeType) || event.dataTransfer.getData("text/plain");
     if (!assetId) return;
-    onDropAsset(assetId, point);
+    onDropAsset(assetId, point, placeholder);
   };
 
   return (
@@ -1368,7 +1439,7 @@ export function PageCanvas({
                         />
                       );
                     })}
-                    {layer.kind === "photo" ? (
+                    {layer.kind === "photo" && !isPhotoPlaceholder(layer) ? (
                       <button
                         type="button"
                         aria-label="Click and drag to adjust photo"
@@ -1577,6 +1648,17 @@ export function PageCanvas({
             className="selected-layer-action-bar"
             role="toolbar"
           >
+            {selectedPhotoPlaceholder && onChoosePhoto ? (
+              <button
+                type="button"
+                aria-label="Add photo to placeholder"
+                title="Add photo"
+                onClick={() => onChoosePhoto(selectedPhotoPlaceholder.id)}
+              >
+                <ImageAddRegular />
+                <span>Add photo</span>
+              </button>
+            ) : null}
             {selectedLayer.kind === "photo" ? (
               <button
                 type="button"

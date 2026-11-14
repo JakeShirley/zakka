@@ -7,7 +7,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import type { PageDetail } from "../../types";
-import { syncLayerAcrossSpread } from "./spreadLayers";
+import { fillPhotoPlaceholderAcrossSpread, syncLayerAcrossSpread } from "./spreadLayers";
 
 const pageDetail = (id: string, document: PageDocument): PageDetail => ({
   id,
@@ -176,5 +176,47 @@ describe("spread layer syncing", () => {
       "left_three",
     ]);
     expect(layerIds(result.details.get(right.id) ?? right)).toEqual(["right_one", "shared_photo"]);
+  });
+
+  it("fills a rotated gutter-spanning placeholder on both pages without pruning a copy", () => {
+    // Unrotated, this frame ends at x=590 on the 600-wide left page; rotated 45° it crosses the
+    // gutter, so the importer keeps a copy on the right page that bounds-based syncing would drop.
+    const placeholderLeft = createPhotoLayer({
+      assetId: undefined,
+      id: "frame",
+      rotation: 45,
+      x: 300,
+      y: 100,
+      width: 290,
+      height: 200,
+    });
+    const placeholderRight = createPhotoLayer({ ...placeholderLeft, x: -300 });
+    const left = pageDetail(
+      "left",
+      createPageDocument({ canvas: { width: 600, height: 400 }, layers: [placeholderLeft] }),
+    );
+    const right = pageDetail(
+      "right",
+      createPageDocument({ canvas: { width: 600, height: 400 }, layers: [placeholderRight] }),
+    );
+
+    const result = fillPhotoPlaceholderAcrossSpread({
+      assetId: "asset_1",
+      details: new Map([
+        [left.id, left],
+        [right.id, right],
+      ]),
+      layerId: "frame",
+      sourcePageId: left.id,
+      spreadPageIds: [left.id, right.id],
+    });
+
+    expect(result.changedPageIds).toEqual([left.id, right.id]);
+    expect(result.details.get(left.id)?.document.layers).toEqual([
+      expect.objectContaining({ assetId: "asset_1", id: "frame", rotation: 45, x: 300 }),
+    ]);
+    expect(result.details.get(right.id)?.document.layers).toEqual([
+      expect.objectContaining({ assetId: "asset_1", id: "frame", rotation: 45, x: -300 }),
+    ]);
   });
 });

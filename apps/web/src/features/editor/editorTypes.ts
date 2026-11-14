@@ -10,6 +10,7 @@ export type ActiveTransform = {
   layerId: string;
   mode: TransformMode;
   pointerId: number;
+  startClientPointer: CanvasPoint;
   startLayer: PageLayer;
   startPointer: CanvasPoint;
   startPointerAngle: number;

@@ -127,6 +127,27 @@ test.describe("editing a page", () => {
     await expect(inspector.getByRole("button", { name: "Redo" })).toBeDisabled();
   });
 
+  test("a click that barely moves a layer in spread view adds no undo step", async ({
+    account: _,
+    page,
+  }) => {
+    const book = await createBook(page.request);
+    await openBook(page, book.id);
+    await expect(page.getByRole("tab", { name: "Spread" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    const textLayers = canvasLayers(pageFrame(page, 1), "text");
+
+    await addTextToActivePage(page);
+    await expect(textLayers).toHaveCount(1);
+    // Below the canvas's 4px drag threshold, so this is a select, not an edit.
+    await dragBy(page, textLayers.locator(".canvas-layer-hitbox"), 2, 2);
+
+    await page.keyboard.press(undoShortcut);
+    await expect(textLayers).toHaveCount(0);
+  });
+
   test("Ctrl/Cmd+Z inside a form field undoes the field, not the book", async ({
     account: _,
     page,
