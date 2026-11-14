@@ -77,4 +77,19 @@ describe("PhotoControls", () => {
     expect(lastFilter()).toMatchObject({ shadows: 0, highlights: -1 });
     await expect.element(page.getByRole("button", { name: "Reset shadows" })).toBeDisabled();
   });
+
+  test("shows saved values at the schema maximum without clamping", async () => {
+    const layer = createPhotoLayer({ assetId: "asset_1", id: "photo" });
+    const { lastFilter } = await renderControls({
+      ...layer,
+      filter: { ...layer.filter, brightness: 2, saturation: 3 },
+    });
+
+    await expect.element(slider("Brightness")).toHaveValue("2");
+    await expect.element(slider("Saturation")).toHaveValue("3");
+
+    await pressOnSlider("Saturation", "{ArrowLeft}");
+
+    expect(lastFilter()).toMatchObject({ brightness: 2, saturation: expect.closeTo(2.99, 5) });
+  });
 });

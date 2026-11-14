@@ -15,13 +15,14 @@ type PhotoAdjustment = {
   neutral: number;
 };
 
-// Ranges stay inside the editor-core filter schema; values are shown as -100..+100 around neutral.
+// Ranges match the editor-core filter schema so any saved value is editable; values are shown
+// as -100..+100 on each side of neutral.
 const photoAdjustments: PhotoAdjustment[] = [
-  { key: "brightness", label: "Brightness", min: 0.2, max: 1.8, neutral: 1 },
-  { key: "contrast", label: "Contrast", min: 0.2, max: 1.8, neutral: 1 },
+  { key: "brightness", label: "Brightness", min: 0.2, max: 2, neutral: 1 },
+  { key: "contrast", label: "Contrast", min: 0.2, max: 2, neutral: 1 },
   { key: "highlights", label: "Highlights", min: -1, max: 1, neutral: 0 },
   { key: "shadows", label: "Shadows", min: -1, max: 1, neutral: 0 },
-  { key: "saturation", label: "Saturation", min: 0, max: 2, neutral: 1 },
+  { key: "saturation", label: "Saturation", min: 0, max: 3, neutral: 1 },
 ];
 
 const formatAdjustment = (adjustment: PhotoAdjustment, value: number): string => {
