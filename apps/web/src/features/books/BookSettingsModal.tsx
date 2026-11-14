@@ -1,5 +1,6 @@
 import { Button, Field, Input } from "@fluentui/react-components";
 import { DeleteRegular, DismissRegular, RenameRegular } from "@fluentui/react-icons";
+import type { PageResizeAnchor, PageResizeMode } from "@zakka/editor-core";
 import type { FormEvent } from "react";
 
 import { AppModal } from "../../components/layout";
@@ -8,18 +9,24 @@ import {
   commonBookPageSizes,
   customBookPageSizeKey,
   formatBookPageSize,
+  getBookPageSizeByKey,
   getBookPageSizeKey,
 } from "./pageSizes";
+import { PageResizeContentPicker } from "./PageResizeContentPicker";
 
 type BookSettingsModalProps = {
   book: BookDetail;
   closeDisabled: boolean;
   coverSpreadEnabledDraft: boolean;
+  pageResizeAnchor: PageResizeAnchor;
+  pageResizeMode: PageResizeMode;
   pageSizeDraft: string;
   titleDraft: string;
   onClose: () => void;
   onCoverSpreadEnabledDraftChange: (enabled: boolean) => void;
   onDeleteRequest: () => void;
+  onPageResizeAnchorChange: (anchor: PageResizeAnchor) => void;
+  onPageResizeModeChange: (mode: PageResizeMode) => void;
   onPageSizeDraftChange: (pageSizeKey: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onTitleDraftChange: (title: string) => void;
@@ -29,15 +36,26 @@ export function BookSettingsModal({
   book,
   closeDisabled,
   coverSpreadEnabledDraft,
+  pageResizeAnchor,
+  pageResizeMode,
   pageSizeDraft,
   titleDraft,
   onClose,
   onCoverSpreadEnabledDraftChange,
   onDeleteRequest,
+  onPageResizeAnchorChange,
+  onPageResizeModeChange,
   onPageSizeDraftChange,
   onSubmit,
   onTitleDraftChange,
 }: BookSettingsModalProps) {
+  const nextPageSize =
+    pageSizeDraft === customBookPageSizeKey ? null : getBookPageSizeByKey(pageSizeDraft);
+  const pageSizeChanged = Boolean(
+    nextPageSize &&
+      (nextPageSize.width !== book.pageWidth || nextPageSize.height !== book.pageHeight),
+  );
+
   return (
     <AppModal title="Book settings" size="compact" closeDisabled={closeDisabled} onClose={onClose}>
       <form className="book-settings-form" onSubmit={onSubmit}>
@@ -50,6 +68,7 @@ export function BookSettingsModal({
         </Field>
         <Field label="Page size">
           <select
+            aria-label="Page size"
             className="book-size-select"
             value={pageSizeDraft}
             onChange={(event) => onPageSizeDraftChange(event.currentTarget.value)}
@@ -64,6 +83,16 @@ export function BookSettingsModal({
             ))}
           </select>
         </Field>
+        {pageSizeChanged && nextPageSize ? (
+          <PageResizeContentPicker
+            anchor={pageResizeAnchor}
+            from={{ width: book.pageWidth, height: book.pageHeight }}
+            mode={pageResizeMode}
+            to={{ width: nextPageSize.width, height: nextPageSize.height }}
+            onAnchorChange={onPageResizeAnchorChange}
+            onModeChange={onPageResizeModeChange}
+          />
+        ) : null}
         <label className="checkbox-label">
           <input
             type="checkbox"

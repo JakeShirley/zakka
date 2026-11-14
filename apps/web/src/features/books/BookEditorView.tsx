@@ -17,6 +17,8 @@ import {
   deleteLayer,
   type PageDocument,
   type PageLayer,
+  type PageResizeAnchor,
+  type PageResizeMode,
   reorderLayer,
   resizePageDocument,
   type StickerDefinition,
@@ -192,6 +194,8 @@ export function BookEditorView() {
   const [bookTitleDraft, setBookTitleDraft] = useState("");
   const [bookPageSizeDraft, setBookPageSizeDraft] = useState<string>(defaultBookPageSize.key);
   const [coverSpreadEnabledDraft, setCoverSpreadEnabledDraft] = useState(true);
+  const [pageResizeMode, setPageResizeMode] = useState<PageResizeMode>("fit");
+  const [pageResizeAnchor, setPageResizeAnchor] = useState<PageResizeAnchor>("center");
   const [pageDetails, setPageDetails] = useState<Map<string, PageDetail>>(new Map());
   const [pageStatuses, setPageStatuses] = useState<Record<string, EditorSaveStatus>>({});
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -1332,10 +1336,11 @@ export function BookEditorView() {
           .map((page) =>
             replacePageDocument(
               page,
-              resizePageDocument(page.document, {
-                width: nextPageSize.width,
-                height: nextPageSize.height,
-              }),
+              resizePageDocument(
+                page.document,
+                { width: nextPageSize.width, height: nextPageSize.height },
+                { anchor: pageResizeAnchor, mode: pageResizeMode },
+              ),
             ),
           );
 
@@ -1795,11 +1800,15 @@ export function BookEditorView() {
           book={book}
           closeDisabled={isWorking}
           coverSpreadEnabledDraft={coverSpreadEnabledDraft}
+          pageResizeAnchor={pageResizeAnchor}
+          pageResizeMode={pageResizeMode}
           pageSizeDraft={bookPageSizeDraft}
           titleDraft={bookTitleDraft}
           onClose={() => setIsBookSettingsOpen(false)}
           onCoverSpreadEnabledDraftChange={setCoverSpreadEnabledDraft}
           onDeleteRequest={requestDeleteBook}
+          onPageResizeAnchorChange={setPageResizeAnchor}
+          onPageResizeModeChange={setPageResizeMode}
           onPageSizeDraftChange={setBookPageSizeDraft}
           onSubmit={renameBook}
           onTitleDraftChange={setBookTitleDraft}

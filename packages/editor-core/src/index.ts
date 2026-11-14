@@ -2587,13 +2587,82 @@ export const getTextLayerRenderedBounds = (
   };
 };
 
+export const pageResizeAnchors = [
+  "top-left",
+  "top",
+  "top-right",
+  "left",
+  "center",
+  "right",
+  "bottom-left",
+  "bottom",
+  "bottom-right",
+] as const;
+
+export type PageResizeAnchor = (typeof pageResizeAnchors)[number];
+
+/**
+ * How existing content is sized when the page canvas changes: `keep` leaves it at its original
+ * size, `fit` scales it uniformly to fit inside the new page, `fill` scales it uniformly to cover
+ * the new page, and `stretch` scales each axis independently to match the new page.
+ */
+export const pageResizeModes = ["keep", "fit", "fill", "stretch"] as const;
+
+export type PageResizeMode = (typeof pageResizeModes)[number];
+
+export type PageResizeOptions = {
+  anchor?: PageResizeAnchor;
+  mode?: PageResizeMode;
+};
+
+type PageSize = Pick<PageDocument["canvas"], "height" | "width">;
+
+const pageResizeAnchorFactors = (anchor: PageResizeAnchor): { x: number; y: number } => ({
+  x: anchor.endsWith("left") ? 0 : anchor.endsWith("right") ? 1 : 0.5,
+  y: anchor.startsWith("top") ? 0 : anchor.startsWith("bottom") ? 1 : 0.5,
+});
+
+/**
+ * Returns where the original page's content area lands on the resized page, plus the per-axis
+ * scale applied to it.
+ */
+export const getPageResizeContentRect = (
+  from: PageSize,
+  to: PageSize,
+  { anchor = "center", mode = "stretch" }: PageResizeOptions = {},
+): { x: number; y: number; width: number; height: number; scaleX: number; scaleY: number } => {
+  const ratioX = to.width / from.width;
+  const ratioY = to.height / from.height;
+  const uniformScale =
+    mode === "fit" ? Math.min(ratioX, ratioY) : mode === "fill" ? Math.max(ratioX, ratioY) : 1;
+  const scaleX = mode === "stretch" ? ratioX : uniformScale;
+  const scaleY = mode === "stretch" ? ratioY : uniformScale;
+  const width = from.width * scaleX;
+  const height = from.height * scaleY;
+  const factors = pageResizeAnchorFactors(anchor);
+
+  return {
+    x: (to.width - width) * factors.x,
+    y: (to.height - height) * factors.y,
+    width,
+    height,
+    scaleX,
+    scaleY,
+  };
+};
+
 export const resizePageDocument = (
   document: PageDocument,
-  canvas: Pick<PageDocument["canvas"], "height" | "width">,
+  canvas: PageSize,
+  options: PageResizeOptions = {},
 ): PageDocument => {
   const parsedDocument = parseDocument(document);
-  const scaleX = canvas.width / parsedDocument.canvas.width;
-  const scaleY = canvas.height / parsedDocument.canvas.height;
+  const {
+    x: offsetX,
+    y: offsetY,
+    scaleX,
+    scaleY,
+  } = getPageResizeContentRect(parsedDocument.canvas, canvas, options);
   const textScale = Math.min(scaleX, scaleY);
 
   return parseDocument({
@@ -2602,8 +2671,8 @@ export const resizePageDocument = (
     layers: parsedDocument.layers.map((layer) =>
       pageLayerSchema.parse({
         ...layer,
-        x: layer.x * scaleX,
-        y: layer.y * scaleY,
+        x: layer.x * scaleX + offsetX,
+        y: layer.y * scaleY + offsetY,
         width: layer.width * scaleX,
         height: layer.height * scaleY,
         ...(layer.kind === "text"

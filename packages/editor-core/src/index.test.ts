@@ -206,6 +206,38 @@ describe("page document helpers", () => {
     });
   });
 
+  it("anchors resized page content using the chosen sizing mode", () => {
+    const photo = createPhotoLayer({
+      assetId: "asset_1",
+      id: "photo_1",
+      x: 100,
+      y: 200,
+      width: 300,
+      height: 400,
+    });
+    const document = createPageDocument({
+      canvas: { width: 1000, height: 1000 },
+      layers: [photo],
+    });
+    const target = { width: 2000, height: 1500 };
+
+    expect(
+      resizePageDocument(document, target, { mode: "keep", anchor: "top-left" }).layers[0],
+    ).toMatchObject({ x: 100, y: 200, width: 300, height: 400 });
+    expect(
+      resizePageDocument(document, target, { mode: "keep", anchor: "bottom-right" }).layers[0],
+    ).toMatchObject({ x: 1100, y: 700, width: 300, height: 400 });
+    expect(
+      resizePageDocument(document, target, { mode: "fit", anchor: "center" }).layers[0],
+    ).toMatchObject({ x: 400, y: 300, width: 450, height: 600 });
+    expect(
+      resizePageDocument(document, target, { mode: "fill", anchor: "top" }).layers[0],
+    ).toMatchObject({ x: 200, y: 400, width: 600, height: 800 });
+    expect(
+      resizePageDocument(document, target, { mode: "stretch", anchor: "bottom-left" }).layers[0],
+    ).toMatchObject({ x: 200, y: 300, width: 600, height: 600 });
+  });
+
   it("adds non-destructive photo edit metadata without changing the asset reference", () => {
     const photo = createPhotoLayer({
       assetId: "asset_1",
