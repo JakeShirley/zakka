@@ -15,8 +15,6 @@ import {
   createTextLayer,
   createWashiTapeLayer,
   deleteLayer,
-  fillPhotoLayerUpdate,
-  isPhotoPlaceholder,
   type PageDocument,
   type PageLayer,
   reorderLayer,
@@ -94,6 +92,7 @@ import {
   getBookPageSizeKey,
 } from "./pageSizes";
 import {
+  fillPhotoPlaceholderAcrossSpread,
   getSpreadPageContexts,
   layerOverlapsPageCanvas,
   replacePageDocument,
@@ -1141,32 +1140,20 @@ export function BookEditorView() {
   };
 
   const fillPhotoPlaceholder = (pageId: string, layerId: string, asset: Asset): boolean => {
-    const page = pageDetails.get(pageId);
-    const layer = page?.document.layers.find((item) => item.id === layerId);
-    if (!page || !layer || !isPhotoPlaceholder(layer)) return false;
-
-    const filledDocument = updateLayer(
-      page.document,
-      layerId,
-      fillPhotoLayerUpdate(asset.id) as Partial<PageLayer>,
-    );
-    const filledLayer = filledDocument.layers.find((item) => item.id === layerId);
-    if (!filledLayer) return false;
-
     // Imported spread-spanning frames are mirrored on both facing pages, so fill every copy in the
     // page's spread even when the editor is in Page view or has navigated away.
     const spreadPageIds = book?.spreads.find((spread) => spread.pageIds.includes(pageId))
       ?.pageIds ?? [pageId];
-    applySpreadLayerSync(
-      syncLayerAcrossSpread({
-        details: pageDetails,
-        removeNonOverlappingSource: false,
-        sourceLayer: filledLayer,
-        sourcePageId: pageId,
-        spreadPageIds,
-      }),
-      { selectedLayerIds: [layerId] },
-    );
+    const result = fillPhotoPlaceholderAcrossSpread({
+      assetId: asset.id,
+      details: pageDetails,
+      layerId,
+      sourcePageId: pageId,
+      spreadPageIds,
+    });
+    if (!result.containingPageId) return false;
+
+    applySpreadLayerSync(result, { selectedLayerIds: [layerId] });
     setActivePageId(pageId);
     return true;
   };

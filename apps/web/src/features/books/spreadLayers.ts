@@ -1,6 +1,8 @@
 import {
   addLayer,
   deleteLayer,
+  fillPhotoLayerUpdate,
+  isPhotoPlaceholder,
   type PageDocument,
   type PageLayer,
   reorderLayer,
@@ -55,6 +57,53 @@ export const layerOverlapsPageCanvas = (layer: PageLayer, document: PageDocument
   layer.x + layer.width > 0 &&
   layer.y < document.canvas.height &&
   layer.y + layer.height > 0;
+
+/**
+ * Fills a photo placeholder on every spread page that carries a copy of it. Filling only changes
+ * the photo content, so existing copies are updated in place rather than re-projected; this keeps
+ * copies the importer placed from rotated bounds that geometry-based syncing would prune.
+ */
+export const fillPhotoPlaceholderAcrossSpread = ({
+  assetId,
+  details,
+  layerId,
+  sourcePageId,
+  spreadPageIds,
+}: {
+  assetId: string;
+  details: Map<string, PageDetail>;
+  layerId: string;
+  sourcePageId: string;
+  spreadPageIds: string[];
+}): SpreadLayerSyncResult => {
+  const nextDetails = new Map(details);
+  const changedPageIds: string[] = [];
+  const pageIds = spreadPageIds.includes(sourcePageId) ? spreadPageIds : [sourcePageId];
+
+  for (const pageId of pageIds) {
+    const page = details.get(pageId);
+    const layer = page?.document.layers.find((item) => item.id === layerId);
+
+    if (!page || !layer || !isPhotoPlaceholder(layer)) {
+      continue;
+    }
+
+    nextDetails.set(
+      pageId,
+      replacePageDocument(
+        page,
+        updateLayer(page.document, layerId, fillPhotoLayerUpdate(assetId) as Partial<PageLayer>),
+      ),
+    );
+    changedPageIds.push(pageId);
+  }
+
+  return {
+    changedPageIds,
+    containingPageId: changedPageIds.includes(sourcePageId) ? sourcePageId : null,
+    details: nextDetails,
+  };
+};
 
 type SpreadLayerStackPlacement =
   | { kind: "bottom" }
