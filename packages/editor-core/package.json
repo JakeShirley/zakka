@@ -29,12 +29,13 @@
       "import": "./dist/map-places.js",
       "default": "./dist/map-places.js"
     },
-    "./font-licenses.txt": "./dist/font-licenses.txt"
+    "./font-licenses.txt": "./dist/font-licenses.txt",
+    "./backgrounds/*": "./dist/backgrounds/*"
   },
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "pnpm run generate && tsc -p tsconfig.json",
-    "generate": "node scripts/generate-fonts.mjs && node scripts/generate-map-data.mjs",
+    "generate": "node scripts/generate-fonts.mjs && node scripts/generate-map-data.mjs && node scripts/generate-backgrounds.mjs",
     "generate:fonts": "node scripts/generate-fonts.mjs",
     "generate:maps": "node scripts/generate-map-data.mjs",
     "test": "pnpm run generate && vitest run src",

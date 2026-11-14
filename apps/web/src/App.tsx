@@ -8,6 +8,7 @@ import {
   ImageRegular,
   SettingsRegular,
   SignOutRegular,
+  WallpaperRegular,
 } from "@fluentui/react-icons";
 import { editorFontFaceCss } from "@zakka/editor-core";
 import type { ReactNode } from "react";
@@ -25,6 +26,7 @@ import {
 import { ApiClientError, apiClient } from "./apiClient";
 import { LoadingScreen } from "./components/layout";
 import { AuthPage } from "./features/auth/AuthPage";
+import { BackgroundsView } from "./features/backgrounds/BackgroundsView";
 import { BookEditorView } from "./features/books/BookEditorView";
 import { BooksView } from "./features/books/BooksView";
 import { ChangelogModal } from "./features/changelog/ChangelogModal";
@@ -43,6 +45,7 @@ const navItems = [
   { to: "/library", label: "Photos", icon: <ImageRegular /> },
   { to: "/stickers", label: "Stickers", icon: <EmojiRegular /> },
   { to: "/washi-tape", label: "Washi Tape", icon: <WashiTapeIcon /> },
+  { to: "/backgrounds", label: "Backgrounds", icon: <WallpaperRegular /> },
   { to: "/image-grid", label: "Grid", icon: <GridRegular /> },
   { to: "/settings", label: "Settings", icon: <SettingsRegular /> },
 ] satisfies { to: string; label: string; icon: ReactNode }[];
@@ -276,6 +279,7 @@ function ProtectedShell({
           <Route path="library" element={<LibraryView />} />
           <Route path="stickers" element={<StickerPacksView />} />
           <Route path="washi-tape" element={<WashiTapeView />} />
+          <Route path="backgrounds" element={<BackgroundsView />} />
           <Route path="image-grid" element={<ImageGridView />} />
           <Route path="books" element={<BooksView />} />
           <Route path="books/:bookId" element={<BookEditorView />} />

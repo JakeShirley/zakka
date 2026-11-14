@@ -1,5 +1,8 @@
 import type { ExportPreset } from "@zakka/api-contract";
 import {
+  builtInBackgroundIdPrefix,
+  getBuiltInBackground,
+  getCustomBackgroundStorageId,
   getMapLayerGeographyDetail,
   getMapLayerTiles,
   isCustomStickerId,
@@ -15,6 +18,7 @@ import {
 import { getStickerSvg } from "@zakka/editor-core/stickers";
 import sharp from "sharp";
 
+import { readBuiltInBackgroundTexture } from "../custom-backgrounds.js";
 import { createSharpInputBuffer } from "../image-decoding.js";
 import type { MapTileSource } from "../map-tiles.js";
 import type { Repositories } from "../persistence/repositories.js";
@@ -156,6 +160,53 @@ export const parsePageDocument = async (page: PageRecord): Promise<PageDocument>
   return pageDocumentSchema.parse(JSON.parse(page.documentJson));
 };
 
+/** Inlines the page's background image (built-in texture or custom upload) for rasterizing. */
+const resolveBackgroundDataUri = async (
+  input: {
+    accountId: string;
+    document: PageDocument;
+    repositories: Repositories;
+    storage: ExportStorage;
+  },
+  settings: RasterRenderSettings,
+): Promise<string | undefined> => {
+  const background = input.document.canvas.background;
+
+  if (!background) return undefined;
+
+  const customBackgroundId = getCustomBackgroundStorageId(background.backgroundId);
+
+  if (customBackgroundId) {
+    const record = input.repositories.customBackgrounds.findByIdForAccount(
+      input.accountId,
+      customBackgroundId,
+    );
+
+    if (!record) return undefined;
+
+    return createImageDataUri({
+      buffer: await input.storage.read(record.storageKey),
+      mimeType: record.mimeType,
+      settings,
+      targetDimension: Math.max(
+        1,
+        Math.ceil(Math.max(background.width, background.height) * renderScaleForSettings(settings)),
+      ),
+    });
+  }
+
+  const builtIn = getBuiltInBackground(background.backgroundId);
+
+  if (builtIn?.kind !== "texture") return undefined;
+
+  const buffer = await readBuiltInBackgroundTexture(
+    builtIn.id.slice(builtInBackgroundIdPrefix.length),
+    "content",
+  );
+
+  return buffer ? `data:image/jpeg;base64,${buffer.toString("base64")}` : undefined;
+};
+
 export const renderPageSvg = async (input: {
   accountId: string;
   document: PageDocument;
@@ -247,11 +298,14 @@ export const renderPageSvg = async (input: {
     input.document.layers.filter((layer): layer is MapLayer => layer.kind === "map"),
     input.mapTiles,
   );
+  const backgroundHref =
+    input.includeBackground === false ? undefined : await resolveBackgroundDataUri(input, settings);
 
   return renderPageDocumentSvg(input.document, {
     ...(input.includeBackground === undefined
       ? {}
       : { includeBackground: input.includeBackground }),
+    resolveBackgroundHref: () => backgroundHref,
     resolveMapGeography: (detail) => maps.geography.get(detail),
     resolveMapTileHref: (tile) => maps.tileHrefs.get(mapTileKey(tile)),
     resolvePhotoHref: (layer: PhotoLayer) => photoHrefs.get(layer.id),

@@ -8,7 +8,10 @@ import type { Repositories } from "./persistence/repositories.js";
 import type { AssetRecord, AssetVariantRecord } from "./persistence/schema.js";
 import type { StorageArea, StoredObject } from "./storage/disk.js";
 
-type WritableAssetArea = Extract<StorageArea, "exports" | "uploads" | "variants" | "stickers">;
+type WritableAssetArea = Extract<
+  StorageArea,
+  "exports" | "uploads" | "variants" | "stickers" | "backgrounds"
+>;
 
 export type AssetStorage = {
   write: (

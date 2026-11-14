@@ -1,7 +1,14 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 
-export const storageAreas = ["uploads", "variants", "previews", "exports", "stickers"] as const;
+export const storageAreas = [
+  "uploads",
+  "variants",
+  "previews",
+  "exports",
+  "stickers",
+  "backgrounds",
+] as const;
 
 export type StorageArea = (typeof storageAreas)[number];
 

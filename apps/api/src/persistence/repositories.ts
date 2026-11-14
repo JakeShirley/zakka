@@ -28,8 +28,11 @@ import {
   bookAssets,
   bookPages,
   books,
+  type CustomBackgroundRecord,
+  type CustomBackgroundSource,
   type CustomStickerRecord,
   type CustomWashiTapeRecord,
+  customBackgrounds,
   customStickers,
   customWashiTapes,
   type ExportFormat,
@@ -1513,6 +1516,149 @@ export class CustomWashiTapeRepository {
   }
 }
 
+export class CustomBackgroundRepository {
+  constructor(
+    private readonly db: AppDatabase,
+    private readonly clock: RepositoryClock = defaultClock,
+  ) {}
+
+  create(
+    input: Omit<CustomBackgroundRecord, "id" | "createdAt" | "updatedAt" | "externalId"> & {
+      externalId?: string | null;
+      id?: string;
+    },
+  ): CustomBackgroundRecord {
+    const timestamp = now(this.clock);
+    const record: CustomBackgroundRecord = {
+      id: input.id ?? createInternalId("customBackground"),
+      accountId: input.accountId,
+      name: input.name,
+      storageKey: input.storageKey,
+      thumbnailStorageKey: input.thumbnailStorageKey,
+      mimeType: input.mimeType,
+      byteSize: input.byteSize,
+      width: input.width,
+      height: input.height,
+      checksumSha256: input.checksumSha256,
+      source: input.source,
+      externalId: input.externalId ?? null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    this.db.insert(customBackgrounds).values(record).run();
+
+    return record;
+  }
+
+  listForAccount(accountId: string): CustomBackgroundRecord[] {
+    return this.db
+      .select()
+      .from(customBackgrounds)
+      .where(eq(customBackgrounds.accountId, accountId))
+      .orderBy(desc(customBackgrounds.createdAt), desc(sql`rowid`))
+      .all();
+  }
+
+  findByIdForAccount(accountId: string, backgroundId: string): CustomBackgroundRecord | null {
+    return (
+      this.db
+        .select()
+        .from(customBackgrounds)
+        .where(
+          and(eq(customBackgrounds.accountId, accountId), eq(customBackgrounds.id, backgroundId)),
+        )
+        .get() ?? null
+    );
+  }
+
+  findByChecksum(accountId: string, checksumSha256: string): CustomBackgroundRecord | null {
+    return (
+      this.db
+        .select()
+        .from(customBackgrounds)
+        .where(
+          and(
+            eq(customBackgrounds.accountId, accountId),
+            eq(customBackgrounds.checksumSha256, checksumSha256),
+          ),
+        )
+        .get() ?? null
+    );
+  }
+
+  findByExternalId(
+    accountId: string,
+    source: CustomBackgroundSource,
+    externalId: string,
+  ): CustomBackgroundRecord | null {
+    return (
+      this.db
+        .select()
+        .from(customBackgrounds)
+        .where(
+          and(
+            eq(customBackgrounds.accountId, accountId),
+            eq(customBackgrounds.source, source),
+            eq(customBackgrounds.externalId, externalId),
+          ),
+        )
+        .get() ?? null
+    );
+  }
+
+  rename(input: {
+    accountId: string;
+    backgroundId: string;
+    name: string;
+  }): CustomBackgroundRecord | null {
+    const existing = this.findByIdForAccount(input.accountId, input.backgroundId);
+
+    if (!existing) {
+      return null;
+    }
+
+    const next: CustomBackgroundRecord = {
+      ...existing,
+      name: input.name,
+      updatedAt: now(this.clock),
+    };
+
+    this.db
+      .update(customBackgrounds)
+      .set({ name: next.name, updatedAt: next.updatedAt })
+      .where(
+        and(
+          eq(customBackgrounds.accountId, input.accountId),
+          eq(customBackgrounds.id, input.backgroundId),
+        ),
+      )
+      .run();
+
+    return next;
+  }
+
+  delete(input: { accountId: string; backgroundId: string }): CustomBackgroundRecord | null {
+    const existing = this.findByIdForAccount(input.accountId, input.backgroundId);
+
+    if (!existing) {
+      return null;
+    }
+
+    this.db
+      .delete(customBackgrounds)
+      .where(
+        and(
+          eq(customBackgrounds.accountId, input.accountId),
+          eq(customBackgrounds.id, input.backgroundId),
+        ),
+      )
+      .run();
+
+    return existing;
+  }
+}
+
 export class ExportJobRepository {
   constructor(
     private readonly db: AppDatabase,
@@ -1770,6 +1916,7 @@ export const createRepositories = (
     albums: new AlbumRepository(db, clock),
     stickerPacks: new StickerPackRepository(db, clock),
     customWashiTapes: new CustomWashiTapeRepository(db, clock),
+    customBackgrounds: new CustomBackgroundRepository(db, clock),
     pages: new PageRepository(db, clock, pageDocuments),
     books: new BookRepository(db, clock, pageDocuments),
     exports: new ExportJobRepository(db, clock),

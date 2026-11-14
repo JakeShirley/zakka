@@ -3,6 +3,7 @@ import {
   createPhotoLayer,
   createStickerLayer,
   createTextLayer,
+  type PageBackground,
   type PageDocument,
   type PageLayer,
   type StickerId,
@@ -26,14 +27,14 @@ export type ShutterflyProjectReferences = {
 
 export type ShutterflyResolvedBackground =
   | { kind: "color"; color: string }
-  | { kind: "image"; assetId: string };
+  | { kind: "image"; backgroundId: string };
 
 export type ShutterflyMappingResolvers = {
   /** Returns the Zakka asset id for a Shutterfly photo, or null if it could not be imported. */
   photoAssetId: (mediaId: string) => string | null;
   /** Returns a `custom:` sticker id for a Shutterfly embellishment design asset. */
   stickerId: (designAssetId: string) => StickerId | null;
-  /** Resolves a Shutterfly background design asset to a flat color or an imported Zakka asset. */
+  /** Resolves a Shutterfly background design asset to a flat color or a `custom:` background. */
   background: (designAssetId: string) => ShutterflyResolvedBackground | null;
   /** Returns the Zakka font family to use for a Shutterfly font design asset. */
   fontFamily: (designAssetId: string | null) => { family: string; matched: boolean };
@@ -57,6 +58,7 @@ type PageDraft = {
   title: string;
   backgroundColor: string | null;
   backgroundCoversCenter: boolean;
+  background: PageBackground | null;
   layers: PageLayer[];
   layerIds: Set<string>;
 };
@@ -266,6 +268,37 @@ const coversPageCenter = (rect: Rect, pageWidth: number, pageHeight: number): bo
   rect.y <= pageHeight / 2 &&
   rect.y + rect.h >= pageHeight / 2;
 
+/** Shutterfly stores a background's full image rectangle in surface coordinates. */
+const backgroundImageRect = (frame: Rect, item: ShutterflyLayeredItem): Rect => {
+  const x = numberValue(item.content.userData.x);
+  const y = numberValue(item.content.userData.y);
+  const w = numberValue(item.content.userData.w);
+  const h = numberValue(item.content.userData.h);
+
+  return x !== null && y !== null && w && h && w > 0 && h > 0
+    ? { x, y, w, h, rot: frame.rot }
+    : frame;
+};
+
+const sameVisiblePageArea = (
+  first: Rect,
+  second: Rect,
+  pageWidth: number,
+  pageHeight: number,
+): boolean => {
+  const tolerance = 1;
+  const visible = (rect: Rect) => [
+    clamp(rect.x, 0, pageWidth),
+    clamp(rect.y, 0, pageHeight),
+    clamp(rect.x + rect.w, 0, pageWidth),
+    clamp(rect.y + rect.h, 0, pageHeight),
+  ];
+  const firstEdges = visible(first);
+  const secondEdges = visible(second);
+
+  return firstEdges.every((edge, index) => Math.abs(edge - (secondEdges[index] ?? 0)) <= tolerance);
+};
+
 const photoCrop = (frame: Rect, item: ShutterflyLayeredItem) => {
   const image = {
     x: numberValue(item.content.userData.x),
@@ -364,6 +397,7 @@ const mapItemToPlacement = (
   itemKey: string,
   surface: ShutterflySurface,
   placement: PagePlacement,
+  itemPlacements: PagePlacement[],
 ) => {
   const page = context.pages[placement.pageIndex];
 
@@ -423,15 +457,46 @@ const mapItemToPlacement = (
         return;
       }
 
-      const crop = photoCrop(sourceRect, item);
-      const backgroundLayer = createPhotoLayer({
-        ...common,
-        assetId: background.assetId,
-        locked: true,
-        ...(crop ? { crop } : {}),
+      const imageRect = backgroundImageRect(sourceRect, item);
+      // Zakka clips a background only to the page, so keep Shutterfly's zoom only when its
+      // container would not crop the image any further on any page it reaches. Deciding once
+      // for every page keeps a spread background's halves aligned at the fold.
+      const keepZoom = itemPlacements.every((itemPlacement) => {
+        const pageRect = applyTransform(sourceRect, itemPlacement.transform);
+
+        return (
+          !overlapsPage(pageRect, context.pageWidth, context.pageHeight) ||
+          sameVisiblePageArea(
+            applyTransform(imageRect, itemPlacement.transform),
+            pageRect,
+            context.pageWidth,
+            context.pageHeight,
+          )
+        );
       });
-      page.layerIds.add(layerId);
-      page.layers.unshift(backgroundLayer);
+      const frame = keepZoom ? applyTransform(imageRect, placement.transform) : rect;
+
+      if (normalizeRotation(rect.rot) !== 0) {
+        warn(context, "Straightened rotated backgrounds", itemKey);
+      }
+
+      if (page.background) {
+        warn(context, "Kept one background image per page", itemKey);
+
+        if (!coversPageCenter(frame, context.pageWidth, context.pageHeight)) {
+          return;
+        }
+      }
+
+      page.background = {
+        backgroundId: background.backgroundId,
+        x: frame.x,
+        y: frame.y,
+        width: frame.w,
+        height: frame.h,
+        scale: 1,
+        rotation: 0,
+      };
       return;
     }
 
@@ -625,10 +690,17 @@ const mapSurface = (
   includeItem: (item: ShutterflyLayeredItem, placement: PagePlacement) => boolean = () => true,
 ) => {
   for (const [itemIndex, item] of surface.surfaceData.layeredItems.entries()) {
-    for (const placement of placements) {
-      if (includeItem(item, placement)) {
-        mapItemToPlacement(context, item, `${surfaceKey}_${itemIndex}`, surface, placement);
-      }
+    const itemPlacements = placements.filter((placement) => includeItem(item, placement));
+
+    for (const placement of itemPlacements) {
+      mapItemToPlacement(
+        context,
+        item,
+        `${surfaceKey}_${itemIndex}`,
+        surface,
+        placement,
+        itemPlacements,
+      );
     }
   }
 };
@@ -780,6 +852,7 @@ export const mapShutterflyProject = (
     title,
     backgroundColor: null,
     backgroundCoversCenter: false,
+    background: null,
     layers: [],
     layerIds: new Set(),
   });
@@ -885,6 +958,7 @@ export const mapShutterflyProject = (
           width: pageWidth,
           height: pageHeight,
           backgroundColor: page.backgroundColor ?? defaultBackgroundColor,
+          ...(page.background ? { background: page.background } : {}),
         },
         layers: page.layers,
       }),

@@ -1,6 +1,7 @@
 import type { Font } from "opentype.js";
 import { z } from "zod";
 
+import { getBuiltInBackground, isCustomBackgroundId } from "./backgrounds.js";
 import { defaultTextFontFamily, getBundledEditorFont } from "./fonts.js";
 import type { MapGeography, MapGeographyDetail } from "./map-geography.js";
 import {
@@ -18,6 +19,23 @@ import { getMapLayerGeographyDetail, renderMapLayerContent } from "./maps.js";
 import { escapeXml, pathData } from "./svg-path.js";
 import { parseRichText, type RichTextRun } from "./text-markdown.js";
 
+export {
+  type BackgroundTextureSource,
+  type BuiltInBackground,
+  type BuiltInBackgroundCategory,
+  type BuiltInCoverBackground,
+  type BuiltInTileBackground,
+  builtInBackgroundCategories,
+  builtInBackgroundCategoryLabels,
+  builtInBackgroundIdPrefix,
+  builtInBackgrounds,
+  customBackgroundIdPrefix,
+  getBuiltInBackground,
+  getCustomBackgroundStorageId,
+  isBuiltInBackgroundId,
+  isCustomBackgroundId,
+  toCustomBackgroundId,
+} from "./backgrounds.js";
 export {
   defaultTextFontFamily,
   type EditorFontDefinition,
@@ -597,16 +615,37 @@ export const pageLayerSchema = z.discriminatedUnion("kind", [
   mapLayerSchema,
 ]);
 
+/**
+ * A page background drawn above the background colour and below every layer. The frame is in
+ * page coordinates and may extend past the page: a background spanning a spread uses the full
+ * spread frame on both pages, offset by the left page's width on the right page.
+ */
+export const pageBackgroundSchema = z.object({
+  /** `zakka:<slug>` for a built-in background or `custom:<id>` for a library background. */
+  backgroundId: z.string().min(1).max(200),
+  x: z.number().finite().transform(roundToNearestTenth),
+  y: z.number().finite().transform(roundToNearestTenth),
+  width: z.number().finite().positive().transform(roundToNearestTenth),
+  height: z.number().finite().positive().transform(roundToNearestTenth),
+  /** Multiplies the tile size of repeating backgrounds. */
+  scale: z.number().finite().min(0.1).max(8).transform(roundToNearestHundredth).default(1),
+  /** Degrees clockwise around the frame centre. */
+  rotation: z.number().finite().min(-180).max(180).transform(roundToNearestTenth).default(0),
+});
+
 export const pageDocumentSchema = z.object({
   version: z.literal(1),
   canvas: z.object({
     width: z.number().int().min(320).max(10000),
     height: z.number().int().min(320).max(10000),
     backgroundColor: colorSchema,
+    background: pageBackgroundSchema.optional(),
   }),
   layers: z.array(pageLayerSchema).max(200),
 });
 
+export type PageBackground = z.infer<typeof pageBackgroundSchema>;
+export type PageBackgroundInput = z.input<typeof pageBackgroundSchema>;
 export type PageDocument = z.infer<typeof pageDocumentSchema>;
 export type PageLayer = z.infer<typeof pageLayerSchema>;
 export type PhotoLayer = z.infer<typeof photoLayerSchema>;
@@ -622,7 +661,13 @@ export type PageLayerKind = PageLayer["kind"];
 
 export type RenderPageSvgOptions = {
   idPrefix?: string;
+  /** Set to false to omit the background colour and page background. */
   includeBackground?: boolean;
+  /**
+   * Image href (URL or data URI) for textured built-in backgrounds and custom library
+   * backgrounds. Textures fall back to their base colour until an href is available.
+   */
+  resolveBackgroundHref?: (background: PageBackground) => string | null | undefined;
   resolvePhotoHref?: (layer: PhotoLayer) => string | null | undefined;
   resolveStickerSvg?: (layer: StickerLayer) => StickerSvg | null | undefined;
   resolveStickerHref?: (layer: StickerLayer) => string | null | undefined;
@@ -665,7 +710,9 @@ export type CreateBookSpreadsOptions = {
 };
 
 export type CreatePageDocumentInput = {
-  canvas?: Partial<PageDocument["canvas"]>;
+  canvas?: Partial<Omit<PageDocument["canvas"], "background">> & {
+    background?: PageBackgroundInput;
+  };
   layers?: PageLayer[];
 };
 
@@ -2495,12 +2542,113 @@ export const renderPageDocumentSvg = (
     );
   }
 
-  const background =
-    options.includeBackground === false
-      ? ""
-      : `<rect width="100%" height="100%" fill="${escapeXml(parsedDocument.canvas.backgroundColor)}" />`;
+  let background = "";
+
+  if (options.includeBackground !== false) {
+    background = `<rect width="100%" height="100%" fill="${escapeXml(parsedDocument.canvas.backgroundColor)}" />`;
+
+    const pageBackground = renderPageBackgroundSvg(parsedDocument.canvas, options);
+
+    if (pageBackground) {
+      defs.push(pageBackground.defs);
+      background += pageBackground.body;
+    }
+  }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${parsedDocument.canvas.width}" height="${parsedDocument.canvas.height}" viewBox="0 0 ${parsedDocument.canvas.width} ${parsedDocument.canvas.height}"><defs>${defs.join("")}</defs>${background}${bodies.join("")}</svg>`;
+};
+
+const renderPageBackgroundSvg = (
+  canvas: PageDocument["canvas"],
+  options: RenderPageSvgOptions,
+): { defs: string; body: string } | null => {
+  const background = canvas.background;
+
+  if (!background) {
+    return null;
+  }
+
+  // Only the part of the frame that overlaps the page is drawn.
+  const left = Math.max(0, background.x);
+  const top = Math.max(0, background.y);
+  const right = Math.min(canvas.width, background.x + background.width);
+  const bottom = Math.min(canvas.height, background.y + background.height);
+
+  if (right <= left || bottom <= top) {
+    return null;
+  }
+
+  const id = options.idPrefix
+    ? createSvgId(options.idPrefix, "page-background")
+    : createSvgId("page-background");
+  const visibleRect = `x="${left}" y="${top}" width="${right - left}" height="${bottom - top}"`;
+  const centerX = roundToNearestHundredth(background.x + background.width / 2);
+  const centerY = roundToNearestHundredth(background.y + background.height / 2);
+  const rotation =
+    background.rotation === 0 ? null : `rotate(${background.rotation} ${centerX} ${centerY})`;
+  // A rotated cover image grows to the bounding box of the rotated frame so it still fills it.
+  const radians = (background.rotation * Math.PI) / 180;
+  const coverWidth = roundToNearestHundredth(
+    Math.abs(background.width * Math.cos(radians)) +
+      Math.abs(background.height * Math.sin(radians)),
+  );
+  const coverHeight = roundToNearestHundredth(
+    Math.abs(background.width * Math.sin(radians)) +
+      Math.abs(background.height * Math.cos(radians)),
+  );
+  const frame = rotation
+    ? `x="${roundToNearestHundredth(centerX - coverWidth / 2)}" y="${roundToNearestHundredth(centerY - coverHeight / 2)}" width="${coverWidth}" height="${coverHeight}"`
+    : `x="${background.x}" y="${background.y}" width="${background.width}" height="${background.height}"`;
+  const rotate = (content: string) =>
+    rotation ? `<g transform="${rotation}">${content}</g>` : content;
+  const dataAttribute = `data-page-background="${escapeXml(background.backgroundId)}"`;
+  const builtIn = getBuiltInBackground(background.backgroundId);
+
+  if (!builtIn) {
+    if (!isCustomBackgroundId(background.backgroundId)) {
+      return null;
+    }
+
+    const href = options.resolveBackgroundHref?.(background);
+
+    if (!href) {
+      return null;
+    }
+
+    return {
+      defs: `<clipPath id="${id}_clip"><rect ${visibleRect} /></clipPath>`,
+      body: `<g ${dataAttribute} clip-path="url(#${id}_clip)">${rotate(`<image ${frame} href="${escapeXml(href)}" preserveAspectRatio="xMidYMid slice" />`)}</g>`,
+    };
+  }
+
+  if (builtIn.fit === "cover") {
+    const rendered = builtIn.renderScene(id);
+
+    return {
+      defs: `${rendered.defs}<clipPath id="${id}_clip"><rect ${visibleRect} /></clipPath>`,
+      body: `<g ${dataAttribute} clip-path="url(#${id}_clip)">${rotate(`<svg ${frame} viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice">${rendered.body}</svg>`)}</g>`,
+    };
+  }
+
+  let tileContent: string;
+
+  if (builtIn.kind === "pattern") {
+    tileContent = builtIn.renderTile();
+  } else {
+    const href = options.resolveBackgroundHref?.(background);
+
+    tileContent = href
+      ? `<image width="${builtIn.tileWidth}" height="${builtIn.tileHeight}" href="${escapeXml(href)}" preserveAspectRatio="none" />`
+      : `<rect width="${builtIn.tileWidth}" height="${builtIn.tileHeight}" fill="${builtIn.baseColor}" />`;
+  }
+
+  const tileWidth = roundToNearestHundredth(builtIn.tileWidth * background.scale);
+  const tileHeight = roundToNearestHundredth(builtIn.tileHeight * background.scale);
+
+  return {
+    defs: `<pattern id="${id}" patternUnits="userSpaceOnUse" x="${background.x}" y="${background.y}" width="${tileWidth}" height="${tileHeight}" viewBox="0 0 ${builtIn.tileWidth} ${builtIn.tileHeight}"${rotation ? ` patternTransform="${rotation}"` : ""}>${tileContent}</pattern>`,
+    body: `<rect ${dataAttribute} ${visibleRect} fill="url(#${id})" />`,
+  };
 };
 
 export const createPageDocument = (input: CreatePageDocumentInput = {}): PageDocument =>
@@ -2510,6 +2658,7 @@ export const createPageDocument = (input: CreatePageDocumentInput = {}): PageDoc
       width: input.canvas?.width ?? 2400,
       height: input.canvas?.height ?? 3000,
       backgroundColor: input.canvas?.backgroundColor ?? "#fffdf7",
+      ...(input.canvas?.background ? { background: input.canvas.background } : {}),
     },
     layers: input.layers ?? [],
   });
@@ -2780,6 +2929,20 @@ export const updateCanvas = (
   });
 };
 
+/** Sets or, with null, removes the page background. */
+export const setPageBackground = (
+  document: PageDocument,
+  background: PageBackgroundInput | null,
+): PageDocument => {
+  const parsedDocument = parseDocument(document);
+  const { background: _previous, ...canvas } = parsedDocument.canvas;
+
+  return parseDocument({
+    ...parsedDocument,
+    canvas: background ? { ...canvas, background: pageBackgroundSchema.parse(background) } : canvas,
+  });
+};
+
 export const getTextLayerRenderedBounds = (
   layer: TextLayer,
 ): { x: number; y: number; width: number; height: number } => {
@@ -2913,13 +3076,33 @@ export const resizePageDocument = (
     scaleY,
   } = getPageResizeContentRect(parsedDocument.canvas, canvas, options);
   const textScale = Math.min(scaleX, scaleY);
+  // The background always fills the page, so its frame follows the page size rather than the
+  // content area. Every page of a spread then moves its shared frame by the same amount.
+  const pageRatioX = canvas.width / parsedDocument.canvas.width;
+  const pageRatioY = canvas.height / parsedDocument.canvas.height;
   // Scaled effect values are clamped to their schema bounds so large resizes cannot throw.
   const scaleWithin = (value: number, scale: number, min: number, max: number) =>
     Math.min(max, Math.max(min, value * scale));
+  const background = parsedDocument.canvas.background;
 
   return parseDocument({
     ...parsedDocument,
-    canvas: { ...parsedDocument.canvas, ...canvas },
+    canvas: {
+      ...parsedDocument.canvas,
+      ...canvas,
+      ...(background
+        ? {
+            background: {
+              ...background,
+              x: background.x * pageRatioX,
+              y: background.y * pageRatioY,
+              width: background.width * pageRatioX,
+              height: background.height * pageRatioY,
+              scale: scaleWithin(background.scale, textScale, 0.1, 8),
+            },
+          }
+        : {}),
+    },
     layers: parsedDocument.layers.map((layer) =>
       pageLayerSchema.parse({
         ...layer,
