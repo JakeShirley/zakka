@@ -482,6 +482,7 @@ const mapItemToPlacement = (
         width: frame.w,
         height: frame.h,
         scale: 1,
+        rotation: 0,
       };
       return;
     }

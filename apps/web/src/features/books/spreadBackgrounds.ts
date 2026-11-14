@@ -66,17 +66,17 @@ export const getLinkedBackgroundPages = (
   });
 };
 
-/** Sets a new tile scale on each page's existing background. */
-export const scaleBackgrounds = (
+/** Applies new tile scale or rotation to each page's existing background. */
+export const adjustBackgrounds = (
   targets: readonly SpreadPageContext[],
-  scale: number,
+  changes: Partial<Pick<PageBackground, "rotation" | "scale">>,
 ): Map<string, PageDocument> =>
   new Map(
     targets.flatMap((target): [string, PageDocument][] => {
       const background = target.page.document.canvas.background;
 
       return background
-        ? [[target.pageId, setPageBackground(target.page.document, { ...background, scale })]]
+        ? [[target.pageId, setPageBackground(target.page.document, { ...background, ...changes })]]
         : [];
     }),
   );

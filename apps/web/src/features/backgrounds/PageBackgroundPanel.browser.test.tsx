@@ -31,6 +31,7 @@ const renderPanel = async (props: Partial<Parameters<typeof PageBackgroundPanel>
     onApplyTargetChange: vi.fn(),
     onBackgroundColorChange: vi.fn(),
     onRemove: vi.fn(),
+    onRotationChange: vi.fn(),
     onScaleChange: vi.fn(),
     onSelect: vi.fn(),
   };
@@ -75,9 +76,9 @@ describe("PageBackgroundPanel", () => {
       .not.toBeInTheDocument();
   });
 
-  test("adjusts tile size and removes a tiled background", async () => {
+  test("adjusts tile size and rotation and removes a tiled background", async () => {
     vi.spyOn(apiClient, "listCustomBackgrounds").mockResolvedValue({ backgrounds: [] });
-    const { onRemove, onScaleChange } = await renderPanel({
+    const { onRemove, onRotationChange, onScaleChange } = await renderPanel({
       background: {
         backgroundId: "zakka:hearts",
         x: 0,
@@ -85,6 +86,7 @@ describe("PageBackgroundPanel", () => {
         width: 1200,
         height: 600,
         scale: 1.5,
+        rotation: 30,
       },
       canApplyToSpread: false,
     });
@@ -97,14 +99,21 @@ describe("PageBackgroundPanel", () => {
     await page.getByRole("slider", { name: "Tile size" }).fill("2");
     expect(onScaleChange).toHaveBeenLastCalledWith(2);
 
-    await page.getByRole("button", { name: "Reset" }).click();
+    await page.getByRole("button", { name: "Reset tile size" }).click();
     expect(onScaleChange).toHaveBeenLastCalledWith(1);
+
+    await expect.element(page.getByText("30°")).toBeInTheDocument();
+    await page.getByRole("slider", { name: "Rotation" }).fill("-45");
+    expect(onRotationChange).toHaveBeenLastCalledWith(-45);
+
+    await page.getByRole("button", { name: "Reset rotation" }).click();
+    expect(onRotationChange).toHaveBeenLastCalledWith(0);
 
     await page.getByRole("button", { name: "Remove" }).click();
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
-  test("hides the tile size control for cover backgrounds", async () => {
+  test("hides the tile size control but keeps rotation for cover backgrounds", async () => {
     vi.spyOn(apiClient, "listCustomBackgrounds").mockResolvedValue({ backgrounds: [] });
     await renderPanel({
       background: {
@@ -114,11 +123,13 @@ describe("PageBackgroundPanel", () => {
         width: 600,
         height: 600,
         scale: 1,
+        rotation: 0,
       },
     });
 
     await expect.element(page.getByText("Sunset", { exact: true }).first()).toBeInTheDocument();
     await expect.element(page.getByRole("slider", { name: "Tile size" })).not.toBeInTheDocument();
+    await expect.element(page.getByRole("slider", { name: "Rotation" })).toBeInTheDocument();
   });
 
   test("selects a single uploaded background right away", async () => {

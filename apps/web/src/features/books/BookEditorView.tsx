@@ -102,9 +102,9 @@ import {
   getBookPageSizeKey,
 } from "./pageSizes";
 import {
+  adjustBackgrounds,
   applySharedBackground,
   getLinkedBackgroundPages,
-  scaleBackgrounds,
 } from "./spreadBackgrounds";
 import {
   fillPhotoPlaceholderAcrossSpread,
@@ -824,8 +824,17 @@ export function BookEditorView() {
     const targets = getLinkedPagesForActiveBackground();
 
     editPageDocuments(
-      scaleBackgrounds(targets, scale),
+      adjustBackgrounds(targets, { scale }),
       coalesceEdits(`background-scale:${targets.map((target) => target.pageId).join(",")}`),
+    );
+  };
+
+  const changePageBackgroundRotation = (rotation: number) => {
+    const targets = getLinkedPagesForActiveBackground();
+
+    editPageDocuments(
+      adjustBackgrounds(targets, { rotation }),
+      coalesceEdits(`background-rotation:${targets.map((target) => target.pageId).join(",")}`),
     );
   };
 
@@ -2160,6 +2169,7 @@ export function BookEditorView() {
                         onApplyTargetChange={setBackgroundApplyTarget}
                         onBackgroundColorChange={changeTargetBackgroundColor}
                         onRemove={removePageBackground}
+                        onRotationChange={changePageBackgroundRotation}
                         onScaleChange={changePageBackgroundScale}
                         onSelect={selectPageBackground}
                       />

@@ -624,6 +624,8 @@ export const pageBackgroundSchema = z.object({
   height: z.number().finite().positive().transform(roundToNearestTenth),
   /** Multiplies the tile size of repeating backgrounds. */
   scale: z.number().finite().min(0.1).max(8).transform(roundToNearestHundredth).default(1),
+  /** Degrees clockwise around the frame centre. */
+  rotation: z.number().finite().min(-180).max(180).transform(roundToNearestTenth).default(0),
 });
 
 export const pageDocumentSchema = z.object({
@@ -638,6 +640,7 @@ export const pageDocumentSchema = z.object({
 });
 
 export type PageBackground = z.infer<typeof pageBackgroundSchema>;
+export type PageBackgroundInput = z.input<typeof pageBackgroundSchema>;
 export type PageDocument = z.infer<typeof pageDocumentSchema>;
 export type PageLayer = z.infer<typeof pageLayerSchema>;
 export type PhotoLayer = z.infer<typeof photoLayerSchema>;
@@ -702,7 +705,9 @@ export type CreateBookSpreadsOptions = {
 };
 
 export type CreatePageDocumentInput = {
-  canvas?: Partial<PageDocument["canvas"]>;
+  canvas?: Partial<Omit<PageDocument["canvas"], "background">> & {
+    background?: PageBackgroundInput;
+  };
   layers?: PageLayer[];
 };
 
@@ -2540,7 +2545,25 @@ const renderPageBackgroundSvg = (
     ? createSvgId(options.idPrefix, "page-background")
     : createSvgId("page-background");
   const visibleRect = `x="${left}" y="${top}" width="${right - left}" height="${bottom - top}"`;
-  const frame = `x="${background.x}" y="${background.y}" width="${background.width}" height="${background.height}"`;
+  const centerX = roundToNearestHundredth(background.x + background.width / 2);
+  const centerY = roundToNearestHundredth(background.y + background.height / 2);
+  const rotation =
+    background.rotation === 0 ? null : `rotate(${background.rotation} ${centerX} ${centerY})`;
+  // A rotated cover image grows to the bounding box of the rotated frame so it still fills it.
+  const radians = (background.rotation * Math.PI) / 180;
+  const coverWidth = roundToNearestHundredth(
+    Math.abs(background.width * Math.cos(radians)) +
+      Math.abs(background.height * Math.sin(radians)),
+  );
+  const coverHeight = roundToNearestHundredth(
+    Math.abs(background.width * Math.sin(radians)) +
+      Math.abs(background.height * Math.cos(radians)),
+  );
+  const frame = rotation
+    ? `x="${roundToNearestHundredth(centerX - coverWidth / 2)}" y="${roundToNearestHundredth(centerY - coverHeight / 2)}" width="${coverWidth}" height="${coverHeight}"`
+    : `x="${background.x}" y="${background.y}" width="${background.width}" height="${background.height}"`;
+  const rotate = (content: string) =>
+    rotation ? `<g transform="${rotation}">${content}</g>` : content;
   const dataAttribute = `data-page-background="${escapeXml(background.backgroundId)}"`;
   const builtIn = getBuiltInBackground(background.backgroundId);
 
@@ -2557,7 +2580,7 @@ const renderPageBackgroundSvg = (
 
     return {
       defs: `<clipPath id="${id}_clip"><rect ${visibleRect} /></clipPath>`,
-      body: `<g ${dataAttribute} clip-path="url(#${id}_clip)"><image ${frame} href="${escapeXml(href)}" preserveAspectRatio="xMidYMid slice" /></g>`,
+      body: `<g ${dataAttribute} clip-path="url(#${id}_clip)">${rotate(`<image ${frame} href="${escapeXml(href)}" preserveAspectRatio="xMidYMid slice" />`)}</g>`,
     };
   }
 
@@ -2566,7 +2589,7 @@ const renderPageBackgroundSvg = (
 
     return {
       defs: `${rendered.defs}<clipPath id="${id}_clip"><rect ${visibleRect} /></clipPath>`,
-      body: `<g ${dataAttribute} clip-path="url(#${id}_clip)"><svg ${frame} viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice">${rendered.body}</svg></g>`,
+      body: `<g ${dataAttribute} clip-path="url(#${id}_clip)">${rotate(`<svg ${frame} viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice">${rendered.body}</svg>`)}</g>`,
     };
   }
 
@@ -2586,7 +2609,7 @@ const renderPageBackgroundSvg = (
   const tileHeight = roundToNearestHundredth(builtIn.tileHeight * background.scale);
 
   return {
-    defs: `<pattern id="${id}" patternUnits="userSpaceOnUse" x="${background.x}" y="${background.y}" width="${tileWidth}" height="${tileHeight}" viewBox="0 0 ${builtIn.tileWidth} ${builtIn.tileHeight}">${tileContent}</pattern>`,
+    defs: `<pattern id="${id}" patternUnits="userSpaceOnUse" x="${background.x}" y="${background.y}" width="${tileWidth}" height="${tileHeight}" viewBox="0 0 ${builtIn.tileWidth} ${builtIn.tileHeight}"${rotation ? ` patternTransform="${rotation}"` : ""}>${tileContent}</pattern>`,
     body: `<rect ${dataAttribute} ${visibleRect} fill="url(#${id})" />`,
   };
 };
@@ -2872,14 +2895,14 @@ export const updateCanvas = (
 /** Sets or, with null, removes the page background. */
 export const setPageBackground = (
   document: PageDocument,
-  background: PageBackground | null,
+  background: PageBackgroundInput | null,
 ): PageDocument => {
   const parsedDocument = parseDocument(document);
   const { background: _previous, ...canvas } = parsedDocument.canvas;
 
   return parseDocument({
     ...parsedDocument,
-    canvas: background ? { ...canvas, background } : canvas,
+    canvas: background ? { ...canvas, background: pageBackgroundSchema.parse(background) } : canvas,
   });
 };
 

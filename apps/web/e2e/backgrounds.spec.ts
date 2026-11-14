@@ -14,6 +14,7 @@ import {
 type SavedBackground = {
   backgroundId: string;
   height: number;
+  rotation: number;
   scale: number;
   width: number;
   x: number;
@@ -73,8 +74,24 @@ test.describe("page backgrounds", () => {
         await savedBackground(page.request, rightId),
       ])
       .toEqual([
-        { backgroundId: "zakka:stars", x: 0, y: 0, width: 4800, height: 3000, scale: 1 },
-        { backgroundId: "zakka:stars", x: -2400, y: 0, width: 4800, height: 3000, scale: 1 },
+        {
+          backgroundId: "zakka:stars",
+          x: 0,
+          y: 0,
+          width: 4800,
+          height: 3000,
+          scale: 1,
+          rotation: 0,
+        },
+        {
+          backgroundId: "zakka:stars",
+          x: -2400,
+          y: 0,
+          width: 4800,
+          height: 3000,
+          scale: 1,
+          rotation: 0,
+        },
       ]);
 
     await page.getByRole("slider", { name: "Tile size" }).fill("2");
@@ -84,6 +101,24 @@ test.describe("page backgrounds", () => {
         (await savedBackground(page.request, rightId))?.scale,
       ])
       .toEqual([2, 2]);
+
+    await page.getByRole("slider", { name: "Rotation" }).fill("30");
+    await expect
+      .poll(async () => [
+        (await savedBackground(page.request, leftId))?.rotation,
+        (await savedBackground(page.request, rightId))?.rotation,
+      ])
+      .toEqual([30, 30]);
+    await expect(
+      page
+        .getByRole("region", { name: "Book editor" })
+        .locator('pattern[patternTransform="rotate(30 2400 1500)"]'),
+    ).toHaveCount(1);
+    await expect(
+      page
+        .getByRole("region", { name: "Book editor" })
+        .locator('pattern[patternTransform="rotate(30 0 1500)"]'),
+    ).toHaveCount(1);
 
     await page.getByRole("button", { name: "This page" }).click();
     await page.getByRole("button", { name: "Remove" }).click();

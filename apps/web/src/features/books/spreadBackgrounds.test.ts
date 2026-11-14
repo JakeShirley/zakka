@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import type { PageDetail } from "../../types";
 import {
+  adjustBackgrounds,
   applySharedBackground,
   getLinkedBackgroundPages,
-  scaleBackgrounds,
 } from "./spreadBackgrounds";
 import type { SpreadPageContext } from "./spreadLayers";
 
@@ -49,6 +49,7 @@ describe("spread backgrounds", () => {
       width: 1200,
       height: 420,
       scale: 1,
+      rotation: 0,
     });
     expect(documents.get("right")?.canvas.background).toMatchObject({ x: -600, width: 1200 });
   });
@@ -80,7 +81,7 @@ describe("spread backgrounds", () => {
     expect(getLinkedBackgroundPages(spread, "left")).toEqual([]);
   });
 
-  it("rescales linked backgrounds and skips pages without one", () => {
+  it("adjusts linked backgrounds and skips pages without one", () => {
     const left = context("left", 0, blankPage());
     const right = context(
       "right",
@@ -95,9 +96,12 @@ describe("spread backgrounds", () => {
       }),
     );
 
-    const documents = scaleBackgrounds([left, right], 2.5);
+    const documents = adjustBackgrounds([left, right], { scale: 2.5 });
 
     expect([...documents.keys()]).toEqual(["right"]);
     expect(documents.get("right")?.canvas.background?.scale).toBe(2.5);
+    expect(
+      adjustBackgrounds([right], { rotation: -45 }).get("right")?.canvas.background,
+    ).toMatchObject({ rotation: -45, scale: 1 });
   });
 });

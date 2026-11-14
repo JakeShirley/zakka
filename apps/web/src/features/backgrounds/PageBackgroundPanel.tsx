@@ -15,7 +15,8 @@ const applyTargetOptions: { label: string; value: BackgroundApplyTarget }[] = [
 
 /**
  * Editor sidebar content for the active page's background: where a choice applies, the current
- * background with its tile size, the solid color underneath, and the background library.
+ * background with its tile size and rotation, the solid color underneath, and the background
+ * library.
  */
 export function PageBackgroundPanel({
   applyTarget,
@@ -25,6 +26,7 @@ export function PageBackgroundPanel({
   onApplyTargetChange,
   onBackgroundColorChange,
   onRemove,
+  onRotationChange,
   onScaleChange,
   onSelect,
 }: {
@@ -35,10 +37,12 @@ export function PageBackgroundPanel({
   onApplyTargetChange: (target: BackgroundApplyTarget) => void;
   onBackgroundColorChange: (color: string) => void;
   onRemove: () => void;
+  onRotationChange: (rotation: number) => void;
   onScaleChange: (scale: number) => void;
   onSelect: (backgroundId: string) => void;
 }) {
   const scaleId = useId();
+  const rotationId = useId();
   const colorId = useId();
   const builtIn = background ? getBuiltInBackground(background.backgroundId) : undefined;
   const isTiled = builtIn?.fit === "tile";
@@ -99,6 +103,7 @@ export function PageBackgroundPanel({
                   />
                   <button
                     type="button"
+                    aria-label="Reset tile size"
                     className="washi-tape-scale-reset-button"
                     disabled={background.scale === 1}
                     onClick={() => onScaleChange(1)}
@@ -108,6 +113,32 @@ export function PageBackgroundPanel({
                 </div>
               </div>
             ) : null}
+            <div className="page-background-scale">
+              <div className="washi-tape-slider-label-row">
+                <label htmlFor={rotationId}>Rotation</label>
+                <output htmlFor={rotationId}>{`${Math.round(background.rotation)}°`}</output>
+              </div>
+              <div className="washi-tape-slider-row">
+                <input
+                  id={rotationId}
+                  max={180}
+                  min={-180}
+                  step={1}
+                  type="range"
+                  value={background.rotation}
+                  onChange={(event) => onRotationChange(Number(event.currentTarget.value))}
+                />
+                <button
+                  type="button"
+                  aria-label="Reset rotation"
+                  className="washi-tape-scale-reset-button"
+                  disabled={background.rotation === 0}
+                  onClick={() => onRotationChange(0)}
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
           </>
         ) : (
           <p className="empty-state">No background. Pick one below.</p>

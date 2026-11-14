@@ -19,6 +19,7 @@ const frame = (backgroundId: string, overrides: Partial<PageBackground> = {}): P
   width: 1000,
   height: 800,
   scale: 1,
+  rotation: 0,
   ...overrides,
 });
 
@@ -92,6 +93,32 @@ describe("page backgrounds", () => {
       '<image x="-1000" y="0" width="2000" height="800" href="/bg/custom:custom_background_1" preserveAspectRatio="xMidYMid slice" />',
     );
     expect(renderPageDocumentSvg(rightPage)).not.toContain("data-page-background");
+  });
+
+  it("rotates backgrounds around the centre of their frame", () => {
+    const leftPage = setPageBackground(
+      createPageDocument({ canvas }),
+      frame("zakka:gingham-red", { width: 2000, rotation: 45 }),
+    );
+    const rightPage = setPageBackground(
+      createPageDocument({ canvas }),
+      frame("custom:custom_background_1", { x: -1000, width: 2000, rotation: 90 }),
+    );
+
+    expect(renderPageDocumentSvg(leftPage)).toContain('patternTransform="rotate(45 1000 400)"');
+    // The rotated image grows to cover the frame, which is now 800 wide and 2000 tall.
+    expect(renderPageDocumentSvg(rightPage, { resolveBackgroundHref: () => "/bg.jpg" })).toContain(
+      '<g transform="rotate(90 0 400)"><image x="-400" y="-600" width="800" height="2000" href="/bg.jpg"',
+    );
+    expect(
+      setPageBackground(createPageDocument({ canvas }), {
+        backgroundId: "zakka:stars",
+        x: 0,
+        y: 0,
+        width: 1000,
+        height: 800,
+      }).canvas.background,
+    ).toEqual(frame("zakka:stars"));
   });
 
   it("skips backgrounds whose frame misses the page or whose id is unknown", () => {
