@@ -12,6 +12,8 @@ import type { Asset } from "../../types";
 export type AssetRailInspector = {
   actions?: ReactNode;
   title: string;
+  /** Optional tab strip shown between the header and the content. */
+  tabs?: ReactNode;
   content: ReactNode;
 };
 
@@ -107,11 +109,17 @@ export function AssetRail(props: AssetRailProps) {
         ) : null}
       </div>
       {showInspector && inspector ? (
-        <section aria-label={inspector.title} className="asset-rail-inspector" role="dialog">
+        <section
+          aria-label={inspector.title}
+          className="asset-rail-inspector"
+          data-has-tabs={inspector.tabs ? true : undefined}
+          role="dialog"
+        >
           <header className="editor-edit-pane-header">
             <h3>{inspector.title}</h3>
             {inspector.actions ?? null}
           </header>
+          {inspector.tabs ?? null}
           <div className="editor-edit-pane-body">{inspector.content}</div>
         </section>
       ) : isReferencedMode ? (

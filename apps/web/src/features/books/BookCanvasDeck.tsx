@@ -3,6 +3,7 @@ import type { PageLayer } from "@zakka/editor-core";
 import type { Asset, PageDetail } from "../../types";
 import type { CanvasPoint } from "../editor/editorTypes";
 import {
+  type ArrangeCanvasPreview,
   type CanvasPreviewLayer,
   PageCanvas,
   type ReorderLayerCommand,
@@ -17,6 +18,8 @@ import type { ViewMode } from "./bookEditorTypes";
 type BookCanvasDeckProps = {
   activePageId: string;
   activeSelectionPanel?: SelectionPanel | null;
+  /** Arrange preview drawn on the active page only. */
+  arrangePreview?: ArrangeCanvasPreview | null;
   assetById: Map<string, Asset>;
   orderedPageIds: string[];
   pageDetails: Map<string, PageDetail>;
@@ -45,6 +48,7 @@ type BookCanvasDeckProps = {
 export function BookCanvasDeck({
   activePageId,
   activeSelectionPanel,
+  arrangePreview,
   assetById,
   orderedPageIds,
   pageDetails,
@@ -93,6 +97,7 @@ export function BookCanvasDeck({
           >
             <PageCanvas
               activeSelectionPanel={isActivePage ? (activeSelectionPanel ?? null) : null}
+              arrangePreview={isActivePage ? (arrangePreview ?? null) : null}
               assetById={assetById}
               document={page.document}
               previewLayers={getSpreadPreviewLayers(pageId)}
