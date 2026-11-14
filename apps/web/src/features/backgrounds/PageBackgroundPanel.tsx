@@ -29,6 +29,7 @@ export function PageBackgroundPanel({
   onRotationChange,
   onScaleChange,
   onSelect,
+  selectionKey,
 }: {
   applyTarget: BackgroundApplyTarget;
   background: PageBackground | null;
@@ -40,6 +41,8 @@ export function PageBackgroundPanel({
   onRotationChange: (rotation: number) => void;
   onScaleChange: (scale: number) => void;
   onSelect: (backgroundId: string) => void;
+  /** Identifies the pages a selection applies to; a finished upload is not applied elsewhere. */
+  selectionKey?: string | undefined;
 }) {
   const scaleId = useId();
   const rotationId = useId();
@@ -156,6 +159,7 @@ export function PageBackgroundPanel({
       <BackgroundGallery
         layout="rail"
         selectedBackgroundId={background?.backgroundId ?? null}
+        selectionKey={selectionKey}
         onSelect={onSelect}
       />
     </div>

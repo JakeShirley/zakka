@@ -154,4 +154,69 @@ describe("PageBackgroundPanel", () => {
       .element(page.getByRole("button", { name: "Use garden.png background" }))
       .toBeInTheDocument();
   });
+
+  test("applies a finished upload with the latest callback only while the target is unchanged", async () => {
+    vi.spyOn(apiClient, "listCustomBackgrounds").mockResolvedValue({ backgrounds: [] });
+    const pendingUploads: Array<() => void> = [];
+    vi.spyOn(apiClient, "uploadCustomBackground").mockImplementation(
+      (file) =>
+        new Promise((resolve) => {
+          pendingUploads.push(() =>
+            resolve(
+              createCustomBackground({
+                id: `custom_background_${file.name}`,
+                backgroundId: `custom:${file.name}`,
+                name: file.name,
+                source: "upload",
+              }),
+            ),
+          );
+        }),
+    );
+    const props = {
+      applyTarget: "page" as const,
+      background: null,
+      backgroundColor: "#ffffff",
+      canApplyToSpread: false,
+      onApplyTargetChange: vi.fn(),
+      onBackgroundColorChange: vi.fn(),
+      onRemove: vi.fn(),
+      onRotationChange: vi.fn(),
+      onScaleChange: vi.fn(),
+    };
+    const staleSelect = vi.fn();
+    const latestSelect = vi.fn();
+    const files = page.getByLabelText("Background image files");
+    const startUpload = async (name: string) => {
+      const count = pendingUploads.length;
+      await files.upload(new File(["png"], name, { type: "image/png" }));
+      await expect.poll(() => pendingUploads.length).toBe(count + 1);
+    };
+    const screen = await render(
+      <PageBackgroundPanel {...props} selectionKey="page_1" onSelect={staleSelect} />,
+    );
+
+    await startUpload("first.png");
+    await screen.rerender(
+      <PageBackgroundPanel {...props} selectionKey="page_1" onSelect={latestSelect} />,
+    );
+    pendingUploads[0]?.();
+    await expect.poll(() => latestSelect.mock.calls).toEqual([["custom:first.png"]]);
+    expect(staleSelect).not.toHaveBeenCalled();
+
+    await startUpload("second.png");
+    await screen.rerender(
+      <PageBackgroundPanel {...props} selectionKey="page_2" onSelect={latestSelect} />,
+    );
+    pendingUploads[1]?.();
+    await expect
+      .element(page.getByRole("button", { name: "Use second.png background" }))
+      .toBeInTheDocument();
+
+    await startUpload("third.png");
+    await screen.unmount();
+    pendingUploads[2]?.();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(latestSelect).toHaveBeenCalledTimes(1);
+  });
 });

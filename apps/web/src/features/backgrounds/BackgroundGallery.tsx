@@ -11,7 +11,7 @@ import {
   builtInBackgroundCategoryLabels,
   builtInBackgrounds,
 } from "@zakka/editor-core";
-import { type ChangeEvent, type ReactNode, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { getErrorMessage } from "../../lib/errors";
 import type { CustomBackground } from "../../types";
@@ -139,19 +139,37 @@ function RenameBackgroundForm({
 /**
  * The background library: the account's uploaded and imported backgrounds plus the built-in
  * catalog grouped by category. With `onSelect` the tiles apply a background; without it the
- * gallery manages the account's custom backgrounds.
+ * gallery manages the account's custom backgrounds. A single upload is selected when it finishes,
+ * unless the gallery has closed or `selectionKey` (what a selection applies to) has changed.
  */
 export function BackgroundGallery({
   layout = "page",
   selectedBackgroundId = null,
+  selectionKey,
   onSelect,
 }: {
   layout?: "page" | "rail";
   selectedBackgroundId?: string | null;
+  selectionKey?: string | undefined;
   onSelect?: ((backgroundId: string) => void) | undefined;
 }) {
   const library = useBackgroundLibrary();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Uploads outlive renders, so they read the latest callback and target when they finish.
+  const latestSelection = useRef({ isMounted: true, onSelect, selectionKey });
+
+  useEffect(() => {
+    latestSelection.current.onSelect = onSelect;
+    latestSelection.current.selectionKey = selectionKey;
+  });
+
+  useEffect(() => {
+    const selection = latestSelection.current;
+    selection.isMounted = true;
+    return () => {
+      selection.isMounted = false;
+    };
+  }, []);
   const [query, setQuery] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const isPicker = Boolean(onSelect);
@@ -188,10 +206,17 @@ export function BackgroundGallery({
     event.currentTarget.value = "";
     if (files.length === 0) return;
 
+    const startedFor = latestSelection.current.selectionKey;
     const uploaded = await library.uploadBackgrounds(files);
     const first = uploaded[0];
-    if (first && onSelect && uploaded.length === 1) {
-      onSelect(first.backgroundId);
+    const selection = latestSelection.current;
+    if (
+      first &&
+      uploaded.length === 1 &&
+      selection.isMounted &&
+      selection.selectionKey === startedFor
+    ) {
+      selection.onSelect?.(first.backgroundId);
     }
   };
 

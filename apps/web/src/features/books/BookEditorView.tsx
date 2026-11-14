@@ -2175,6 +2175,9 @@ export function BookEditorView() {
                         onRotationChange={changePageBackgroundRotation}
                         onScaleChange={changePageBackgroundScale}
                         onSelect={selectPageBackground}
+                        selectionKey={getBackgroundTargetPages()
+                          .map((target) => target.pageId)
+                          .join(",")}
                       />
                     ),
                   }
