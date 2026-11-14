@@ -70,6 +70,8 @@ import {
   serverLogEntryResponseSchema,
   serverLogListResponseSchema,
   serverLogListRoute,
+  systemInfoResponseSchema,
+  systemInfoRoute,
   customStickerContentRoute,
   customStickerFavoriteRoute,
   customStickerListResponseSchema,
@@ -677,6 +679,7 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     staticAssetsDir: createOptions.staticAssetsDir,
     storage: createOptions.storage,
   };
+  const startedAt = options.clock();
 
   app.use("*", async (context, next) => {
     const requestId = context.req.header("x-request-id") ?? crypto.randomUUID();
@@ -749,6 +752,37 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
       .reverse();
 
     return context.json(serverLogListResponseSchema.parse({ level, logs }), 200);
+  });
+
+  app.openapi(systemInfoRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "auth_unavailable", "Auth is unavailable"),
+        500,
+      );
+    }
+
+    if (!getAuthenticatedSession(context, options.repositories)) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const body = systemInfoResponseSchema.parse({
+      service: "zakka-api",
+      version: packageVersion,
+      startedAt: startedAt.toISOString(),
+      uptimeSeconds: Math.max(
+        0,
+        Math.floor((options.clock().getTime() - startedAt.getTime()) / 1000),
+      ),
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+    });
+
+    return context.json(body, 200);
   });
 
   app.openapi(registerRoute, async (context) => {

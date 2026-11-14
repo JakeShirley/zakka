@@ -537,6 +537,10 @@ textarea:focus-visible {
   background: #ffffff;
 }
 
+.settings-log-toolbar.settings-about-toolbar {
+  align-items: center;
+}
+
 .settings-log-loading {
   display: flex;
   align-items: center;
@@ -549,6 +553,62 @@ textarea:focus-visible {
 
 .settings-integrations-grid {
   grid-template-columns: minmax(280px, 640px);
+}
+
+.settings-about-intro {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+  padding: 16px;
+}
+
+.settings-about-intro p {
+  margin: 0;
+  color: #202426;
+}
+
+.settings-about-status {
+  color: #687174;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.copilot-badge {
+  display: inline-flex;
+  overflow: hidden;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  box-shadow: 0 0 0 1px rgb(31 35 40 / 15%);
+}
+
+.copilot-badge:focus-visible {
+  outline: 2px solid #24766e;
+  outline-offset: 2px;
+}
+
+.copilot-badge-label,
+.copilot-badge-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+}
+
+.copilot-badge-label {
+  color: #ffffff;
+  background: #57606a;
+}
+
+.copilot-badge-value {
+  color: #ffffff;
+  background: #1f2328;
+}
+
+.copilot-badge:hover .copilot-badge-value {
+  background: #8250df;
 }
 
 .integration-panel,
@@ -1250,6 +1310,10 @@ textarea:focus-visible {
   overflow-wrap: anywhere;
   margin: 0;
   color: #202426;
+}
+
+.settings-about-intro + .metadata-list {
+  padding-top: 0;
 }
 
 .page-list button {

@@ -61,6 +61,8 @@ import {
   type StickerPackResponse,
   stickerPackListResponseSchema,
   stickerPackResponseSchema,
+  type SystemInfoResponse,
+  systemInfoResponseSchema,
 } from "@zakka/api-contract";
 
 export class ApiClientError extends Error {
@@ -127,6 +129,9 @@ export type ApiClient = ReturnType<typeof createApiClient>;
 export const createApiClient = (baseUrl = defaultBaseUrl) => ({
   getHealth: (): Promise<HealthResponse> =>
     requestJson(baseUrl, healthResponseSchema, "/api/v1/health"),
+
+  getSystemInfo: (): Promise<SystemInfoResponse> =>
+    requestJson(baseUrl, systemInfoResponseSchema, "/api/v1/system/info"),
 
   listServerLogs: (level: ServerLogLevel, limit = 200): Promise<ServerLogListResponse> =>
     requestJson(
