@@ -13,7 +13,8 @@
       "types": "./dist/stickers.d.ts",
       "import": "./dist/stickers.js",
       "default": "./dist/stickers.js"
-    }
+    },
+    "./font-licenses.txt": "./dist/font-licenses.txt"
   },
   "types": "./dist/index.d.ts",
   "scripts": {

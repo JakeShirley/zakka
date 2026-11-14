@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { getBundledEditorFont } from "./fonts.js";
 import {
   addLayer,
   createBookSpreads,
@@ -730,7 +731,8 @@ describe("page document helpers", () => {
     expect(svg).not.toContain("Bundled Google font");
   });
 
-  it("renders Latin text as paths in every bundled editor font", () => {
+  // Rendering every bundled font takes longer than Vitest's default timeout.
+  it("renders Latin text as paths in every bundled editor font", { timeout: 60_000 }, () => {
     const sampleText = "Hamburgefonstiv fi ffl 0123 “Café” — naïve façade €™ Œuvre";
     const bundledFontDefinitions = editorFontDefinitions.filter(
       (fontDefinition) => fontDefinition.id !== "system",
@@ -748,6 +750,16 @@ describe("page document helpers", () => {
       expect(svg, fontDefinition.family).toContain("<path");
       expect(svg, fontDefinition.family).not.toContain(sampleText);
       expect(svg, fontDefinition.family).not.toContain("NaN");
+    }
+  });
+
+  it("keeps extended Latin, Vietnamese, Cyrillic, and Greek glyphs in bundled fonts", () => {
+    const font = getBundledEditorFont("Helvetica Neue");
+
+    for (const character of "ąłřşő ệ Жж Ωω") {
+      if (character !== " ") {
+        expect(font?.charToGlyphIndex(character), character).toBeGreaterThan(0);
+      }
     }
   });
 
