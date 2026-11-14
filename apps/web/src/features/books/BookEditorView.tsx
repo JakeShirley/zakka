@@ -18,6 +18,8 @@ import {
   deleteLayer,
   type PageDocument,
   type PageLayer,
+  type PageResizeAnchor,
+  type PageResizeMode,
   reorderLayer,
   resizePageDocument,
   type StickerDefinition,
@@ -217,6 +219,8 @@ export function BookEditorView() {
   const [bookTitleDraft, setBookTitleDraft] = useState("");
   const [bookPageSizeDraft, setBookPageSizeDraft] = useState<string>(defaultBookPageSize.key);
   const [coverSpreadEnabledDraft, setCoverSpreadEnabledDraft] = useState(true);
+  const [pageResizeMode, setPageResizeMode] = useState<PageResizeMode>("fit");
+  const [pageResizeAnchor, setPageResizeAnchor] = useState<PageResizeAnchor>("center");
   const [pageDetails, setPageDetails] = useState<Map<string, PageDetail>>(new Map());
   const [pageStatuses, setPageStatuses] = useState<Record<string, EditorSaveStatus>>({});
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -1358,6 +1362,22 @@ export function BookEditorView() {
         nextPageSize &&
           (book.pageWidth !== nextPageSize.width || book.pageHeight !== nextPageSize.height),
       );
+      const resizedPages =
+        pageSizeChanged && nextPageSize
+          ? orderedPageIds
+              .map((pageId) => pageDetails.get(pageId))
+              .filter((page): page is PageDetail => Boolean(page))
+              .map((page) =>
+                replacePageDocument(
+                  page,
+                  resizePageDocument(
+                    page.document,
+                    { width: nextPageSize.width, height: nextPageSize.height },
+                    { anchor: pageResizeAnchor, mode: pageResizeMode },
+                  ),
+                ),
+              )
+          : [];
       const updatedBook = await apiClient.updateBook(book.id, {
         title: bookTitleDraft,
         coverSpreadEnabled: coverSpreadEnabledDraft,
@@ -1366,20 +1386,7 @@ export function BookEditorView() {
           : { pageWidth: pageSize.width, pageHeight: pageSize.height }),
       });
 
-      if (pageSizeChanged && nextPageSize) {
-        const resizedPages = orderedPageIds
-          .map((pageId) => pageDetails.get(pageId))
-          .filter((page): page is PageDetail => Boolean(page))
-          .map((page) =>
-            replacePageDocument(
-              page,
-              resizePageDocument(page.document, {
-                width: nextPageSize.width,
-                height: nextPageSize.height,
-              }),
-            ),
-          );
-
+      if (resizedPages.length > 0) {
         setPageDetails((currentDetails) => {
           const nextDetails = new Map(currentDetails);
 
@@ -1836,11 +1843,15 @@ export function BookEditorView() {
           book={book}
           closeDisabled={isWorking}
           coverSpreadEnabledDraft={coverSpreadEnabledDraft}
+          pageResizeAnchor={pageResizeAnchor}
+          pageResizeMode={pageResizeMode}
           pageSizeDraft={bookPageSizeDraft}
           titleDraft={bookTitleDraft}
           onClose={() => setIsBookSettingsOpen(false)}
           onCoverSpreadEnabledDraftChange={setCoverSpreadEnabledDraft}
           onDeleteRequest={requestDeleteBook}
+          onPageResizeAnchorChange={setPageResizeAnchor}
+          onPageResizeModeChange={setPageResizeMode}
           onPageSizeDraftChange={setBookPageSizeDraft}
           onSubmit={renameBook}
           onTitleDraftChange={setBookTitleDraft}

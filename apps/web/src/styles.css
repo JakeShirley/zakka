@@ -1775,6 +1775,101 @@ textarea:focus-visible {
   gap: 8px;
 }
 
+.page-resize-content {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--sb-neutral-stroke);
+  border-radius: 8px;
+  padding: 10px 12px 12px;
+}
+
+.page-resize-content legend {
+  padding: 0 4px;
+  color: var(--sb-neutral-foreground-2);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.page-resize-content-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px;
+  gap: 14px;
+  align-items: center;
+}
+
+.page-resize-content-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.page-resize-anchor-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.page-resize-anchor-field legend {
+  margin-bottom: 5px;
+  padding: 0;
+  color: var(--sb-neutral-foreground-2);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.page-resize-anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 28px);
+  grid-auto-rows: 28px;
+  gap: 2px;
+}
+
+.page-resize-anchor-cell {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--sb-neutral-stroke);
+  border-radius: 4px;
+  padding: 0;
+  color: var(--sb-neutral-foreground-2);
+  background: var(--sb-neutral-background);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.page-resize-anchor-cell:hover:not(:disabled) {
+  border-color: var(--sb-neutral-foreground-3);
+}
+
+.page-resize-anchor-cell[aria-pressed="true"] {
+  border-color: var(--sb-brand-foreground);
+  background: var(--sb-brand-foreground);
+}
+
+.page-resize-anchor-cell:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.page-resize-preview {
+  width: 132px;
+  height: 132px;
+  overflow: visible;
+}
+
+.page-resize-preview-page {
+  fill: var(--sb-neutral-background);
+  stroke: var(--sb-neutral-foreground-3);
+}
+
+.page-resize-preview-content {
+  fill: var(--sb-brand-foreground);
+  fill-opacity: 0.18;
+  stroke: var(--sb-brand-foreground);
+}
+
 .book-settings-danger {
   display: grid;
   gap: 10px;

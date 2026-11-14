@@ -762,6 +762,24 @@ const scenarios: ScreenshotScenario[] = [
     waitFor: waitForBookEditor,
   },
   {
+    name: "book-settings-resize-content",
+    path: "/books/book_summer",
+    prepare: async (page) => {
+      await page.getByRole("button", { name: "Edit book settings" }).click();
+      const dialog = page.getByRole("dialog", { name: "Book settings" });
+      await expect(dialog).toBeVisible();
+      await dialog.locator(".book-size-select").selectOption("11x8_5-landscape");
+
+      const anchor = dialog.getByRole("button", { name: "Bottom right" });
+      if (!(await isVisible(anchor))) return;
+
+      await dialog.getByRole("combobox", { name: "Content sizing" }).selectOption("keep");
+      await anchor.click();
+    },
+    viewports: ["desktop"],
+    waitFor: waitForBookEditor,
+  },
+  {
     name: "book-editor-arrange",
     path: "/books/book_summer",
     prepare: async (page) => {

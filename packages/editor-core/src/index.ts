@@ -2799,14 +2799,86 @@ export const getTextLayerRenderedBounds = (
   };
 };
 
+export const pageResizeAnchors = [
+  "top-left",
+  "top",
+  "top-right",
+  "left",
+  "center",
+  "right",
+  "bottom-left",
+  "bottom",
+  "bottom-right",
+] as const;
+
+export type PageResizeAnchor = (typeof pageResizeAnchors)[number];
+
+/**
+ * How existing content is sized when the page canvas changes: `keep` leaves it at its original
+ * size, `fit` scales it uniformly to fit inside the new page, `fill` scales it uniformly to cover
+ * the new page, and `stretch` scales each axis independently to match the new page.
+ */
+export const pageResizeModes = ["keep", "fit", "fill", "stretch"] as const;
+
+export type PageResizeMode = (typeof pageResizeModes)[number];
+
+export type PageResizeOptions = {
+  anchor?: PageResizeAnchor;
+  mode?: PageResizeMode;
+};
+
+type PageSize = Pick<PageDocument["canvas"], "height" | "width">;
+
+const pageResizeAnchorFactors = (anchor: PageResizeAnchor): { x: number; y: number } => ({
+  x: anchor.endsWith("left") ? 0 : anchor.endsWith("right") ? 1 : 0.5,
+  y: anchor.startsWith("top") ? 0 : anchor.startsWith("bottom") ? 1 : 0.5,
+});
+
+/**
+ * Returns where the original page's content area lands on the resized page, plus the per-axis
+ * scale applied to it.
+ */
+export const getPageResizeContentRect = (
+  from: PageSize,
+  to: PageSize,
+  { anchor = "center", mode = "stretch" }: PageResizeOptions = {},
+): { x: number; y: number; width: number; height: number; scaleX: number; scaleY: number } => {
+  const ratioX = to.width / from.width;
+  const ratioY = to.height / from.height;
+  const uniformScale =
+    mode === "fit" ? Math.min(ratioX, ratioY) : mode === "fill" ? Math.max(ratioX, ratioY) : 1;
+  const scaleX = mode === "stretch" ? ratioX : uniformScale;
+  const scaleY = mode === "stretch" ? ratioY : uniformScale;
+  const width = from.width * scaleX;
+  const height = from.height * scaleY;
+  const factors = pageResizeAnchorFactors(anchor);
+
+  return {
+    x: (to.width - width) * factors.x,
+    y: (to.height - height) * factors.y,
+    width,
+    height,
+    scaleX,
+    scaleY,
+  };
+};
+
 export const resizePageDocument = (
   document: PageDocument,
-  canvas: Pick<PageDocument["canvas"], "height" | "width">,
+  canvas: PageSize,
+  options: PageResizeOptions = {},
 ): PageDocument => {
   const parsedDocument = parseDocument(document);
-  const scaleX = canvas.width / parsedDocument.canvas.width;
-  const scaleY = canvas.height / parsedDocument.canvas.height;
+  const {
+    x: offsetX,
+    y: offsetY,
+    scaleX,
+    scaleY,
+  } = getPageResizeContentRect(parsedDocument.canvas, canvas, options);
   const textScale = Math.min(scaleX, scaleY);
+  // Scaled effect values are clamped to their schema bounds so large resizes cannot throw.
+  const scaleWithin = (value: number, scale: number, min: number, max: number) =>
+    Math.min(max, Math.max(min, value * scale));
 
   return parseDocument({
     ...parsedDocument,
@@ -2814,30 +2886,30 @@ export const resizePageDocument = (
     layers: parsedDocument.layers.map((layer) =>
       pageLayerSchema.parse({
         ...layer,
-        x: layer.x * scaleX,
-        y: layer.y * scaleY,
+        x: layer.x * scaleX + offsetX,
+        y: layer.y * scaleY + offsetY,
         width: layer.width * scaleX,
         height: layer.height * scaleY,
         ...(layer.kind === "text"
           ? {
-              fontSize: layer.fontSize * textScale,
-              stroke: { ...layer.stroke, width: layer.stroke.width * textScale },
+              fontSize: scaleWithin(layer.fontSize, textScale, 6, 240),
+              stroke: { ...layer.stroke, width: scaleWithin(layer.stroke.width, textScale, 0, 80) },
               shadow: {
                 ...layer.shadow,
-                offsetX: layer.shadow.offsetX * scaleX,
-                offsetY: layer.shadow.offsetY * scaleY,
-                blur: layer.shadow.blur * textScale,
+                offsetX: scaleWithin(layer.shadow.offsetX, scaleX, -240, 240),
+                offsetY: scaleWithin(layer.shadow.offsetY, scaleY, -240, 240),
+                blur: scaleWithin(layer.shadow.blur, textScale, 0, 160),
               },
-              glow: { ...layer.glow, blur: layer.glow.blur * textScale },
+              glow: { ...layer.glow, blur: scaleWithin(layer.glow.blur, textScale, 0, 160) },
               background: {
                 ...layer.background,
-                padding: layer.background.padding * textScale,
-                radius: layer.background.radius * textScale,
+                padding: scaleWithin(layer.background.padding, textScale, 0, 120),
+                radius: scaleWithin(layer.background.radius, textScale, 0, 160),
               },
               bubble: {
                 ...layer.bubble,
-                padding: layer.bubble.padding * textScale,
-                spacing: layer.bubble.spacing * textScale,
+                padding: scaleWithin(layer.bubble.padding, textScale, 0, 120),
+                spacing: scaleWithin(layer.bubble.spacing, textScale, 0, 120),
               },
             }
           : {}),
@@ -2848,10 +2920,10 @@ export const resizePageDocument = (
           ? {
               shadow: {
                 ...layer.shadow,
-                offsetX: layer.shadow.offsetX * scaleX,
-                offsetY: layer.shadow.offsetY * scaleY,
-                blur: layer.shadow.blur * textScale,
-                spread: layer.shadow.spread * textScale,
+                offsetX: scaleWithin(layer.shadow.offsetX, scaleX, -400, 400),
+                offsetY: scaleWithin(layer.shadow.offsetY, scaleY, -400, 400),
+                blur: scaleWithin(layer.shadow.blur, textScale, 0, 400),
+                spread: scaleWithin(layer.shadow.spread, textScale, -120, 160),
               },
             }
           : {}),
