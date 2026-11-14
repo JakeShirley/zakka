@@ -543,6 +543,16 @@ const bookSummaries = [
   },
 ];
 
+const systemInfo = {
+  arch: "x64",
+  nodeVersion: "v22.12.0",
+  platform: "linux",
+  service: "zakka-api",
+  startedAt: "2026-05-14T12:00:00.000Z",
+  uptimeSeconds: 270_245,
+  version: "0.0.0-development",
+};
+
 const serverLogs = [
   createLog(
     "log_books",
@@ -864,6 +874,26 @@ const scenarios: ScreenshotScenario[] = [
       await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
     },
   },
+  {
+    name: "settings-about",
+    path: "/settings",
+    prepare: async (page) => {
+      const aboutTab = page.getByRole("tab", { name: "About" });
+
+      if (!(await isVisible(aboutTab))) {
+        return;
+      }
+
+      // Freeze time so the live uptime counter renders deterministically.
+      await page.clock.install({ time: new Date("2026-05-17T15:04:05.000Z") });
+      await page.clock.pauseAt(new Date("2026-05-17T15:04:05.000Z"));
+      await aboutTab.click();
+      await expect(page.getByText(systemInfo.nodeVersion, { exact: false })).toBeVisible();
+    },
+    waitFor: async (page) => {
+      await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    },
+  },
 ];
 
 async function waitForBookEditor(page: Page) {
@@ -1115,6 +1145,11 @@ async function installMockApi(page: Page, authenticated: boolean) {
       const level = url.searchParams.get("level") ?? "info";
 
       await route.fulfill({ json: { level, logs: serverLogs } });
+      return;
+    }
+
+    if (pathName === "/api/v1/system/info") {
+      await route.fulfill({ json: systemInfo });
       return;
     }
 
