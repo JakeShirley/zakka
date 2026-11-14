@@ -33,6 +33,48 @@ const editHistoryCoalesceWindowMs = 700;
 
 export const coalesceEdits = (coalesceToken: string): EditHistoryCoalesce => ({ coalesceToken });
 
+/**
+ * Identifies a continuous edit to a single map marker field (e.g. typing a label), so runs of it can
+ * coalesce. Returns null for discrete changes (adding, removing, or reordering places) and for edits
+ * touching several markers or fields, which must stay separate undo steps.
+ */
+export const getMapMarkerEditKey = <Marker extends { id: string }>(
+  previousMarkers: readonly Marker[],
+  nextMarkers: readonly Marker[],
+): string | null => {
+  if (previousMarkers.length !== nextMarkers.length) {
+    return null;
+  }
+
+  let editKey: string | null = null;
+
+  for (const [index, previousMarker] of previousMarkers.entries()) {
+    const nextMarker = nextMarkers[index];
+
+    if (!nextMarker || nextMarker.id !== previousMarker.id) {
+      return null;
+    }
+
+    const previousFields = previousMarker as Record<string, unknown>;
+    const nextFields = nextMarker as Record<string, unknown>;
+    const changedFields = [
+      ...new Set([...Object.keys(previousFields), ...Object.keys(nextFields)]),
+    ].filter((field) => previousFields[field] !== nextFields[field]);
+
+    if (changedFields.length === 0) {
+      continue;
+    }
+
+    if (editKey !== null || changedFields.length !== 1) {
+      return null;
+    }
+
+    editKey = `${previousMarker.id}.${changedFields[0]}`;
+  }
+
+  return editKey;
+};
+
 const createEmptyHistory = <Entry>(): BookEditorHistoryState<Entry> => ({
   redoStack: [],
   undoStack: [],

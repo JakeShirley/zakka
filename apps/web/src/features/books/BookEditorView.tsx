@@ -75,6 +75,7 @@ import {
   coalesceEdits,
   type EditHistoryMode,
   getChangedPageIds,
+  getMapMarkerEditKey,
   useBookEditorHistory,
 } from "./bookEditorHistory";
 import type {
@@ -172,6 +173,7 @@ const hasNativeUndoStack = (target: EventTarget | null): boolean => {
 const getLayerEditHistoryMode = (
   pageId: string,
   layerId: string,
+  previousLayer: PageLayer | undefined,
   update: Partial<PageLayer>,
   historyMode: EditHistoryMode,
 ): EditHistoryMode => {
@@ -188,7 +190,24 @@ const getLayerEditHistoryMode = (
     return historyMode;
   }
 
-  return coalesceEdits(`layer:${pageId}:${layerId}:${[...updateKeys].sort().join(",")}`);
+  let tokenSuffix = "";
+
+  if ("markers" in update) {
+    const markerEditKey =
+      previousLayer?.kind === "map" && Array.isArray(update.markers)
+        ? getMapMarkerEditKey(previousLayer.markers, update.markers)
+        : null;
+
+    if (markerEditKey === null) {
+      return historyMode;
+    }
+
+    tokenSuffix = `:${markerEditKey}`;
+  }
+
+  return coalesceEdits(
+    `layer:${pageId}:${layerId}:${[...updateKeys].sort().join(",")}${tokenSuffix}`,
+  );
 };
 
 export function BookEditorView() {
@@ -877,7 +896,13 @@ export function BookEditorView() {
       return;
     }
 
-    const editHistoryMode = getLayerEditHistoryMode(pageId, layerId, update, historyMode);
+    const editHistoryMode = getLayerEditHistoryMode(
+      pageId,
+      layerId,
+      page.document.layers.find((layer) => layer.id === layerId),
+      update,
+      historyMode,
+    );
     const nextDocument = updateLayer(page.document, layerId, update);
     const nextLayer = nextDocument.layers.find((layer) => layer.id === layerId);
 
