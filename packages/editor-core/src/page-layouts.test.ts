@@ -5,6 +5,7 @@ import {
   createPhotoLayer,
   createStickerLayer,
   createTextLayer,
+  maxPageLayerCount,
   type PhotoLayer,
   renderPageDocumentSvg,
   type TextLayer,
@@ -16,6 +17,7 @@ import {
   getPageLayoutCategories,
   getPageLayoutFit,
   type PageLayout,
+  PageLayoutLayerLimitError,
   zakkaPageLayouts,
 } from "./page-layouts.js";
 import { shutterflyPageLayouts } from "./page-layouts-shutterfly.js";
@@ -128,6 +130,54 @@ describe("page layouts", () => {
     expect(photo).toMatchObject({ x: 0, y: 0, width: 1000, height: 700 });
     expect(title.text).toBe("");
     expect(title.fontSize).toBeGreaterThan(body.fontSize);
+  });
+
+  it("stacks arranged layers in the layout's slot order", () => {
+    const textUnderPhotos = layout([
+      { kind: "photo", x: 0.05, y: 0.05, width: 0.5, height: 0.5, rotation: 0 },
+      {
+        kind: "text",
+        x: 0.3,
+        y: 0.3,
+        width: 0.5,
+        height: 0.2,
+        rotation: 0,
+        role: "body",
+        align: "left",
+      },
+      { kind: "photo", x: 0.45, y: 0.45, width: 0.5, height: 0.5, rotation: 0 },
+    ]);
+    const sticker = createStickerLayer({ id: "sticker" });
+    const photo = createPhotoLayer({ id: "photo", assetId: "a1", width: 500, height: 500 });
+
+    const empty = applyPageLayout(createPageDocument({ canvas }), textUnderPhotos);
+    const filled = applyPageLayout(
+      createPageDocument({ canvas, layers: [sticker, photo] }),
+      textUnderPhotos,
+    );
+
+    expect(empty.document.layers.map((layer) => layer.kind)).toEqual(["photo", "text", "photo"]);
+    expect(filled.document.layers.map((layer) => layer.kind)).toEqual([
+      "sticker",
+      "photo",
+      "text",
+      "photo",
+    ]);
+  });
+
+  it("refuses a layout that would exceed the page layer limit", () => {
+    const hero = zakkaPageLayouts.find((entry) => entry.id === "zakka:hero-title");
+    if (!hero) throw new Error("missing hero layout");
+    const stickers = Array.from({ length: maxPageLayerCount - 2 }, (_, index) =>
+      createStickerLayer({ id: `sticker-${index}` }),
+    );
+
+    expect(() =>
+      applyPageLayout(createPageDocument({ canvas, layers: stickers }), hero),
+    ).toThrowError(expect.objectContaining({ excessLayerCount: 1 }));
+    expect(() =>
+      applyPageLayout(createPageDocument({ canvas, layers: stickers }), hero),
+    ).toThrowError(PageLayoutLayerLimitError);
   });
 
   it("puts photos into the slots that best match their shape", () => {

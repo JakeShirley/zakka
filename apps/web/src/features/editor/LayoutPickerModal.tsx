@@ -6,6 +6,7 @@ import {
   filterPageLayoutsForCanvas,
   getPageLayoutCategories,
   getPageLayoutFit,
+  PageLayoutLayerLimitError,
   type PageLayout,
   type PageLayoutCategory,
   type PageLayoutPhotoSlot,
@@ -272,8 +273,23 @@ export function LayoutPickerModal({
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [photoFilter, setPhotoFilter] = useState<PhotoFilter>("any");
   const [pendingLayout, setPendingLayout] = useState<PageLayout | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
   const { canvas } = document;
   const filterKey = `${categoryFilter}:${photoFilter}`;
+
+  // Editors close the picker before applying, so catch layouts that cannot fit here.
+  const applyLayout = (layout: PageLayout) => {
+    setPendingLayout(null);
+    try {
+      applyPageLayout(document, layout);
+    } catch (error) {
+      if (!(error instanceof PageLayoutLayerLimitError)) throw error;
+      setApplyError(error.message);
+      return;
+    }
+    setApplyError(null);
+    onApply(layout);
+  };
 
   useEffect(() => {
     let isCancelled = false;
@@ -407,13 +423,18 @@ export function LayoutPickerModal({
                 . Applying it removes{" "}
                 {pluralize(extraPhotoCounts.get(pendingLayout.id) ?? 0, "photo")} from this page.
               </span>
-              <Button type="button" appearance="primary" onClick={() => onApply(pendingLayout)}>
+              <Button type="button" appearance="primary" onClick={() => applyLayout(pendingLayout)}>
                 Apply and remove photos
               </Button>
               <Button type="button" onClick={() => setPendingLayout(null)}>
                 Cancel
               </Button>
             </div>
+          ) : null}
+          {applyError ? (
+            <p className="empty-state" role="alert">
+              {applyError}
+            </p>
           ) : null}
           {loadError ? (
             <p className="empty-state" role="alert">
@@ -425,7 +446,7 @@ export function LayoutPickerModal({
               Fits this page <span>{fitting.length}</span>
             </h3>
             {fitting.length > 0 ? (
-              <LayoutGrid key={filterKey} canvas={canvas} layouts={fitting} onApply={onApply} />
+              <LayoutGrid key={filterKey} canvas={canvas} layouts={fitting} onApply={applyLayout} />
             ) : (
               <p className="empty-state">
                 {shutterflyLayouts || loadError
@@ -448,7 +469,7 @@ export function LayoutPickerModal({
                 canvas={canvas}
                 extraPhotoCounts={extraPhotoCounts}
                 layouts={other}
-                onApply={confirmPhotoRemoval ? setPendingLayout : onApply}
+                onApply={confirmPhotoRemoval ? setPendingLayout : applyLayout}
               />
             </section>
           ) : null}

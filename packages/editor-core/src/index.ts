@@ -633,6 +633,8 @@ export const pageBackgroundSchema = z.object({
   rotation: z.number().finite().min(-180).max(180).transform(roundToNearestTenth).default(0),
 });
 
+export const maxPageLayerCount = 200;
+
 export const pageDocumentSchema = z.object({
   version: z.literal(1),
   canvas: z.object({
@@ -641,7 +643,7 @@ export const pageDocumentSchema = z.object({
     backgroundColor: colorSchema,
     background: pageBackgroundSchema.optional(),
   }),
-  layers: z.array(pageLayerSchema).max(200),
+  layers: z.array(pageLayerSchema).max(maxPageLayerCount),
 });
 
 export type PageBackground = z.infer<typeof pageBackgroundSchema>;

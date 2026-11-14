@@ -2,7 +2,9 @@ import { FluentProvider, webLightTheme } from "@fluentui/react-components";
 import {
   createPageDocument,
   createPhotoLayer,
+  createStickerLayer,
   createTextLayer,
+  maxPageLayerCount,
   type PageDocument,
 } from "@zakka/editor-core";
 import type { PageLayout } from "@zakka/editor-core/page-layouts";
@@ -123,6 +125,24 @@ describe("LayoutPickerModal", () => {
     await page.getByRole("button", { name: "Apply and remove photos" }).click();
     expect(onApply).toHaveBeenCalledTimes(1);
     expect(applied[0]?.layers.filter((layer) => layer.kind === "photo")).toHaveLength(1);
+  });
+
+  test("keeps the picker open when a layout would exceed the page layer limit", async () => {
+    const stickers = Array.from({ length: maxPageLayerCount - 2 }, (_, index) =>
+      createStickerLayer({ id: `sticker-${index}` }),
+    );
+    const { onApply } = await renderModal(createPageDocument({ canvas, layers: stickers }));
+    await page.getByRole("tab", { name: "Titled" }).click();
+
+    await page.getByRole("button", { name: /^Apply Hero with title layout/ }).click();
+
+    expect(onApply).not.toHaveBeenCalled();
+    await expect
+      .element(page.getByRole("alert"))
+      .toHaveTextContent(/Hero with title needs 1 more layer than a page can hold/);
+    await expect
+      .element(page.getByRole("button", { name: /^Apply Hero with title layout/ }))
+      .toBeVisible();
   });
 
   test("filters imported and Zakka layouts by category", async () => {

@@ -3,6 +3,7 @@ import {
   createTextLayer,
   fillPhotoLayerUpdate,
   isTextPlaceholder,
+  maxPageLayerCount,
   type PageDocument,
   type PageLayer,
   type PhotoLayer,
@@ -529,6 +530,22 @@ export type ApplyPageLayoutResult = {
 
 const clampFontSize = (size: number) => Math.max(6, Math.min(240, Math.round(size)));
 
+/** Thrown when a layout's placeholders would push the page past its layer limit. */
+export class PageLayoutLayerLimitError extends Error {
+  constructor(
+    readonly layout: PageLayout,
+    /** How many layers need to be removed from the page before the layout fits. */
+    readonly excessLayerCount: number,
+  ) {
+    super(
+      `${layout.name} needs ${excessLayerCount} more layer${
+        excessLayerCount === 1 ? "" : "s"
+      } than a page can hold. Remove some stickers or other items and try again.`,
+    );
+    this.name = "PageLayoutLayerLimitError";
+  }
+}
+
 /**
  * Rearranges a page into a layout. Existing photos move into the photo slots that best match
  * their shape, text moves into text slots, and any unfilled slots become placeholders. Stickers,
@@ -662,8 +679,8 @@ export const applyPageLayout = (
     } satisfies TextLayer;
   });
 
-  // Rebuild the stack: photos take the place of the first photo they replace (or the bottom of the
-  // page), text takes the place of the first text it replaces (or the top of the page).
+  // Rebuild the stack in the layout's slot order (bottom first). The arranged layers take the
+  // place of the lowest layer they replace, or the bottom of a page with nothing to replace.
   const replacedIds = new Set<string>([
     ...eligible.filter((layer) => layer.kind === "photo").map((layer) => layer.id),
     ...filledTexts.filter((layer) => [...textBySlot.values()].includes(layer)).map((l) => l.id),
@@ -671,24 +688,28 @@ export const applyPageLayout = (
       .filter((layer) => layer.kind === "text" && isTextPlaceholder(layer))
       .map((l) => l.id),
   ]);
+  let nextPhoto = 0;
+  let nextText = 0;
+  const arranged = layout.slots.flatMap((slot): PageLayer[] => {
+    const layer = slot.kind === "photo" ? arrangedPhotos[nextPhoto++] : arrangedTexts[nextText++];
+    return layer ? [layer] : [];
+  });
   const layers: PageLayer[] = [];
-  let photosPlaced = false;
-  let textsPlaced = false;
+  let arrangedPlaced = false;
   for (const layer of document.layers) {
     if (replacedIds.has(layer.id)) {
-      if (layer.kind === "photo" && !photosPlaced) {
-        layers.push(...arrangedPhotos);
-        photosPlaced = true;
-      } else if (layer.kind === "text" && !textsPlaced) {
-        layers.push(...arrangedTexts);
-        textsPlaced = true;
+      if (!arrangedPlaced) {
+        layers.push(...arranged);
+        arrangedPlaced = true;
       }
       continue;
     }
     layers.push(layer);
   }
-  if (!photosPlaced) layers.unshift(...arrangedPhotos);
-  if (!textsPlaced) layers.push(...arrangedTexts);
+  if (!arrangedPlaced) layers.unshift(...arranged);
+  if (layers.length > maxPageLayerCount) {
+    throw new PageLayoutLayerLimitError(layout, layers.length - maxPageLayerCount);
+  }
 
   return {
     document: pageDocumentSchema.parse({ ...document, layers }),
