@@ -165,7 +165,7 @@ function ProtectedShell({
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(getInitialSidebarCollapsed);
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
-  const { syncPreference } = useTheme();
+  const { syncPreference, endAccountSession } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const editorLayout = /^\/books\/[^/]+\/?$/.test(location.pathname) ? "book" : undefined;
@@ -174,7 +174,9 @@ function ProtectedShell({
     syncPreference(async () => (await apiClient.getAccountPreferences()).uiTheme).catch(() => {
       // Keep the device-cached theme when account preferences cannot be loaded.
     });
-  }, [syncPreference]);
+
+    return endAccountSession;
+  }, [syncPreference, endAccountSession]);
 
   const toggleSidebar = () => {
     setIsSidebarCollapsed((currentValue) => {

@@ -21,7 +21,7 @@ import {
   type UiThemePreference,
 } from "./themes";
 
-type ThemeContextValue = {
+export type ThemeContextValue = {
   preference: UiThemePreference;
   themeId: UiThemeId;
   /**
@@ -36,6 +36,11 @@ type ThemeContextValue = {
    * different theme while the request was in flight.
    */
   syncPreference: (load: () => Promise<UiThemePreference>) => Promise<void>;
+  /**
+   * Forgets the signed-in account's server state, ignoring in-flight loads and
+   * dropping queued saves so they never apply to a different account.
+   */
+  endAccountSession: () => void;
 };
 
 const saveUiThemePreference = async (uiTheme: UiThemePreference) => {
@@ -74,9 +79,12 @@ export function ThemeProvider({
   const themeId = resolveUiTheme(preference, prefersDark);
   const theme = getUiTheme(themeId);
   const versionRef = useRef(0);
+  const sessionRef = useRef(0);
   const currentRef = useRef(preference);
   // Last preference the server is known to hold; null until loaded or first saved.
   const confirmedRef = useRef<UiThemePreference | null>(null);
+  // Preference restored when a save fails: the confirmed value, or the device cache before then.
+  const rollbackRef = useRef(preference);
   const pendingSaveRef = useRef<Promise<void> | null>(null);
 
   useLayoutEffect(() => {
@@ -92,16 +100,22 @@ export function ThemeProvider({
   }, []);
 
   const flushSaves = useCallback(async () => {
-    while (currentRef.current !== confirmedRef.current) {
+    const session = sessionRef.current;
+
+    while (sessionRef.current === session && currentRef.current !== confirmedRef.current) {
       const target = currentRef.current;
 
       try {
         await saveUiThemePreference(target);
-        confirmedRef.current = target;
+
+        if (sessionRef.current === session) {
+          confirmedRef.current = target;
+          rollbackRef.current = target;
+        }
       } catch (error: unknown) {
         // A newer choice made during the failed request gets its own attempt.
-        if (currentRef.current === target) {
-          applyPreference(confirmedRef.current ?? target);
+        if (sessionRef.current === session && currentRef.current === target) {
+          applyPreference(rollbackRef.current);
           throw error;
         }
       }
@@ -110,13 +124,17 @@ export function ThemeProvider({
 
   const choosePreference = useCallback(
     (next: UiThemePreference) => {
-      confirmedRef.current ??= currentRef.current;
       versionRef.current += 1;
       applyPreference(next);
 
-      pendingSaveRef.current ??= flushSaves().finally(() => {
-        pendingSaveRef.current = null;
-      });
+      if (!pendingSaveRef.current) {
+        const pending = flushSaves().finally(() => {
+          if (pendingSaveRef.current === pending) {
+            pendingSaveRef.current = null;
+          }
+        });
+        pendingSaveRef.current = pending;
+      }
 
       return pendingSaveRef.current;
     },
@@ -130,15 +148,24 @@ export function ThemeProvider({
 
       if (versionRef.current === version && !pendingSaveRef.current) {
         confirmedRef.current = remote;
+        rollbackRef.current = remote;
         applyPreference(remote);
       }
     },
     [applyPreference],
   );
 
+  const endAccountSession = useCallback(() => {
+    sessionRef.current += 1;
+    versionRef.current += 1;
+    confirmedRef.current = null;
+    rollbackRef.current = currentRef.current;
+    pendingSaveRef.current = null;
+  }, []);
+
   const value = useMemo(
-    () => ({ preference, themeId, choosePreference, syncPreference }),
-    [preference, themeId, choosePreference, syncPreference],
+    () => ({ preference, themeId, choosePreference, syncPreference, endAccountSession }),
+    [preference, themeId, choosePreference, syncPreference, endAccountSession],
   );
 
   return (
