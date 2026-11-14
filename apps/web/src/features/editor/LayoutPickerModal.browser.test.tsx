@@ -53,7 +53,7 @@ const renderModal = async (document: PageDocument, confirmPhotoRemoval = false) 
 describe("LayoutPickerModal", () => {
   test("applies a fitting layout, moving photos and adding placeholders for empty slots", async () => {
     const { applied } = await renderModal(pageWithPhotos(3));
-    await page.getByLabelText("Source").selectOptions("zakka");
+    await page.getByRole("tab", { name: "Collage" }).click();
 
     const fitting = page.getByRole("region", { name: "Layouts that fit this page" });
     await fitting.getByRole("button", { name: /^Apply Scattered snapshots layout/ }).click();
@@ -97,7 +97,7 @@ describe("LayoutPickerModal", () => {
     const { applied } = await renderModal(createPageDocument({ canvas }));
 
     await expect.element(page.getByText(/This page is empty/)).toBeInTheDocument();
-    await page.getByLabelText("Source").selectOptions("zakka");
+    await page.getByRole("tab", { name: "Titled" }).click();
     await page.getByRole("button", { name: /^Apply Hero with title layout/ }).click();
 
     const kinds = applied[0]?.layers.map((layer) =>
@@ -112,7 +112,7 @@ describe("LayoutPickerModal", () => {
 
   test("asks before applying a layout that removes photos when confirmation is on", async () => {
     const { applied, onApply } = await renderModal(pageWithPhotos(3), true);
-    await page.getByLabelText("Source").selectOptions("zakka");
+    await page.getByRole("tab", { name: "Titled" }).click();
 
     const other = page.getByRole("region", { name: "Other layouts" });
     await other
@@ -125,17 +125,21 @@ describe("LayoutPickerModal", () => {
     expect(applied[0]?.layers.filter((layer) => layer.kind === "photo")).toHaveLength(1);
   });
 
-  test("lists imported Shutterfly layouts for the page orientation", async () => {
+  test("filters imported and Zakka layouts by category", async () => {
     await renderModal(pageWithPhotos(1));
-
-    await page.getByLabelText("Source").selectOptions("shutterfly");
+    const fitting = page.getByRole("region", { name: "Layouts that fit this page" });
     await expect
-      .element(
-        page
-          .getByRole("region", { name: "Layouts that fit this page" })
-          .getByRole("button", { name: /\(Shutterfly\)$/ })
-          .first(),
-      )
+      .element(fitting.getByRole("button", { name: /^Apply Hero with title layout/ }))
       .toBeVisible();
+
+    const photosOnly = page.getByRole("tab", { name: "Photos only" });
+    await photosOnly.click();
+    await expect.element(photosOnly).toHaveAttribute("aria-selected", "true");
+    await expect
+      .element(fitting.getByRole("button", { name: /\(Shutterfly\)$/ }).first())
+      .toBeVisible();
+    await expect
+      .element(fitting.getByRole("button", { name: /^Apply Hero with title layout/ }))
+      .not.toBeInTheDocument();
   });
 });

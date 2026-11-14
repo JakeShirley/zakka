@@ -4,10 +4,13 @@ import {
   applyPageLayout,
   decodePageLayouts,
   filterPageLayoutsForCanvas,
+  getPageLayoutCategories,
   getPageLayoutFit,
   type PageLayout,
+  type PageLayoutCategory,
   type PageLayoutPhotoSlot,
   type PageLayoutSlot,
+  pageLayoutCategories,
   zakkaPageLayouts,
 } from "@zakka/editor-core/page-layouts";
 import { useEffect, useMemo, useState } from "react";
@@ -16,7 +19,7 @@ import { AppModal } from "../../components/layout";
 import { getErrorMessage } from "../../lib/errors";
 import type { Asset } from "../../types";
 
-type SourceFilter = "all" | PageLayout["source"];
+type CategoryFilter = "all" | PageLayoutCategory;
 
 type PhotoFilter = "any" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7-9" | "10+";
 
@@ -266,11 +269,11 @@ export function LayoutPickerModal({
 }) {
   const [shutterflyLayouts, setShutterflyLayouts] = useState<PageLayout[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [photoFilter, setPhotoFilter] = useState<PhotoFilter>("any");
   const [pendingLayout, setPendingLayout] = useState<PageLayout | null>(null);
   const { canvas } = document;
-  const filterKey = `${sourceFilter}:${photoFilter}`;
+  const filterKey = `${categoryFilter}:${photoFilter}`;
 
   useEffect(() => {
     let isCancelled = false;
@@ -286,15 +289,22 @@ export function LayoutPickerModal({
     };
   }, []);
 
-  const { fitting, other, extraPhotoCounts, pageFit } = useMemo(() => {
-    const candidates = filterPageLayoutsForCanvas(
+  const { candidates, categoryCounts } = useMemo(() => {
+    const photoMatches = filterPageLayoutsForCanvas(
       [...zakkaPageLayouts, ...(shutterflyLayouts ?? [])],
       canvas,
-    ).filter(
-      (layout) =>
-        (sourceFilter === "all" || layout.source === sourceFilter) &&
-        matchesPhotoFilter(layout.photoSlotCount, photoFilter),
-    );
+    ).filter((layout) => matchesPhotoFilter(layout.photoSlotCount, photoFilter));
+    const counts = new Map<PageLayoutCategory, number>();
+    const inCategory: PageLayout[] = [];
+    for (const layout of photoMatches) {
+      const categories = getPageLayoutCategories(layout);
+      for (const category of categories) counts.set(category, (counts.get(category) ?? 0) + 1);
+      if (categoryFilter === "all" || categories.has(categoryFilter)) inCategory.push(layout);
+    }
+    return { candidates: inCategory, categoryCounts: counts };
+  }, [canvas, categoryFilter, photoFilter, shutterflyLayouts]);
+
+  const { fitting, other, extraPhotoCounts, pageFit } = useMemo(() => {
     const fits: PageLayout[] = [];
     const doesNotFit: PageLayout[] = [];
     const extras = new Map<string, number>();
@@ -332,7 +342,7 @@ export function LayoutPickerModal({
         right.photoSlotCount - left.photoSlotCount || missingText(left) - missingText(right),
     );
     return { fitting: fits, other: doesNotFit, extraPhotoCounts: extras, pageFit };
-  }, [canvas, document, photoFilter, shutterflyLayouts, sourceFilter]);
+  }, [candidates, document]);
 
   const pageSummary =
     pageFit.photoCount === 0 && pageFit.textCount === 0
@@ -360,18 +370,34 @@ export function LayoutPickerModal({
               ))}
             </select>
           </label>
-          <label className="photo-picker-sort" htmlFor="layout-picker-source">
-            <span>Source</span>
-            <select
-              id="layout-picker-source"
-              value={sourceFilter}
-              onChange={(event) => setSourceFilter(event.currentTarget.value as SourceFilter)}
-            >
-              <option value="all">All layouts</option>
-              <option value="zakka">Zakka originals</option>
-              <option value="shutterfly">Shutterfly</option>
-            </select>
-          </label>
+        </div>
+        <div className="album-chip-bar layout-picker-categories">
+          <div className="album-chip-bar-list" role="tablist" aria-label="Filter by layout style">
+            {[{ id: "all" as const, label: "All layouts" }, ...pageLayoutCategories].map(
+              ({ id, label }) => {
+                const isSelected = categoryFilter === id;
+                const count = id === "all" ? null : (categoryCounts.get(id) ?? 0);
+                return (
+                  <Button
+                    key={id}
+                    type="button"
+                    appearance={isSelected ? "primary" : "subtle"}
+                    className={`album-chip${isSelected ? " album-chip-selected" : ""}`}
+                    role="tab"
+                    aria-selected={isSelected}
+                    onClick={() => setCategoryFilter(id)}
+                  >
+                    <span className="album-chip-label">{label}</span>
+                    {count === null ? null : (
+                      <span className="album-chip-count" aria-hidden="true">
+                        {count}
+                      </span>
+                    )}
+                  </Button>
+                );
+              },
+            )}
+          </div>
         </div>
         <div className="layout-picker-sections">
           {pendingLayout ? (

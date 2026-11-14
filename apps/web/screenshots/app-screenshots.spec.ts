@@ -854,7 +854,7 @@ const scenarios: ScreenshotScenario[] = [
       if (!(await isVisible(layoutButton))) return;
       await layoutButton.click();
       const picker = page.getByRole("dialog", { name: "Page layouts" });
-      await picker.getByLabel("Source").selectOption("zakka");
+      await picker.getByRole("tab", { name: "Collage" }).click();
       await picker.getByRole("button", { name: /^Apply Polaroid pair layout/ }).click();
       await expect(picker).toBeHidden();
     },

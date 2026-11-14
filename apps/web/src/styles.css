@@ -4294,11 +4294,15 @@ textarea:focus-visible {
 }
 
 .layout-picker-modal {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .layout-picker-toolbar {
-  grid-template-columns: minmax(220px, 1fr) auto auto;
+  grid-template-columns: minmax(220px, 1fr) auto;
+}
+
+.layout-picker-categories {
+  padding-top: 0;
 }
 
 .layout-picker-summary {

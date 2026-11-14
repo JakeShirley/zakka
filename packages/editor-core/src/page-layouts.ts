@@ -304,7 +304,75 @@ export const filterPageLayoutsForCanvas = (
   );
 };
 
+export type PageLayoutCategory =
+  | "photos-only"
+  | "titled"
+  | "captions"
+  | "journaling"
+  | "feature"
+  | "grid"
+  | "collage";
+
+/** Picker categories in display order. A layout can belong to several. */
+export const pageLayoutCategories: readonly { id: PageLayoutCategory; label: string }[] = [
+  { id: "photos-only", label: "Photos only" },
+  { id: "titled", label: "Titled" },
+  { id: "captions", label: "Captions" },
+  { id: "journaling", label: "Journaling" },
+  { id: "feature", label: "Feature photo" },
+  { id: "grid", label: "Grid" },
+  { id: "collage", label: "Collage" },
+];
+
 type Box = { x: number; y: number; width: number; height: number };
+
+const slotArea = (slot: Box) => slot.width * slot.height;
+
+const slotsOverlap = (left: Box, right: Box, gap = 0.01) =>
+  left.x < right.x + right.width - gap &&
+  right.x < left.x + left.width - gap &&
+  left.y < right.y + right.height - gap &&
+  right.y < left.y + left.height - gap;
+
+/**
+ * Sorts a layout into picker categories from its slot geometry. Imported layouts rarely mark text
+ * roles, so a wide, short text box counts as a title and a large one as journaling space.
+ */
+export const getPageLayoutCategories = (layout: PageLayout): ReadonlySet<PageLayoutCategory> => {
+  const photos = layout.slots.filter((slot) => slot.kind === "photo");
+  const texts = layout.slots.filter((slot) => slot.kind === "text");
+  const categories = new Set<PageLayoutCategory>();
+
+  const isTitle = (slot: PageLayoutTextSlot) =>
+    slot.role === "title" || (slot.width >= 0.5 && slot.height <= 0.2);
+  if (photos.length > 0 && texts.length === 0) categories.add("photos-only");
+  if (texts.some(isTitle)) categories.add("titled");
+  if (photos.length > 0 && texts.some((slot) => !isTitle(slot))) categories.add("captions");
+  if (texts.length > 0 && (photos.length === 0 || texts.some((slot) => slotArea(slot) >= 0.12))) {
+    categories.add("journaling");
+  }
+
+  const areas = photos.map(slotArea).sort((left, right) => right - left);
+  const [largest = 0, nextLargest = 0] = areas;
+  if (largest >= 0.3 && largest >= nextLargest * 2) categories.add("feature");
+
+  const isStyled = photos.some(
+    (slot) =>
+      Math.abs(slot.rotation) > 0.5 ||
+      (slot.frame !== undefined && slot.frame !== "none") ||
+      (slot.mask !== undefined && slot.mask !== "rectangle"),
+  );
+  const overlaps = photos.some((slot, index) =>
+    photos.slice(index + 1).some((other) => slotsOverlap(slot, other)),
+  );
+  if (isStyled || overlaps) {
+    categories.add("collage");
+  } else if (photos.length > 1 && largest <= (areas.at(-1) ?? 0) * 1.15) {
+    categories.add("grid");
+  }
+
+  return categories;
+};
 
 const rotatedBounds = (layer: PageLayer): Box => {
   const radians = (layer.rotation * Math.PI) / 180;

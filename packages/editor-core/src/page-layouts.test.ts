@@ -13,6 +13,7 @@ import {
   applyPageLayout,
   decodePageLayouts,
   filterPageLayoutsForCanvas,
+  getPageLayoutCategories,
   getPageLayoutFit,
   type PageLayout,
   zakkaPageLayouts,
@@ -60,6 +61,48 @@ describe("page layouts", () => {
         expect(slot.y + slot.height).toBeLessThanOrEqual(1.0001);
       }
     }
+  });
+
+  it("categorizes layouts from slot geometry", () => {
+    const grid = layout([
+      { kind: "photo", x: 0.05, y: 0.05, width: 0.4, height: 0.4, rotation: 0 },
+      { kind: "photo", x: 0.55, y: 0.05, width: 0.4, height: 0.4, rotation: 0 },
+    ]);
+    const titledFeature = layout([
+      { kind: "photo", x: 0.05, y: 0.2, width: 0.9, height: 0.6, rotation: 0 },
+      { kind: "photo", x: 0.05, y: 0.82, width: 0.2, height: 0.15, rotation: 0 },
+      {
+        kind: "text",
+        x: 0.1,
+        y: 0.03,
+        width: 0.8,
+        height: 0.1,
+        rotation: 0,
+        role: "body",
+        align: "center",
+      },
+    ]);
+    const tiltedJournal = layout([
+      { kind: "photo", x: 0.1, y: 0.1, width: 0.3, height: 0.3, rotation: -6 },
+      {
+        kind: "text",
+        x: 0.5,
+        y: 0.1,
+        width: 0.4,
+        height: 0.8,
+        rotation: 0,
+        role: "body",
+        align: "left",
+      },
+    ]);
+
+    expect([...getPageLayoutCategories(grid)].sort()).toEqual(["grid", "photos-only"]);
+    expect([...getPageLayoutCategories(titledFeature)].sort()).toEqual(["feature", "titled"]);
+    expect([...getPageLayoutCategories(tiltedJournal)].sort()).toEqual([
+      "captions",
+      "collage",
+      "journaling",
+    ]);
   });
 
   it("offers layouts that match the page shape plus the shape-agnostic Zakka layouts", () => {

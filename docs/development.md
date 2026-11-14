@@ -143,6 +143,8 @@ Both tile providers have usage policies: the [OpenStreetMap tile usage policy](h
 
 `packages/editor-core/src/page-layouts.ts` defines the layout format, the Zakka layouts, and `applyPageLayout`. Layout slots are fractions of the page, so a layout works on any page size. A layout's orientation (square, portrait, or landscape) limits it to pages of that shape. Zakka layouts work on every page.
 
+The picker filters by category (Photos only, Titled, Captions, Journaling, Feature photo, Grid, Collage). `getPageLayoutCategories` derives them from slot geometry because imported layouts rarely mark text roles. A wide, short text box counts as a title and a large one as journaling space, and a layout can be in several categories.
+
 `src/page-layouts-shutterfly.ts` is generated. It holds Shutterfly's single-page book layouts converted to the compact Zakka format, with duplicate geometries removed. Raw Shutterfly data is not checked in. To regenerate it, set `SHUTTERFLY_API_KEY` (see [Shutterfly import](configuration.md#shutterfly-import)) and run:
 
 ```sh
