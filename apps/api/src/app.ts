@@ -2,7 +2,11 @@ import { createRequire } from "node:module";
 
 import { OpenAPIHono } from "@hono/zod-openapi";
 import {
+  type AccountPreferencesResponse,
   type AccountResponse,
+  accountPreferencesPatchRoute,
+  accountPreferencesResponseSchema,
+  accountPreferencesRoute,
   albumAssetListRoute,
   albumAssetRemoveRoute,
   albumAssetsAddRoute,
@@ -42,6 +46,7 @@ import {
   bookSummaryResponseSchema,
   currentSessionRoute,
   defaultBookPageSize,
+  defaultUiThemePreference,
   type ErrorResponse,
   type ExportJobResponse,
   exportContentRoute,
@@ -50,6 +55,7 @@ import {
   exportJobResponseSchema,
   healthResponseSchema,
   healthRoute,
+  isUiThemePreference,
   loginRoute,
   logoutRoute,
   type PageResponse,
@@ -148,6 +154,7 @@ import type {
   StickerPackWithCountRecord,
 } from "./persistence/repositories.js";
 import type {
+  AccountPreferencesRecord,
   AccountRecord,
   AssetRecord,
   AssetVariantRecord,
@@ -299,6 +306,15 @@ const toAuthSessionResponse = (authSession: AuthenticatedSession): AuthSessionRe
   authSessionResponseSchema.parse({
     account: toAccountResponse(authSession.account),
     session: toSessionResponse(authSession.session),
+  });
+
+const toAccountPreferencesResponse = (
+  preferences: Pick<AccountPreferencesRecord, "uiTheme"> | null,
+): AccountPreferencesResponse =>
+  accountPreferencesResponseSchema.parse({
+    uiTheme: isUiThemePreference(preferences?.uiTheme)
+      ? preferences.uiTheme
+      : defaultUiThemePreference,
   });
 
 const toArrayBuffer = (buffer: Buffer): ArrayBuffer =>
@@ -905,6 +921,56 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     deleteCookie(context, sessionCookieName, { path: "/" });
 
     return context.body(null, 204);
+  });
+
+  app.openapi(accountPreferencesRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "auth_unavailable", "Auth is unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    return context.json(
+      toAccountPreferencesResponse(
+        options.repositories.accountPreferences.findByAccountId(authSession.account.id),
+      ),
+      200,
+    );
+  });
+
+  app.openapi(accountPreferencesPatchRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "auth_unavailable", "Auth is unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const input = context.req.valid("json");
+    const record = options.repositories.accountPreferences.upsert(authSession.account.id, {
+      ...(input.uiTheme ? { uiTheme: input.uiTheme } : {}),
+    });
+
+    return context.json(toAccountPreferencesResponse(record), 200);
   });
 
   app.openapi(assetUploadRoute, async (context) => {

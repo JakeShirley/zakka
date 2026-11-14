@@ -6,6 +6,7 @@ import type { AppDatabase } from "./database.js";
 import { createEntityId, createInternalId } from "./ids.js";
 import { createMemoryPageDocumentStore, type PageDocumentStore } from "./page-documents.js";
 import {
+  type AccountPreferencesRecord,
   type AccountRecord,
   type AlbumAssetRecord,
   type AlbumRecord,
@@ -14,6 +15,7 @@ import {
   type AssetVariantRecord,
   type AuthIdentityProvider,
   type AuthIdentityRecord,
+  accountPreferences,
   accounts,
   albumAssets,
   albums,
@@ -120,6 +122,55 @@ export class AccountRepository {
     return (
       this.db.select().from(accounts).where(eq(accounts.primaryEmail, primaryEmail)).get() ?? null
     );
+  }
+}
+
+export class AccountPreferencesRepository {
+  constructor(
+    private readonly db: AppDatabase,
+    private readonly clock: RepositoryClock = defaultClock,
+  ) {}
+
+  findByAccountId(accountId: string): AccountPreferencesRecord | null {
+    return (
+      this.db
+        .select()
+        .from(accountPreferences)
+        .where(eq(accountPreferences.accountId, accountId))
+        .get() ?? null
+    );
+  }
+
+  upsert(accountId: string, input: { uiTheme?: string }): AccountPreferencesRecord {
+    const timestamp = now(this.clock);
+    const existing = this.findByAccountId(accountId);
+
+    if (existing) {
+      const next: AccountPreferencesRecord = {
+        ...existing,
+        uiTheme: input.uiTheme ?? existing.uiTheme,
+        updatedAt: timestamp,
+      };
+
+      this.db
+        .update(accountPreferences)
+        .set({ uiTheme: next.uiTheme, updatedAt: timestamp })
+        .where(eq(accountPreferences.accountId, accountId))
+        .run();
+
+      return next;
+    }
+
+    const record: AccountPreferencesRecord = {
+      accountId,
+      uiTheme: input.uiTheme ?? "system",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    this.db.insert(accountPreferences).values(record).run();
+
+    return record;
   }
 }
 
@@ -1712,6 +1763,7 @@ export const createRepositories = (
 
   return {
     accounts: new AccountRepository(db, clock),
+    accountPreferences: new AccountPreferencesRepository(db, clock),
     authIdentities: new AuthIdentityRepository(db, clock),
     sessions: new SessionRepository(db, clock),
     assets: new AssetRepository(db, clock),

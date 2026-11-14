@@ -9,9 +9,10 @@ import { Panel, WorkspaceHeader } from "../../components/layout";
 import { getErrorMessage } from "../../lib/errors";
 import type { AuthSession } from "../../types";
 import { AboutPanel } from "./AboutPanel";
+import { AppearancePanel } from "./AppearancePanel";
 import { ShutterflyIntegrationPanel } from "./ShutterflyIntegrationPanel";
 
-const settingsTabs = ["account", "integrations", "logs", "about"] as const;
+const settingsTabs = ["account", "appearance", "integrations", "logs", "about"] as const;
 
 type SettingsTab = (typeof settingsTabs)[number];
 
@@ -75,6 +76,7 @@ export function SettingsView({ session }: { session: AuthSession }) {
         onTabSelect={(_, data) => setSelectedTab(data.value as SettingsTab)}
       >
         <Tab value="account">Account</Tab>
+        <Tab value="appearance">Appearance</Tab>
         <Tab value="integrations">Integrations</Tab>
         <Tab value="logs">Logs</Tab>
         <Tab value="about">About</Tab>
@@ -106,6 +108,10 @@ export function SettingsView({ session }: { session: AuthSession }) {
               </div>
             </dl>
           </Panel>
+        </div>
+      ) : selectedTab === "appearance" ? (
+        <div className="settings-grid settings-appearance-grid">
+          <AppearancePanel />
         </div>
       ) : selectedTab === "integrations" ? (
         <div className="settings-grid settings-integrations-grid">

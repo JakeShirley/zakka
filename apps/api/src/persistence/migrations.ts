@@ -310,6 +310,17 @@ CREATE INDEX external_media_links_asset_id_idx ON external_media_links (asset_id
 CREATE INDEX external_media_links_custom_sticker_id_idx ON external_media_links (custom_sticker_id);
 `,
   },
+  {
+    id: "0014_add_account_preferences",
+    sql: `
+CREATE TABLE account_preferences (
+  account_id TEXT PRIMARY KEY NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+  ui_theme TEXT NOT NULL DEFAULT 'system',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`,
+  },
 ];
 
 export const ensureMigrationTable = (sqlite: Database.Database) => {

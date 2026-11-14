@@ -24,6 +24,8 @@ type ScreenshotScenario = {
   name: string;
   path: string;
   prepare?: (page: Page) => Promise<void>;
+  /** UI theme preference returned by the account preferences mock. Defaults to "system". */
+  theme?: "system" | "light" | "dark" | "sakura";
   viewports?: readonly string[];
   waitFor: (page: Page) => Promise<void>;
 };
@@ -875,6 +877,23 @@ const scenarios: ScreenshotScenario[] = [
     },
   },
   {
+    name: "settings-appearance",
+    path: "/settings",
+    prepare: async (page) => {
+      const appearanceTab = page.getByRole("tab", { name: "Appearance" });
+
+      if (!(await isVisible(appearanceTab))) {
+        return;
+      }
+
+      await appearanceTab.click();
+      await expect(page.getByRole("radiogroup", { name: "Theme" })).toBeVisible();
+    },
+    waitFor: async (page) => {
+      await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    },
+  },
+  {
     name: "settings-about",
     path: "/settings",
     prepare: async (page) => {
@@ -893,6 +912,47 @@ const scenarios: ScreenshotScenario[] = [
     waitFor: async (page) => {
       await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
     },
+  },
+  {
+    name: "books-dark",
+    path: "/books",
+    theme: "dark",
+    waitFor: async (page) => {
+      await expect(page.locator(".topbar h2", { hasText: "Books" })).toBeVisible();
+      await expect(page.getByText("Family Yearbook")).toBeVisible();
+    },
+  },
+  {
+    name: "book-editor-dark",
+    path: "/books/book_summer",
+    theme: "dark",
+    viewports: ["desktop"],
+    waitFor: waitForBookEditor,
+  },
+  {
+    name: "settings-appearance-dark",
+    path: "/settings?tab=appearance",
+    theme: "dark",
+    viewports: ["desktop"],
+    waitFor: async (page) => {
+      await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    },
+  },
+  {
+    name: "books-sakura",
+    path: "/books",
+    theme: "sakura",
+    waitFor: async (page) => {
+      await expect(page.locator(".topbar h2", { hasText: "Books" })).toBeVisible();
+      await expect(page.getByText("Family Yearbook")).toBeVisible();
+    },
+  },
+  {
+    name: "book-editor-sakura",
+    path: "/books/book_summer",
+    theme: "sakura",
+    viewports: ["desktop"],
+    waitFor: waitForBookEditor,
   },
 ];
 
@@ -983,9 +1043,16 @@ for (const viewport of viewports) {
 
     test(`${scenario.name} ${viewport.name}`, async ({ page }) => {
       await page.setViewportSize(viewport);
-      await installMockApi(page, scenario.authenticated ?? true);
+      await installMockApi(page, scenario.authenticated ?? true, scenario.theme ?? "system");
       await page.goto(scenario.path);
       await scenario.waitFor(page);
+      if (scenario.theme && scenario.theme !== "system") {
+        // Merge-base builds predate UI themes, so tolerate the attribute never appearing.
+        await page
+          .locator(`html[data-theme="${scenario.theme}"]`)
+          .waitFor({ state: "attached", timeout: 3000 })
+          .catch(() => undefined);
+      }
       await scenario.prepare?.(page);
       await stabilizePage(page);
       await page.screenshot({
@@ -997,13 +1064,22 @@ for (const viewport of viewports) {
   }
 }
 
-async function installMockApi(page: Page, authenticated: boolean) {
+async function installMockApi(
+  page: Page,
+  authenticated: boolean,
+  theme: NonNullable<ScreenshotScenario["theme"]>,
+) {
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     const pathName = url.pathname;
 
     if (assetSvgs.has(pathName)) {
       await route.fulfill({ body: assetSvgs.get(pathName), contentType: "image/svg+xml" });
+      return;
+    }
+
+    if (pathName === "/api/v1/account/preferences") {
+      await route.fulfill({ json: { uiTheme: theme } });
       return;
     }
 
