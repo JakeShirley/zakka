@@ -35,10 +35,25 @@ import { apiClient } from "../../apiClient";
 import { AppModal, ProcessingBanner, WorkspaceHeader } from "../../components/layout";
 import { getErrorMessage } from "../../lib/errors";
 import type { Asset, BookDetail, ExportJob, PageDetail } from "../../types";
+import {
+  type ArrangeSettings,
+  alignReferenceLabels,
+  defaultArrangeSettings,
+  getSelectedLayersInOrder,
+  getSingleLayerArrangeSettings,
+  planArrange,
+} from "../editor/arrange";
+import {
+  ArrangePanel,
+  InspectorTabs,
+  useArrangePreviewPreference,
+  useInspectorTab,
+} from "../editor/ArrangePanel";
 import { AssetRail } from "../editor/AssetRail";
 import type { EditorSaveStatus } from "../editor/editorTypes";
 import { LayerInspector } from "../editor/LayerInspector";
 import {
+  type ArrangeCanvasPreview,
   type CanvasPreviewLayer,
   formatLayerKindLabel,
   type ReorderLayerCommand,
@@ -354,6 +369,55 @@ export function BookEditorView() {
         : null,
     [activePage, primarySelectedLayerId],
   );
+  const [arrangeSettings, setArrangeSettings] = useState<ArrangeSettings>(defaultArrangeSettings);
+  const [isArrangePreviewEnabled, setIsArrangePreviewEnabled] = useArrangePreviewPreference();
+  const arrangeLayers = useMemo(
+    () => (activePage ? getSelectedLayersInOrder(activePage.document, selectedLayerIds) : []),
+    [activePage, selectedLayerIds],
+  );
+  const isSingleLayerArrange = arrangeLayers.length === 1;
+  const canArrangeSelection = arrangeLayers.length > 1 || selectedLayer?.locked === false;
+  const { activeTab: inspectorTab, selectTab: selectInspectorTab } = useInspectorTab({
+    canArrange: canArrangeSelection,
+    layerCount: arrangeLayers.length,
+    selectionKey: selectedLayerIds.join("|"),
+    settings: arrangeSettings,
+    onSettingsChange: setArrangeSettings,
+  });
+  const isArrangeTabOpen = inspectorTab !== "properties";
+  const effectiveArrangeSettings = useMemo(
+    () => (isSingleLayerArrange ? getSingleLayerArrangeSettings(arrangeSettings) : arrangeSettings),
+    [arrangeSettings, isSingleLayerArrange],
+  );
+  const arrangePlan = useMemo(
+    () =>
+      activePage && isArrangeTabOpen && arrangeLayers.length > 0
+        ? planArrange(arrangeLayers, activePage.document.canvas, effectiveArrangeSettings)
+        : null,
+    [activePage, arrangeLayers, effectiveArrangeSettings, isArrangeTabOpen],
+  );
+  const canApplyArrange = Boolean(arrangePlan && arrangePlan.updates.length > 0);
+  const arrangePreview = useMemo<ArrangeCanvasPreview | null>(() => {
+    if (!arrangePlan) return null;
+    const layerById = new Map(arrangeLayers.map((layer) => [layer.id, layer]));
+    const ghosts = isArrangePreviewEnabled
+      ? arrangePlan.updates.flatMap(({ layerId, update }) => {
+          const layer = layerById.get(layerId);
+          return layer ? [{ ...layer, ...update } as PageLayer] : [];
+        })
+      : [];
+    const anchorLayer = arrangePlan.anchorLayerId
+      ? (layerById.get(arrangePlan.anchorLayerId) ?? null)
+      : null;
+    if (ghosts.length === 0 && !anchorLayer) return null;
+    return {
+      anchorLabel: anchorLayer
+        ? alignReferenceLabels[effectiveArrangeSettings.align.relativeTo]
+        : null,
+      anchorLayer,
+      ghosts,
+    };
+  }, [arrangeLayers, arrangePlan, effectiveArrangeSettings, isArrangePreviewEnabled]);
   useEffect(() => {
     if (!primarySelectedLayerId) setActiveSelectionPanel(null);
   }, [primarySelectedLayerId]);
@@ -881,6 +945,46 @@ export function BookEditorView() {
       updateLayerTransforms(pageId, updates);
     }
     endHistoryGroup();
+  };
+
+  /** Applies the arrange panel's plan as a single undo step. */
+  const applyArrange = () => {
+    if (!activePage || !arrangePlan || arrangePlan.updates.length === 0) return;
+    const pageId = activePage.id;
+    let nextDocument = activePage.document;
+    for (const { layerId, update } of arrangePlan.updates) {
+      nextDocument = updateLayer(nextDocument, layerId, update);
+    }
+
+    if (viewMode === "spread" && visiblePageIds.length > 1) {
+      let details = pageDetails;
+      const changedPageIds = new Set<string>();
+      for (const { layerId } of arrangePlan.updates) {
+        const sourceLayer = nextDocument.layers.find((layer) => layer.id === layerId);
+        if (!sourceLayer) continue;
+        const result = syncLayerAcrossSpread({
+          details,
+          removeNonOverlappingSource: true,
+          sourceLayer,
+          sourcePageId: pageId,
+          spreadPageIds: visiblePageIds,
+        });
+        details = result.details;
+        for (const changedPageId of result.changedPageIds) changedPageIds.add(changedPageId);
+      }
+      // Layers moved wholly onto the facing page leave the active page, so drop them from the
+      // selection.
+      const remainingLayerIds = new Set(
+        details.get(pageId)?.document.layers.map((layer) => layer.id) ?? [],
+      );
+      applySpreadLayerSync(
+        { changedPageIds: [...changedPageIds], containingPageId: pageId, details },
+        { selectedLayerIds: selectedLayerIds.filter((layerId) => remainingLayerIds.has(layerId)) },
+      );
+      return;
+    }
+
+    editPageDocument(pageId, nextDocument);
   };
 
   const reorderPageLayer = (pageId: string, layerId: string, command: ReorderLayerCommand) => {
@@ -1749,7 +1853,7 @@ export function BookEditorView() {
           isPhotoPickerDisabled={!activePage}
           isStickerPickerDisabled={!activePage}
           inspector={
-            selectedLayer && activePageId
+            activePageId && (selectedLayer || arrangeLayers.length > 1)
               ? {
                   actions: (
                     <div className="editor-edit-pane-actions">
@@ -1788,29 +1892,51 @@ export function BookEditorView() {
                       />
                     </div>
                   ),
-                  title: `Edit ${formatLayerKindLabel(selectedLayer.kind)}`,
-                  content: (
-                    <LayerInspector
-                      layer={selectedLayer}
-                      onChange={(update) =>
-                        updateLayerTransform(activePageId, selectedLayer.id, update)
-                      }
-                      onChooseWashiTapePhoto={(layerId) =>
-                        setPhotoPickerMode({
-                          kind: "washiTapePattern",
-                          pageId: activePageId,
-                          layerId,
-                        })
-                      }
-                      onChoosePhoto={(layerId) =>
-                        setPhotoPickerMode({
-                          kind: "photoPlaceholder",
-                          pageId: activePageId,
-                          layerId,
-                        })
-                      }
+                  title: selectedLayer
+                    ? `Edit ${formatLayerKindLabel(selectedLayer.kind)}`
+                    : `${arrangeLayers.length} layers selected`,
+                  tabs: (
+                    <InspectorTabs
+                      activeTab={inspectorTab}
+                      canArrange={canArrangeSelection}
+                      layerCount={arrangeLayers.length}
+                      onSelect={selectInspectorTab}
                     />
                   ),
+                  content:
+                    selectedLayer && inspectorTab === "properties" ? (
+                      <LayerInspector
+                        layer={selectedLayer}
+                        onChange={(update) =>
+                          updateLayerTransform(activePageId, selectedLayer.id, update)
+                        }
+                        onChooseWashiTapePhoto={(layerId) =>
+                          setPhotoPickerMode({
+                            kind: "washiTapePattern",
+                            pageId: activePageId,
+                            layerId,
+                          })
+                        }
+                        onChoosePhoto={(layerId) =>
+                          setPhotoPickerMode({
+                            kind: "photoPlaceholder",
+                            pageId: activePageId,
+                            layerId,
+                          })
+                        }
+                      />
+                    ) : (
+                      <ArrangePanel
+                        canApply={canApplyArrange}
+                        isPreviewEnabled={isArrangePreviewEnabled}
+                        movableLayerCount={arrangeLayers.filter((layer) => !layer.locked).length}
+                        settings={arrangeSettings}
+                        singleLayer={isSingleLayerArrange}
+                        onApply={applyArrange}
+                        onPreviewChange={setIsArrangePreviewEnabled}
+                        onSettingsChange={setArrangeSettings}
+                      />
+                    ),
                 }
               : null
           }
@@ -1836,6 +1962,7 @@ export function BookEditorView() {
               <BookCanvasDeck
                 activePageId={activePage.id}
                 activeSelectionPanel={activeSelectionPanel}
+                arrangePreview={arrangePreview}
                 assetById={assetById}
                 getSpreadPreviewLayers={getSpreadPreviewLayers}
                 orderedPageIds={orderedPageIds}

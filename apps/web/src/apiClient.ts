@@ -1,4 +1,7 @@
 import {
+  type AccountPreferencesPatchRequest,
+  type AccountPreferencesResponse,
+  accountPreferencesResponseSchema,
   type AlbumAssetsAddRequest,
   type AlbumCreateRequest,
   type AlbumListResponse,
@@ -142,6 +145,17 @@ export const createApiClient = (baseUrl = defaultBaseUrl) => ({
 
   getCurrentSession: (): Promise<AuthSessionResponse> =>
     requestJson(baseUrl, authSessionResponseSchema, "/api/v1/auth/session"),
+
+  getAccountPreferences: (): Promise<AccountPreferencesResponse> =>
+    requestJson(baseUrl, accountPreferencesResponseSchema, "/api/v1/account/preferences"),
+
+  updateAccountPreferences: (
+    input: AccountPreferencesPatchRequest,
+  ): Promise<AccountPreferencesResponse> =>
+    requestJson(baseUrl, accountPreferencesResponseSchema, "/api/v1/account/preferences", {
+      body: JSON.stringify(input),
+      method: "PATCH",
+    }),
 
   listAssets: (): Promise<AssetListResponse> =>
     requestJson(baseUrl, assetListResponseSchema, "/api/v1/assets"),

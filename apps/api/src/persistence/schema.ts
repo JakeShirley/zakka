@@ -387,6 +387,14 @@ export const externalMediaLinks = sqliteTable(
   ],
 );
 
+export const accountPreferences = sqliteTable("account_preferences", {
+  accountId: text("account_id")
+    .primaryKey()
+    .references(() => accounts.id, { onDelete: "cascade" }),
+  uiTheme: text("ui_theme").notNull().default("system"),
+  ...timestampColumns(),
+});
+
 export type AccountRecord = typeof accounts.$inferSelect;
 export type AuthIdentityRecord = typeof authIdentities.$inferSelect;
 export type SessionRecord = typeof sessions.$inferSelect;
@@ -404,3 +412,4 @@ export type CustomWashiTapeRecord = typeof customWashiTapes.$inferSelect;
 export type ExportJobRecord = typeof exportJobs.$inferSelect;
 export type IntegrationConnectionRecord = typeof integrationConnections.$inferSelect;
 export type ExternalMediaLinkRecord = typeof externalMediaLinks.$inferSelect;
+export type AccountPreferencesRecord = typeof accountPreferences.$inferSelect;

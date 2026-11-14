@@ -119,6 +119,20 @@ The script also stores each family's license in `vendor/fonts/google-fonts/licen
 
 The script drops `ccmp`, `liga`, or `rlig` from a font when those features contain lookups opentype.js cannot run, because opentype.js would otherwise throw while laying out text.
 
+## UI Themes
+
+App themes change only the app chrome. Books and page content keep their own colors. Each account stores its theme (`uiTheme` in `/api/v1/account/preferences`), and the browser caches it in localStorage so the first paint uses the right colors.
+
+- Colors in `apps/web/src/styles.css` are `--sb-*` custom properties. `:root` holds the light values, and each other theme overrides them in a `:root[data-theme="<id>"]` block. Use a token instead of a raw color in UI styles. `--sb-canvas-paper` must stay white in every theme.
+- `ThemeProvider` (`apps/web/src/features/theme/`) sets `data-theme` on `<html>` and switches the Fluent UI theme.
+
+To add a theme:
+
+1. Add its id to `uiThemeIds` in `packages/api-contract/src/account-preferences.ts`.
+2. Register its label, Fluent theme, and color scheme in `apps/web/src/features/theme/themes.ts`.
+3. Add a token override block in `styles.css`.
+4. Add its color scheme to the pre-paint script map in `apps/web/index.html`.
+
 ## Docker
 
 Run the local API container with persistent application data:
