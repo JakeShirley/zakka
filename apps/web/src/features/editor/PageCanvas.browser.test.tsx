@@ -46,6 +46,11 @@ const renderedPhotoImage = () =>
   );
 const toolbar = (kind: string) => page.getByRole("toolbar", { name: `${kind} layer actions` });
 const isSelected = (layerId: string) => layerElement(layerId).dataset.selected === "true";
+/** A ~2.8 screen-pixel diagonal move, just under the canvas's 4px drag threshold. */
+const subThresholdJitter = () => {
+  const bounds = canvasLocator().element().getBoundingClientRect();
+  return { x: 2 / bounds.width, y: 2 / bounds.height };
+};
 
 describe("selecting layers", () => {
   test("clicking a layer selects it and shows its action toolbar", async () => {
@@ -127,6 +132,28 @@ describe("moving layers", () => {
     expect(layer("photo").y).toBeCloseTo(1100, -1);
     expect(layer("sticker")).toMatchObject({ x: 1400, y: 300 });
     // The click that ends the drag must not collapse the group back to one layer.
+    expect(probe.selectedLayerIds).toEqual(["text", "photo"]);
+  });
+
+  test("pointer jitter below the drag threshold selects a layer without moving it", async () => {
+    const { layer, probe } = await renderCanvas({ layers: [textLayer(), photoLayer()] });
+
+    await dragOnCanvas(layerHitbox("photo"), subThresholdJitter());
+
+    expect(probe.selectedLayerIds).toEqual(["photo"]);
+    expect(layer("photo")).toMatchObject({ x: 900, y: 1000 });
+  });
+
+  test("pointer jitter below the drag threshold does not move a group", async () => {
+    const { layer, probe } = await renderCanvas({
+      layers: [textLayer(), photoLayer()],
+      selectedLayerIds: ["text", "photo"],
+    });
+
+    await dragOnCanvas(layerHitbox("text"), subThresholdJitter());
+
+    expect(layer("text")).toMatchObject({ x: 400, y: 400 });
+    expect(layer("photo")).toMatchObject({ x: 900, y: 1000 });
     expect(probe.selectedLayerIds).toEqual(["text", "photo"]);
   });
 });
