@@ -262,16 +262,55 @@ describe("mapShutterflyProject", () => {
     expect(layerOfKind(pageOne.layers, "sticker").rotation).toBeCloseTo(17.1, 1);
   });
 
-  it("places image backgrounds as locked photo layers below the page content", () => {
+  it("sets image backgrounds as the page background instead of a layer", () => {
     const book = mapShutterflyProject(hardcoverProject, {
       ...resolvers,
-      background: () => ({ kind: "image", assetId: "asset_background" }),
+      background: () => ({ kind: "image", backgroundId: "custom:custom_background_cover" }),
     });
-    const [background] = findPage(book, "Front cover").document.layers;
+    const cover = findPage(book, "Front cover").document;
 
-    expect(background).toMatchObject({ kind: "photo", assetId: "asset_background", locked: true });
-    // The 3510 px square background image is centered on the 3105 px wide cover surface.
-    expect(background?.kind === "photo" ? background.crop.x : -1).toBeCloseTo(202.5 / 3510, 4);
+    expect(cover.layers.some((layer) => layer.kind === "photo" && layer.locked)).toBe(false);
+    expect(cover.canvas.background?.backgroundId).toBe("custom:custom_background_cover");
+    // The 3510 px square background image is centered on the 3105 px wide cover surface, so the
+    // frame keeps its full size and extends past the page on both sides.
+    expect(cover.canvas.background?.width).toBeCloseTo(cover.canvas.background?.height ?? 0, 0);
+    expect(cover.canvas.background?.x).toBeLessThan(0);
+  });
+
+  it("spans spread backgrounds across both pages with the spread frame offset", () => {
+    const withBackground = structuredClone(project);
+    const spread = withBackground.surfaceCategories
+      .find((category) => category.categoryName === "inside")
+      ?.surfaces.find((surface) => surface.surfaceNumber === "1");
+
+    if (!spread) {
+      throw new Error("Missing spread surface");
+    }
+
+    const { width, height } = spread.surfaceData.pageDetails;
+
+    spread.surfaceData.layeredItems.unshift({
+      ...spread.surfaceData.layeredItems[0],
+      type: "background",
+      container: { x: 0, y: 0, w: width, h: height, rot: 0 },
+      content: {
+        contentType: "Background",
+        userData: { assetId: "DA_spread", x: 0, y: 0, w: width, h: height },
+      },
+      layerMetadata: [],
+    } as (typeof spread.surfaceData.layeredItems)[number]);
+
+    const book = mapShutterflyProject(withBackground, {
+      ...resolvers,
+      background: () => ({ kind: "image", backgroundId: "custom:custom_background_spread" }),
+    });
+    const left = findPage(book, "Page 2").document.canvas.background;
+    const right = findPage(book, "Page 3").document.canvas.background;
+
+    expect(left).toMatchObject({ backgroundId: "custom:custom_background_spread", x: 0 });
+    expect(left?.width).toBeCloseTo(book.pageWidth * 2, 0);
+    expect(right?.x).toBeCloseTo(-book.pageWidth, 0);
+    expect(right?.width).toBeCloseTo(left?.width ?? 0, 0);
   });
 
   it("keeps rotated spread elements on both pages when their rotated bounds cross the gutter", () => {

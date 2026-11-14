@@ -627,7 +627,7 @@ describe("Shutterfly integration routes", () => {
     });
   });
 
-  it("adds imported image backgrounds to the book's photos", async () => {
+  it("imports image backgrounds into the custom background library", async () => {
     const { app, repositories } = await createTestApp();
     const cookie = await register(app);
     const accountId = repositories.accounts.findByPrimaryEmail("maker@example.com")?.id ?? "";
@@ -638,16 +638,24 @@ describe("Shutterfly integration routes", () => {
     const body = shutterflyImportResponseSchema.parse(await response.json());
     const bookAssets = repositories.books.listAssetsForBook(accountId, body.book.id);
     const pageOne = body.book.pages.find((page) => page.page.title === "Page 1");
-    const layers = pageResponseSchema.parse(
+    const document = pageResponseSchema.parse(
       await (await app.request(`/api/v1/pages/${pageOne?.pageId}`, { headers: { cookie } })).json(),
-    ).document.layers;
-    const background = layers[0];
+    ).document;
+    const [library] = repositories.customBackgrounds.listForAccount(accountId);
 
     expect(response.status).toBe(201);
-    expect(background).toMatchObject({ kind: "photo", locked: true, width: 2385 });
-    expect(bookAssets.map((asset) => asset.id)).toContain(
-      background?.kind === "photo" ? background.assetId : "",
-    );
+    expect(document.layers.some((layer) => layer.kind === "photo" && layer.locked)).toBe(false);
+    expect(library).toMatchObject({ externalId: "design:DA_bg1", source: "shutterfly" });
+    expect(document.canvas.background).toMatchObject({
+      backgroundId: `custom:${library?.id}`,
+      height: 2385,
+      width: 2385,
+    });
+    expect(bookAssets.map((asset) => asset.id)).not.toContain(library?.id);
+
+    await importProject(app, cookie, "1000000000002");
+
+    expect(repositories.customBackgrounds.listForAccount(accountId)).toHaveLength(1);
   });
 
   it("does not restore a connection that was removed while a token refresh was in flight", async () => {
