@@ -119,6 +119,21 @@ The script also stores each family's license in `vendor/fonts/google-fonts/licen
 
 The script drops `ccmp`, `liga`, or `rlig` from a font when those features contain lookups opentype.js cannot run, because opentype.js would otherwise throw while laying out text.
 
+## Page Backgrounds
+
+Each page canvas can have a background (`canvas.background`) drawn under every layer and on top of `backgroundColor`. It stores a `backgroundId` plus a frame (`x`, `y`, `width`, `height`) in page coordinates and a tile `scale`. When a background is applied to a whole spread, every page gets the same id and a frame as wide as the spread, offset by the page's position, so the pattern continues across the fold. `packages/editor-core/src/backgrounds.ts` defines the catalog and renders backgrounds into the shared page SVG, so the web canvas and server exports match.
+
+Background ids are `zakka:<slug>` for built-ins and `custom:<id>` for a user's own backgrounds. Built-ins are procedural SVG patterns and skies, plus seamless textures. Custom backgrounds are uploaded on the Backgrounds page or in the editor's Backgrounds panel, and Shutterfly imports add each project background to the library instead of creating a locked photo layer. Their files are private to the account and served from `/api/v1/custom-backgrounds/:id/content`.
+
+The textures are CC0 materials from [ambientCG](https://ambientcg.com/), vendored in `packages/editor-core/vendor/backgrounds/textures/` as a seamless JPEG tile and a thumbnail. The API serves them from `/api/v1/backgrounds/builtin/:slug/{content,thumbnail}`. To add a texture, add a row to `TEXTURES` in the vendor script and run it. It needs Pillow, downloads the materials, and regenerates `src/background-textures.ts`:
+
+```sh
+python3 -m pip install pillow
+python3 packages/editor-core/scripts/vendor-background-textures.py
+```
+
+The editor-core build (`scripts/generate-backgrounds.mjs`) copies the textures and their `LICENSE.md` into `dist/backgrounds/`, exported as `@zakka/editor-core/backgrounds/*`.
+
 ## Maps
 
 Map layers come in eight styles (`packages/editor-core/src/map-styles.ts`). Atlas, Vintage, Scrapbook pastel, Midnight, Minimal, and Globe are vector styles. `packages/editor-core/src/maps.ts` renders them with d3-geo from bundled [Natural Earth](https://www.naturalearthdata.com/) data, which is in the public domain. The web canvas and server exports render the same SVG, so exports are resolution independent. The renderer switches from the 50m data to the 10m data when the view is zoomed in. Both data sets load lazily in the web app.

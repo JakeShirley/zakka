@@ -23,6 +23,11 @@ import {
   type BookSetPagesRequest,
   bookListResponseSchema,
   bookResponseSchema,
+  type CustomBackgroundListResponse,
+  type CustomBackgroundPatchRequest,
+  type CustomBackgroundResponse,
+  customBackgroundListResponseSchema,
+  customBackgroundResponseSchema,
   type CustomWashiTapeCreateRequest,
   type CustomWashiTapeListResponse,
   type CustomWashiTapePatchRequest,
@@ -242,6 +247,72 @@ export const createApiClient = (baseUrl = defaultBaseUrl) => ({
       throw await parseError(response);
     }
   },
+
+  listCustomBackgrounds: (): Promise<CustomBackgroundListResponse> =>
+    requestJson(baseUrl, customBackgroundListResponseSchema, "/api/v1/custom-backgrounds"),
+
+  renameCustomBackground: (
+    backgroundId: string,
+    input: CustomBackgroundPatchRequest,
+  ): Promise<CustomBackgroundResponse> =>
+    requestJson(
+      baseUrl,
+      customBackgroundResponseSchema,
+      `/api/v1/custom-backgrounds/${backgroundId}`,
+      { body: JSON.stringify(input), method: "PATCH" },
+    ),
+
+  deleteCustomBackground: async (backgroundId: string): Promise<void> => {
+    const response = await fetch(buildUrl(baseUrl, `/api/v1/custom-backgrounds/${backgroundId}`), {
+      credentials: "include",
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      throw await parseError(response);
+    }
+  },
+
+  uploadCustomBackground: (
+    file: File,
+    options: { name?: string; onProgress?: (progress: number | null) => void } = {},
+  ): Promise<CustomBackgroundResponse> =>
+    new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      const form = new FormData();
+
+      form.append("file", file);
+      if (options.name) {
+        form.append("name", options.name);
+      }
+      request.open("POST", buildUrl(baseUrl, "/api/v1/custom-backgrounds"));
+      request.withCredentials = true;
+
+      request.upload.onprogress = (event) => {
+        options.onProgress?.(event.lengthComputable ? event.loaded / event.total : null);
+      };
+      request.onerror = () => {
+        reject(new ApiClientError("The API request failed", 0, "network_error"));
+      };
+      request.onload = () => {
+        if (request.status < 200 || request.status >= 300) {
+          try {
+            reject(parseErrorPayload(JSON.parse(request.responseText), request.status));
+          } catch {
+            reject(new ApiClientError("The API request failed", request.status, "request_failed"));
+          }
+          return;
+        }
+
+        try {
+          options.onProgress?.(1);
+          resolve(customBackgroundResponseSchema.parse(JSON.parse(request.responseText)));
+        } catch (error) {
+          reject(error);
+        }
+      };
+      request.send(form);
+    }),
 
   listStickerPacks: (): Promise<StickerPackListResponse> =>
     requestJson(baseUrl, stickerPackListResponseSchema, "/api/v1/sticker-packs"),

@@ -40,6 +40,7 @@ import type {
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { Asset } from "../../types";
+import { resolveBrowserBackgroundHref } from "../backgrounds/backgroundHrefs";
 import { assetDragMimeType } from "./AssetRail";
 import type { ActiveTransform, CanvasPoint, ResizeHandle, TransformMode } from "./editorTypes";
 import { FontFamilySelect } from "./FontFamilySelect";
@@ -553,6 +554,8 @@ export function PageCanvas({
             ? `/api/v1/custom-stickers/${layer.stickerId.slice("custom:".length)}/content`
             : null,
         resolveWashiTapeHref: (layer) => resolveBrowserWashiTapeHref(assetById, layer),
+        resolveBackgroundHref: (background) =>
+          resolveBrowserBackgroundHref(background.backgroundId),
         resolveMapGeography: (detail) => mapGeographyByDetail.get(detail),
         resolveMapTileHref,
         ...(panPreviewLayerId ? { panPreviewLayerIds: new Set([panPreviewLayerId]) } : {}),

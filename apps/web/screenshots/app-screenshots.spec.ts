@@ -1,4 +1,4 @@
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
@@ -274,6 +274,29 @@ const customWashiTapeFixtures = [
     updatedAt: now,
   },
 ];
+
+const backgroundTextureDirectory = fileURLToPath(
+  new URL("../../../packages/editor-core/vendor/backgrounds/textures/", import.meta.url),
+);
+
+const customBackgroundFixtures = [
+  {
+    backgroundId: "custom:custom_background_lake",
+    byteSize: 4096,
+    contentUrl: "/api/v1/custom-backgrounds/custom_background_lake/content",
+    createdAt: now,
+    height: 64,
+    id: "custom_background_lake",
+    mimeType: "image/png",
+    name: "Lake shimmer",
+    source: "upload",
+    thumbnailUrl: "/api/v1/custom-backgrounds/custom_background_lake/thumbnail",
+    updatedAt: now,
+    width: 64,
+  },
+];
+
+const customBackgroundPng = createSolidColorPng(64, 64, { blue: 214, green: 170, red: 92 });
 
 const pageFixtures = [
   createPage("page_cover", "Cover", {
@@ -891,6 +914,37 @@ const scenarios: ScreenshotScenario[] = [
     waitFor: waitForBookEditor,
   },
   {
+    name: "backgrounds",
+    path: "/backgrounds",
+    viewports: ["desktop"],
+    waitFor: async (page) => {
+      await waitForFeatureOrFallback(page, "Backgrounds");
+    },
+  },
+  {
+    name: "book-editor-backgrounds",
+    path: "/books/book_summer",
+    prepare: async (page) => {
+      const backgroundsButton = page.getByRole("button", { name: "Backgrounds", exact: true });
+      if (!(await isVisible(backgroundsButton))) {
+        return;
+      }
+
+      await backgroundsButton.click();
+      const panel = page.getByRole("dialog", { name: "Backgrounds" });
+      await panel.getByRole("button", { name: "Use Red gingham background" }).click();
+      await expect(
+        page
+          .getByRole("region", { name: "Book editor" })
+          .locator('[data-page-background="zakka:gingham-red"]')
+          .first(),
+      ).toBeVisible();
+      await panel.getByRole("group", { name: "Apply to" }).scrollIntoViewIfNeeded();
+    },
+    viewports: ["desktop"],
+    waitFor: waitForBookEditor,
+  },
+  {
     name: "settings-account",
     path: "/settings",
     waitFor: async (page) => {
@@ -1276,6 +1330,30 @@ async function installMockApi(
 
     if (pathName === "/api/v1/custom-washi-tapes") {
       await route.fulfill({ json: { washiTapes: customWashiTapeFixtures } });
+      return;
+    }
+
+    if (pathName === "/api/v1/custom-backgrounds") {
+      await route.fulfill({ json: { backgrounds: customBackgroundFixtures } });
+      return;
+    }
+
+    if (pathName.startsWith("/api/v1/custom-backgrounds/")) {
+      await route.fulfill({ body: customBackgroundPng, contentType: "image/png" });
+      return;
+    }
+
+    const builtInBackgroundMatch =
+      /^\/api\/v1\/backgrounds\/builtin\/([a-z0-9-]+)\/(content|thumbnail)$/.exec(pathName);
+    if (builtInBackgroundMatch) {
+      const [, slug, variant] = builtInBackgroundMatch;
+      const fileName = variant === "thumbnail" ? `${slug}.thumb.jpg` : `${slug}.jpg`;
+      try {
+        const body = await readFile(path.join(backgroundTextureDirectory, fileName));
+        await route.fulfill({ body, contentType: "image/jpeg" });
+      } catch {
+        await route.fulfill({ json: errorResponse("Background not found."), status: 404 });
+      }
       return;
     }
 
