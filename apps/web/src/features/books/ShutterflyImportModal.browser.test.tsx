@@ -138,6 +138,29 @@ describe("ShutterflyImportModal", () => {
     expect(props.onOpenBook).not.toHaveBeenCalled();
   });
 
+  test("keeps following the import through a transient polling failure", async () => {
+    mockConnectedProjects();
+    vi.spyOn(apiClient, "startShutterflyImport").mockResolvedValue(runningJob);
+    const getImport = vi
+      .spyOn(apiClient, "getShutterflyImport")
+      .mockRejectedValueOnce(new Error("Network request failed"))
+      .mockResolvedValue({
+        ...runningJob,
+        status: "completed",
+        progress: { step: "pages", completed: 34, total: 34, fraction: 1 },
+        result: { book: importedBook, warnings: [] },
+      });
+    const props = await renderModal();
+
+    await page.getByRole("button", { name: "Import Summer 2026" }).click();
+
+    await expect
+      .poll(() => props.onOpenBook.mock.calls, { timeout: 3000 })
+      .toEqual([["book_imported"]]);
+    expect(getImport).toHaveBeenCalledTimes(2);
+    expect(apiClient.startShutterflyImport).toHaveBeenCalledTimes(1);
+  });
+
   test("sends users to Settings when Shutterfly is not connected", async () => {
     vi.spyOn(apiClient, "getShutterflyConnection").mockResolvedValue({
       configured: true,

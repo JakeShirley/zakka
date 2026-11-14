@@ -79,6 +79,10 @@ export const createShutterflyImportJobs = <Result>(options: {
           job.status = "failed";
         } finally {
           job.finishedAt = options.clock().getTime();
+          // Expire the job even if nobody polls or starts another import afterwards.
+          setTimeout(() => {
+            jobs.delete(job.id);
+          }, retentionMs).unref();
         }
       })();
 

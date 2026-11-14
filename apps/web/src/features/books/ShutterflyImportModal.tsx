@@ -16,6 +16,7 @@ type ImportResult = { bookId: string; title: string; warnings: string[] };
 type ImportProgress = ShutterflyImportJobResponse["progress"];
 
 const importPollIntervalMs = 500;
+const maxConsecutivePollFailures = 5;
 
 const formatUpdatedAt = (updatedAt: string | null): string | null =>
   updatedAt ? `Edited ${new Date(updatedAt).toLocaleDateString()}` : null;
@@ -123,6 +124,7 @@ export function ShutterflyImportModal({
 
     try {
       let job = await apiClient.startShutterflyImport(project.id);
+      let consecutivePollFailures = 0;
 
       while (job.status === "running") {
         if (!isMountedRef.current) {
@@ -131,7 +133,19 @@ export function ShutterflyImportModal({
 
         setImportProgress(job.progress);
         await wait(importPollIntervalMs);
-        job = await apiClient.getShutterflyImport(job.id);
+
+        // The import keeps running on the server, so ride out transient polling errors
+        // instead of dropping the job and inviting a duplicate import.
+        try {
+          job = await apiClient.getShutterflyImport(job.id);
+          consecutivePollFailures = 0;
+        } catch (pollError: unknown) {
+          consecutivePollFailures += 1;
+
+          if (consecutivePollFailures >= maxConsecutivePollFailures) {
+            throw pollError;
+          }
+        }
       }
 
       if (!isMountedRef.current) {
