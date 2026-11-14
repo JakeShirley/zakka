@@ -542,5 +542,64 @@ describe("toolbar and drop actions", () => {
     // Playwright drops on the target's center.
     expect(drop?.point.x).toBeCloseTo(1000, -2);
     expect(drop?.point.y).toBeCloseTo(1000, -2);
+    expect(drop?.placeholder).toBeUndefined();
+  });
+
+  test("dropping a library asset onto a photo placeholder targets that placeholder", async () => {
+    const { probe } = await renderCanvas({
+      layers: [photoLayer({ assetId: undefined, x: 600, y: 600, width: 800, height: 800 })],
+    });
+
+    await userEvent.dragAndDrop(
+      page.getByRole("img", { name: "Draggable test asset" }),
+      canvasLocator(),
+    );
+
+    expect(probe.droppedAssets).toEqual([
+      expect.objectContaining({ assetId: "asset_test", placeholder: { layerId: "photo" } }),
+    ]);
+  });
+
+  test("dropping onto a facing page's placeholder preview targets the page that owns it", async () => {
+    const { probe } = await renderCanvas({
+      layers: [],
+      previewLayers: [
+        {
+          layer: photoLayer({ assetId: undefined, x: 600, y: 600, width: 800, height: 800 }),
+          sourcePageId: "page_left",
+          stackIndex: 0,
+        },
+      ],
+    });
+
+    await userEvent.dragAndDrop(
+      page.getByRole("img", { name: "Draggable test asset" }),
+      canvasLocator(),
+    );
+
+    expect(probe.droppedAssets).toEqual([
+      expect.objectContaining({
+        assetId: "asset_test",
+        placeholder: { layerId: "photo", pageId: "page_left" },
+      }),
+    ]);
+  });
+});
+
+describe("photo placeholders", () => {
+  test("a selected placeholder offers Add photo instead of pan controls", async () => {
+    const { probe } = await renderCanvas({
+      layers: [photoLayer({ assetId: undefined })],
+      selectedLayerIds: ["photo"],
+    });
+
+    expect(document.querySelector('[data-photo-placeholder="true"]')).not.toBeNull();
+    await expect
+      .element(page.getByRole("button", { name: "Click and drag to adjust photo" }))
+      .not.toBeInTheDocument();
+
+    await toolbar("Photo").getByRole("button", { name: "Add photo to placeholder" }).click();
+
+    expect(probe.choosePhotoRequests).toEqual(["photo"]);
   });
 });

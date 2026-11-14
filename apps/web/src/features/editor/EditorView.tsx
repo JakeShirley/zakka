@@ -14,6 +14,8 @@ import {
   createTextLayer,
   createWashiTapeLayer,
   deleteLayer,
+  fillPhotoLayerUpdate,
+  isPhotoPlaceholder,
   type PageDocument,
   type PageLayer,
   reorderLayer,
@@ -45,7 +47,9 @@ import { type PngExportSettings, PngExportSettingsModal } from "./PngExportSetti
 import { WashiTapeGalleryModal } from "../washi-tape/WashiTapeGalleryModal";
 import { StickerPickerModal } from "./StickerPickerModal";
 
-type PhotoPickerMode = { kind: "photo" } | { kind: "washiTapePattern"; layerId: string };
+type PhotoPickerMode =
+  | { kind: "photo" }
+  | { kind: "photoPlaceholder" | "washiTapePattern"; layerId: string };
 
 export function EditorView() {
   const { pageId } = useParams();
@@ -184,6 +188,15 @@ export function EditorView() {
       height: Math.min(document.canvas.height * 0.34, 760),
     });
     editDocument(addLayer(document, layer));
+    setSelectedLayerIds([layer.id]);
+  };
+  const fillPhotoPlaceholder = (asset: Asset) => {
+    if (!document || photoPickerMode?.kind !== "photoPlaceholder") return;
+    const layer = document.layers.find((item) => item.id === photoPickerMode.layerId);
+    if (!layer || !isPhotoPlaceholder(layer)) return;
+    editDocument(
+      updateLayer(document, layer.id, fillPhotoLayerUpdate(asset.id) as Partial<PageLayer>),
+    );
     setSelectedLayerIds([layer.id]);
   };
   const addWashiTape = (design: WashiTapeDesign) => {
@@ -371,11 +384,30 @@ export function EditorView() {
       ) : null}
       {photoPickerMode ? (
         <PhotoPickerModal
-          actionLabel={photoPickerMode.kind === "washiTapePattern" ? "Use as pattern" : "Add"}
+          actionLabel={
+            photoPickerMode.kind === "washiTapePattern"
+              ? "Use as pattern"
+              : photoPickerMode.kind === "photoPlaceholder"
+                ? "Add to placeholder"
+                : "Add"
+          }
           assets={assets}
-          title={photoPickerMode.kind === "washiTapePattern" ? "Choose pattern photo" : "Add photo"}
+          title={
+            photoPickerMode.kind === "washiTapePattern"
+              ? "Choose pattern photo"
+              : photoPickerMode.kind === "photoPlaceholder"
+                ? "Choose photo"
+                : "Add photo"
+          }
           onAddPhoto={
-            photoPickerMode.kind === "washiTapePattern" ? setWashiTapePhotoPattern : addPhoto
+            photoPickerMode.kind === "washiTapePattern"
+              ? setWashiTapePhotoPattern
+              : photoPickerMode.kind === "photoPlaceholder"
+                ? (asset) => {
+                    fillPhotoPlaceholder(asset);
+                    setPhotoPickerMode(null);
+                  }
+                : addPhoto
           }
           onClose={() => setPhotoPickerMode(null)}
         />
@@ -421,6 +453,9 @@ export function EditorView() {
                       onChooseWashiTapePhoto={(layerId) =>
                         setPhotoPickerMode({ kind: "washiTapePattern", layerId })
                       }
+                      onChoosePhoto={(layerId) =>
+                        setPhotoPickerMode({ kind: "photoPlaceholder", layerId })
+                      }
                     />
                   ),
                 }
@@ -461,6 +496,7 @@ export function EditorView() {
             selectedLayerIds={selectedLayerIds}
             onActiveSelectionPanelChange={setActiveSelectionPanel}
             onChangeLayer={updateLayerTransform}
+            onChoosePhoto={(layerId) => setPhotoPickerMode({ kind: "photoPlaceholder", layerId })}
             onDeleteLayer={deleteCanvasLayer}
             onReorderLayer={reorderCanvasLayer}
             onSelectLayer={selectLayer}

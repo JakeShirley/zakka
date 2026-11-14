@@ -13,7 +13,9 @@ import { render } from "vitest-browser-react";
 import { assetDragMimeType } from "../features/editor/AssetRail";
 import type { CanvasPoint } from "../features/editor/editorTypes";
 import {
+  type CanvasPreviewLayer,
   PageCanvas,
+  type PhotoPlaceholderDropTarget,
   type ReorderLayerCommand,
   type SelectionPanel,
 } from "../features/editor/PageCanvas";
@@ -57,8 +59,13 @@ export function createTestAsset(id = "asset_test"): Asset {
 
 export type CanvasProbe = {
   activeSelectionPanel: SelectionPanel | null;
+  choosePhotoRequests: string[];
   document: PageDocument;
-  droppedAssets: Array<{ assetId: string; point: CanvasPoint }>;
+  droppedAssets: Array<{
+    assetId: string;
+    placeholder?: PhotoPlaceholderDropTarget;
+    point: CanvasPoint;
+  }>;
   reorders: Array<{ command: ReorderLayerCommand; layerId: string }>;
   selectedLayerIds: string[];
 };
@@ -66,6 +73,7 @@ export type CanvasProbe = {
 type RenderCanvasOptions = {
   assets?: Asset[];
   layers: PageLayer[];
+  previewLayers?: CanvasPreviewLayer[];
   selectedLayerIds?: string[];
 };
 
@@ -76,10 +84,12 @@ type RenderCanvasOptions = {
 export async function renderCanvas({
   assets = [createTestAsset()],
   layers,
+  previewLayers = [],
   selectedLayerIds = [],
 }: RenderCanvasOptions) {
   const probe: CanvasProbe = {
     activeSelectionPanel: null,
+    choosePhotoRequests: [],
     document: createPageDocument({ canvas: { width: 2000, height: 2000 }, layers }),
     droppedAssets: [],
     reorders: [],
@@ -115,14 +125,22 @@ export async function renderCanvas({
           activeSelectionPanel={panel}
           assetById={assetById}
           document={document}
+          previewLayers={previewLayers}
           selectedLayerIds={selection}
           onActiveSelectionPanelChange={setPanel}
           onChangeLayer={applyUpdate}
+          onChoosePhoto={(layerId) => probe.choosePhotoRequests.push(layerId)}
           onDeleteLayer={(layerId) => {
             setDocument((current) => deleteLayer(current, layerId));
             setSelection((current) => current.filter((id) => id !== layerId));
           }}
-          onDropAsset={(assetId, point) => probe.droppedAssets.push({ assetId, point })}
+          onDropAsset={(assetId, point, placeholder) =>
+            probe.droppedAssets.push({
+              assetId,
+              point,
+              ...(placeholder ? { placeholder } : {}),
+            })
+          }
           onReorderLayer={(layerId, command) => {
             probe.reorders.push({ command, layerId });
             setDocument((current) => {

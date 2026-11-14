@@ -239,7 +239,8 @@ const pageLayerBaseSchema = z.object({
 
 export const photoLayerSchema = pageLayerBaseSchema.extend({
   kind: z.literal("photo"),
-  assetId: z.string().min(1),
+  /** Omitted for an empty photo placeholder: a styled frame waiting for the user to add a photo. */
+  assetId: z.string().min(1).optional(),
   fit: z.enum(["cover", "contain"]),
   photoTransform: z
     .object({
@@ -442,6 +443,11 @@ export type RenderPageSvgOptions = {
   resolveStickerHref?: (layer: StickerLayer) => string | null | undefined;
   resolveWashiTapeHref?: (layer: WashiTapeLayer) => string | null | undefined;
   /**
+   * Draws empty photo placeholders (photo layers without an asset) so an editor can show where a
+   * photo goes. Exports leave this off so placeholders do not print.
+   */
+  showPhotoPlaceholders?: boolean;
+  /**
    * Photo layer ids that should render an extra translucent unclipped image
    * behind the cropped one, so the editor can preview the full source photo
    * while the user is positioning a crop.
@@ -491,7 +497,8 @@ export type CreatePhotoLayerInput = Partial<
     | "y"
   >
 > & {
-  assetId: string;
+  /** Leave out to create an empty photo placeholder. */
+  assetId?: string | undefined;
 };
 
 export type CreateTextLayerInput = Partial<
@@ -1881,26 +1888,68 @@ const renderBundledFontTextLayerSvg = (
   return `<g data-layer-id="${escapeXml(layer.id)}" data-font-family="${escapeXml(layer.fontFamily)}" opacity="${layer.opacity}" transform="${layerTransform(layer)}"><g data-layer-local-transform="true" transform="translate(${layer.x} ${layer.y})">${background}<g fill="${escapeXml(layer.color)}"${strokeAttributes}${contentAttributes}>${body}</g></g></g>`;
 };
 
+const photoPlaceholderFill = "#ece8df";
+const photoPlaceholderInk = "#8a8478";
+
+/** Draws an empty photo frame: the frame styling around a tinted window with a picture icon. */
+const renderPhotoPlaceholderSvg = (
+  layer: PhotoLayer,
+  clipId: string,
+  frameClipId: string,
+  shadowFilterId: string,
+): { body: string; defs: string } => {
+  const frameLayout = getPhotoFrameLayout(layer);
+  const aperture = frameLayout.image;
+  const iconSize = Math.max(1, Math.min(aperture.width, aperture.height) * 0.22);
+  const centerX = aperture.x + aperture.width / 2;
+  const centerY = aperture.y + aperture.height / 2;
+  const iconStrokeWidth = iconSize * 0.06;
+  const outlineWidth = Math.max(1, Math.min(layer.width, layer.height) * 0.006);
+  const point = (x: number, y: number) => `${centerX + iconSize * x} ${centerY + iconSize * y}`;
+  const icon = `<g data-photo-placeholder-icon="true" stroke="${photoPlaceholderInk}" stroke-width="${iconStrokeWidth}" stroke-linejoin="round" fill="none"><rect x="${centerX - iconSize / 2}" y="${centerY - iconSize * 0.4}" width="${iconSize}" height="${iconSize * 0.8}" rx="${iconSize * 0.08}" /><path d="M ${point(-0.38, 0.3)} L ${point(-0.1, -0.02)} L ${point(0.1, 0.16)} L ${point(0.22, 0.06)} L ${point(0.38, 0.3)} Z" fill="${photoPlaceholderInk}" /><circle cx="${centerX + iconSize * 0.2}" cy="${centerY - iconSize * 0.16}" r="${iconSize * 0.08}" fill="${photoPlaceholderInk}" /></g>`;
+  const outline = photoMaskShapeSvg(
+    layer.mask.shape,
+    aperture,
+    layer.mask.inset,
+    `fill="none" stroke="${photoPlaceholderInk}" stroke-opacity="0.7" stroke-width="${outlineWidth * 2}" stroke-dasharray="${outlineWidth * 6} ${outlineWidth * 4}"`,
+  );
+  const frameClipDef = photoFrameClipPath(layer, frameClipId, frameLayout.outer);
+  const frameContent = `${renderPhotoFrameBackgroundSvg(layer, frameLayout)}<g clip-path="url(#${clipId})"><rect x="${aperture.x}" y="${aperture.y}" width="${aperture.width}" height="${aperture.height}" fill="${photoPlaceholderFill}" />${outline}${icon}</g>${renderPhotoFrameOverlaySvg(layer, frameLayout)}`;
+  const maskedFrameContent = frameClipDef
+    ? `<g data-photo-mask-clip="${layer.mask.shape}" clip-path="url(#${frameClipId})">${frameContent}</g>`
+    : frameContent;
+
+  return {
+    defs: `${photoClipPath(layer, clipId, aperture)}${frameClipDef}${renderPhotoShadowFilterSvg(layer, shadowFilterId)}`,
+    body: `<g data-photo-placeholder="true" opacity="${layer.opacity}" transform="${layerTransform(layer)}">${renderPhotoShadowSvg(layer, frameLayout, shadowFilterId)}${maskedFrameContent}</g>`,
+  };
+};
+
 const renderPhotoLayerSvg = (
   layer: PhotoLayer,
   href: string | null | undefined,
   index: number,
   idPrefix: string | undefined,
   showFullPhotoPreview: boolean,
+  showPlaceholder: boolean,
 ): { body: string; defs: string } | null => {
-  if (!href) {
-    return null;
-  }
-
   const clipId = idPrefix
     ? createSvgId(idPrefix, "photo", "clip", index)
     : createSvgId("photo", "clip", index);
   const frameClipId = idPrefix
     ? createSvgId(idPrefix, "photo", "frameclip", index)
     : createSvgId("photo", "frameclip", index);
+
   const shadowFilterId = idPrefix
     ? createSvgId(idPrefix, "photo", "shadow", index)
     : createSvgId("photo", "shadow", index);
+
+  if (!href) {
+    return showPlaceholder && !layer.assetId
+      ? renderPhotoPlaceholderSvg(layer, clipId, frameClipId, shadowFilterId)
+      : null;
+  }
+
   const colorFilterId = idPrefix
     ? createSvgId(idPrefix, "photo", "color", index)
     : createSvgId("photo", "color", index);
@@ -2174,6 +2223,7 @@ export const renderPageDocumentSvg = (
         index,
         options.idPrefix,
         options.panPreviewLayerIds?.has(layer.id) ?? false,
+        options.showPhotoPlaceholders ?? false,
       );
 
       if (rendered) {
@@ -2329,6 +2379,60 @@ export const resetPhotoLayerEdits = (layer: PhotoLayer): PhotoLayer =>
     mask: defaultPhotoMask,
     filter: defaultPhotoFilter,
   });
+
+/** True for a photo frame that is waiting for a photo (no asset assigned yet). */
+export const isPhotoPlaceholder = (layer: PageLayer): boolean =>
+  layer.kind === "photo" && !layer.assetId;
+
+/**
+ * Layer update that puts a photo into a frame (typically a placeholder), keeping the frame's
+ * position and styling but resetting the photo's crop and pan so the new photo starts centered.
+ */
+export const fillPhotoLayerUpdate = (
+  assetId: string,
+): Pick<PhotoLayer, "assetId" | "crop" | "photoTransform"> => ({
+  assetId,
+  crop: defaultPhotoCrop,
+  photoTransform: defaultPhotoTransform,
+});
+
+const isPointInsideLayer = (layer: PageLayer, point: { x: number; y: number }): boolean => {
+  const centerX = layer.x + layer.width / 2;
+  const centerY = layer.y + layer.height / 2;
+  const radians = (-layer.rotation * Math.PI) / 180;
+  const dx = point.x - centerX;
+  const dy = point.y - centerY;
+  const localX = dx * Math.cos(radians) - dy * Math.sin(radians) + centerX;
+  const localY = dx * Math.sin(radians) + dy * Math.cos(radians) + centerY;
+
+  return (
+    localX >= layer.x &&
+    localX <= layer.x + layer.width &&
+    localY >= layer.y &&
+    localY <= layer.y + layer.height
+  );
+};
+
+/** Finds the topmost unlocked photo placeholder under a page point, accounting for rotation. */
+export const findPhotoPlaceholderAtPoint = (
+  document: PageDocument,
+  point: { x: number; y: number },
+): PhotoLayer | null => {
+  for (let index = document.layers.length - 1; index >= 0; index -= 1) {
+    const layer = document.layers[index];
+
+    if (
+      layer?.kind === "photo" &&
+      isPhotoPlaceholder(layer) &&
+      !layer.locked &&
+      isPointInsideLayer(layer, point)
+    ) {
+      return layer;
+    }
+  }
+
+  return null;
+};
 
 export const addLayer = (
   document: PageDocument,

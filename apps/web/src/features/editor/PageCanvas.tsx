@@ -8,15 +8,18 @@ import {
   DeleteRegular,
   EditRegular,
   HandLeftRegular,
+  ImageAddRegular,
   ImageBorderRegular,
   SubtractRegular,
   TextTRegular,
 } from "@fluentui/react-icons";
 import {
+  findPhotoPlaceholderAtPoint,
+  isCustomStickerId,
+  isPhotoPlaceholder,
   type PageDocument,
   type PageLayer,
   type PhotoLayer,
-  isCustomStickerId,
   renderPageDocumentSvg,
   type StickerSvg,
   type WashiTapeLayer,
@@ -71,6 +74,8 @@ export type CanvasPreviewLayer = {
   sourcePageId: string;
   stackIndex: number;
 };
+
+export type PhotoPlaceholderDropTarget = { layerId: string; pageId?: string };
 
 /** Dashed outlines showing where an arrange action will move layers. */
 export type ArrangeCanvasPreview = {
@@ -329,6 +334,7 @@ export function PageCanvas({
   onActiveSelectionPanelChange,
   onDeleteLayer,
   onChangeLayer,
+  onChoosePhoto,
   onDropAsset,
   onDropFiles,
   onReorderLayer,
@@ -349,8 +355,22 @@ export function PageCanvas({
   onActiveSelectionPanelChange?: ((panel: SelectionPanel | null) => void) | undefined;
   onDeleteLayer: (layerId: string) => void;
   onChangeLayer?: (layerId: string, update: Partial<PageLayer>) => void;
-  onDropAsset?: (assetId: string, canvasPoint: CanvasPoint) => void;
-  onDropFiles?: (files: File[], canvasPoint: CanvasPoint) => void;
+  /** Opens a photo picker to fill an empty photo placeholder. */
+  onChoosePhoto?: ((layerId: string) => void) | undefined;
+  /**
+   * `placeholder` is the empty photo placeholder under the drop point, if any. `pageId` is set
+   * when it is a spread preview layer owned by another page.
+   */
+  onDropAsset?: (
+    assetId: string,
+    canvasPoint: CanvasPoint,
+    placeholder?: PhotoPlaceholderDropTarget,
+  ) => void;
+  onDropFiles?: (
+    files: File[],
+    canvasPoint: CanvasPoint,
+    placeholder?: PhotoPlaceholderDropTarget,
+  ) => void;
   onReorderLayer: (layerId: string, command: ReorderLayerCommand) => void;
   onSelectPreviewLayer?: (pageId: string, layerId: string) => void;
   onSelectLayer: (layerId: string | null, options?: SelectLayerOptions) => void;
@@ -460,7 +480,9 @@ export function PageCanvas({
     () =>
       renderPageDocumentSvg(renderedDocument, {
         idPrefix: svgIdPrefix,
-        resolvePhotoHref: (layer) => resolveBrowserPhotoHref(assetById.get(layer.assetId)),
+        resolvePhotoHref: (layer) =>
+          layer.assetId ? resolveBrowserPhotoHref(assetById.get(layer.assetId)) : null,
+        showPhotoPlaceholders: true,
         resolveStickerSvg: (layer) => stickerSvgById.get(layer.stickerId),
         resolveStickerHref: (layer) =>
           isCustomStickerId(layer.stickerId)
@@ -524,6 +546,8 @@ export function PageCanvas({
       ? "above"
       : "below";
   const selectedPhotoLayer = selectedLayer?.kind === "photo" ? selectedLayer : null;
+  const selectedPhotoPlaceholder =
+    selectedPhotoLayer && isPhotoPlaceholder(selectedPhotoLayer) ? selectedPhotoLayer : null;
   const getLayerBoxStyle = (layer: PageLayer): CSSProperties => ({
     left: `${(layer.x / document.canvas.width) * 100}%`,
     top: `${(layer.y / document.canvas.height) * 100}%`,
@@ -551,7 +575,9 @@ export function PageCanvas({
     ? selectedLayer.kind === "text"
       ? 248
       : selectedLayer.kind === "photo"
-        ? 164
+        ? selectedPhotoPlaceholder && onChoosePhoto
+          ? 204
+          : 164
         : 68
     : 68;
   const selectedLayerMenuStyle: CSSProperties | undefined = selectedSelectionFrame
@@ -1102,6 +1128,18 @@ export function PageCanvas({
     dragOverDepthRef.current = Math.max(0, dragOverDepthRef.current - 1);
     if (dragOverDepthRef.current === 0) setIsAssetDragOver(false);
   };
+  const findDropPlaceholder = (point: CanvasPoint): PhotoPlaceholderDropTarget | undefined => {
+    // Hit-test what the canvas shows, including placeholders projected from the facing page.
+    const hit = findPhotoPlaceholderAtPoint(
+      { ...document, layers: interactiveLayers.map((entry) => entry.layer) },
+      point,
+    );
+    if (!hit) return undefined;
+    const entry = interactiveLayers.find((item) => item.layer.id === hit.id);
+    return entry?.kind === "preview"
+      ? { layerId: hit.id, pageId: entry.sourcePageId }
+      : { layerId: hit.id };
+  };
   const handleAssetDrop = (event: ReactDragEvent<HTMLFieldSetElement>) => {
     if (!isAcceptedDragPayload(event)) return;
     event.preventDefault();
@@ -1109,12 +1147,13 @@ export function PageCanvas({
     setIsAssetDragOver(false);
     const point = getDropCanvasPoint(event);
     if (!point) return;
+    const placeholder = findDropPlaceholder(point);
     if (onDropFiles && hasFileDragPayload(event)) {
       const files = Array.from(event.dataTransfer.files).filter((file) =>
         file.type.startsWith("image/"),
       );
       if (files.length > 0) {
-        onDropFiles(files, point);
+        onDropFiles(files, point, placeholder);
         return;
       }
     }
@@ -1122,7 +1161,7 @@ export function PageCanvas({
     const assetId =
       event.dataTransfer.getData(assetDragMimeType) || event.dataTransfer.getData("text/plain");
     if (!assetId) return;
-    onDropAsset(assetId, point);
+    onDropAsset(assetId, point, placeholder);
   };
 
   return (
@@ -1291,7 +1330,7 @@ export function PageCanvas({
                         />
                       );
                     })}
-                    {layer.kind === "photo" ? (
+                    {layer.kind === "photo" && !isPhotoPlaceholder(layer) ? (
                       <button
                         type="button"
                         aria-label="Click and drag to adjust photo"
@@ -1356,7 +1395,7 @@ export function PageCanvas({
             </div>
           );
         })}
-        {selectedPhotoLayer && !selectedPhotoLayer.locked ? (
+        {selectedPhotoLayer && !selectedPhotoLayer.locked && !selectedPhotoPlaceholder ? (
           // Rendered above every layer so neighbouring hitboxes can't steal clicks when the slider
           // sits outside a small photo; the box mirrors the layer's geometry and rotation.
           <div
@@ -1461,6 +1500,17 @@ export function PageCanvas({
             className="selected-layer-action-bar"
             role="toolbar"
           >
+            {selectedPhotoPlaceholder && onChoosePhoto ? (
+              <button
+                type="button"
+                aria-label="Add photo to placeholder"
+                title="Add photo"
+                onClick={() => onChoosePhoto(selectedPhotoPlaceholder.id)}
+              >
+                <ImageAddRegular />
+                <span>Add photo</span>
+              </button>
+            ) : null}
             {selectedLayer.kind === "photo" ? (
               <button
                 type="button"

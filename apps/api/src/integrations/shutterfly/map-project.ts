@@ -437,16 +437,15 @@ const mapItemToPlacement = (
 
     case "photo": {
       const mediaId = photoMediaId(item);
+      // An empty Shutterfly photo well becomes an empty Zakka photo placeholder in the same spot.
+      const zakkaAssetId = mediaId ? context.resolvers.photoAssetId(mediaId) : null;
 
-      if (!mediaId) {
-        return;
-      }
-
-      const zakkaAssetId = context.resolvers.photoAssetId(mediaId);
-
-      if (!zakkaAssetId) {
-        warn(context, "Skipped photos that could not be downloaded", itemKey);
-        return;
+      if (mediaId && !zakkaAssetId) {
+        warn(
+          context,
+          "Left empty photo placeholders for photos that could not be downloaded",
+          itemKey,
+        );
       }
 
       const borderUserData = item.border?.userData ?? {};
@@ -470,7 +469,7 @@ const mapItemToPlacement = (
         },
         placement.transform,
       );
-      const crop = photoCrop(sourceRect, item);
+      const crop = zakkaAssetId ? photoCrop(sourceRect, item) : undefined;
 
       pushLayer(
         context,
@@ -481,7 +480,7 @@ const mapItemToPlacement = (
           y: frameRect.y,
           width: frameRect.w,
           height: frameRect.h,
-          assetId: zakkaAssetId,
+          ...(zakkaAssetId ? { assetId: zakkaAssetId } : {}),
           fit: "cover",
           ...(crop ? { crop } : {}),
           ...(borderWidth > 0 && borderColor && hexColorPattern.test(borderColor)

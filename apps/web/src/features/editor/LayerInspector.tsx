@@ -8,10 +8,13 @@ import { WashiTapeControls } from "./WashiTapeControls";
 export function LayerInspector({
   layer,
   onChange,
+  onChoosePhoto,
   onChooseWashiTapePhoto,
 }: {
   layer: PageLayer | null;
   onChange: (update: Partial<PageLayer>) => void;
+  /** Opens a photo picker to fill an empty photo placeholder. */
+  onChoosePhoto?: ((layerId: string) => void) | undefined;
   onChooseWashiTapePhoto?: ((layerId: string) => void) | undefined;
 }) {
   if (!layer) return <p className="empty-state">Select a layer to edit it.</p>;
@@ -48,7 +51,9 @@ export function LayerInspector({
         </div>
       </fieldset>
       {layer.kind === "text" ? <TextControls layer={layer} onChange={onChange} /> : null}
-      {layer.kind === "photo" ? <PhotoControls layer={layer} onChange={updatePhotoLayer} /> : null}
+      {layer.kind === "photo" ? (
+        <PhotoControls layer={layer} onChange={updatePhotoLayer} onChoosePhoto={onChoosePhoto} />
+      ) : null}
       {layer.kind === "washiTape" ? (
         <WashiTapeControls
           layer={layer}

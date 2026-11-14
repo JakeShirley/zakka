@@ -61,7 +61,7 @@ import { PhotoPickerModal } from "../editor/PhotoPickerModal";
 import { type PngExportSettings, PngExportSettingsModal } from "../editor/PngExportSettingsModal";
 import { StickerPickerModal } from "../editor/StickerPickerModal";
 import { WashiTapeGalleryModal } from "../washi-tape/WashiTapeGalleryModal";
-import { BookCanvasDeck } from "./BookCanvasDeck";
+import { BookCanvasDeck, type PlaceholderTarget } from "./BookCanvasDeck";
 import { BookEditorHeader } from "./BookEditorHeader";
 import { BookFilmstrip } from "./BookFilmstrip";
 import { BookLibraryPickerModal } from "./BookLibraryPickerModal";
@@ -92,6 +92,7 @@ import {
   getBookPageSizeKey,
 } from "./pageSizes";
 import {
+  fillPhotoPlaceholderAcrossSpread,
   getSpreadPageContexts,
   layerOverlapsPageCanvas,
   replacePageDocument,
@@ -99,7 +100,11 @@ import {
   syncLayerAcrossSpread,
 } from "./spreadLayers";
 
-type PhotoPickerMode = { kind: "washiTapePattern"; layerId: string; pageId: string };
+type PhotoPickerMode = {
+  kind: "photoPlaceholder" | "washiTapePattern";
+  layerId: string;
+  pageId: string;
+};
 
 /**
  * Layer properties that are driven by continuous controls (typing, sliders, colour pickers). Runs of
@@ -1132,10 +1137,44 @@ export function BookEditorView() {
     setSelectedLayerIds([layer.id]);
   };
 
+  const fillPhotoPlaceholder = (pageId: string, layerId: string, asset: Asset): boolean => {
+    // Imported spread-spanning frames are mirrored on both facing pages, so fill every copy in the
+    // page's spread even when the editor is in Page view or has navigated away.
+    const spreadPageIds = book?.spreads.find((spread) => spread.pageIds.includes(pageId))
+      ?.pageIds ?? [pageId];
+    const result = fillPhotoPlaceholderAcrossSpread({
+      assetId: asset.id,
+      details: pageDetails,
+      layerId,
+      sourcePageId: pageId,
+      spreadPageIds,
+    });
+    if (!result.containingPageId) return false;
+
+    applySpreadLayerSync(result, { selectedLayerIds: [layerId] });
+    setActivePageId(pageId);
+    return true;
+  };
+
+  const placeDroppedPhoto = (
+    pageId: string,
+    asset: Asset,
+    point: { x: number; y: number },
+    placeholder?: PlaceholderTarget,
+  ) => {
+    if (placeholder && fillPhotoPlaceholder(placeholder.pageId, placeholder.layerId, asset)) return;
+    addPhotoFromDrop(pageId, asset, point);
+  };
+
+  // Uploads finish after later renders, so file drops must place photos against the latest pages.
+  const placeDroppedPhotoRef = useRef(placeDroppedPhoto);
+  placeDroppedPhotoRef.current = placeDroppedPhoto;
+
   const addPhotosFromFileDrop = async (
     pageId: string,
     files: File[],
     point: { x: number; y: number },
+    placeholder?: PlaceholderTarget,
   ) => {
     if (!book || files.length === 0) {
       return;
@@ -1153,10 +1192,13 @@ export function BookEditorView() {
           assetIds: [uploadedAsset.id],
         });
         setAssets(bookAssetsResponse.assets);
-        addPhotoFromDrop(pageId, uploadedAsset, {
-          x: point.x + dropOffset,
-          y: point.y + dropOffset,
-        });
+        placeDroppedPhotoRef.current(
+          pageId,
+          uploadedAsset,
+          { x: point.x + dropOffset, y: point.y + dropOffset },
+          // Only the first photo fills the placeholder; the rest land on the page as usual.
+          dropOffset === 0 ? placeholder : undefined,
+        );
         dropOffset += 24;
       } catch (uploadError: unknown) {
         failures.push(`${file.name}: ${getErrorMessage(uploadError)}`);
@@ -1707,13 +1749,26 @@ export function BookEditorView() {
         />
       ) : null}
       {photoPickerMode ? (
-        <PhotoPickerModal
-          actionLabel="Use as pattern"
-          assets={assets}
-          title="Choose pattern photo"
-          onAddPhoto={setWashiTapePhotoPattern}
-          onClose={() => setPhotoPickerMode(null)}
-        />
+        photoPickerMode.kind === "photoPlaceholder" ? (
+          <PhotoPickerModal
+            actionLabel="Add to placeholder"
+            assets={assets}
+            title="Choose photo"
+            onAddPhoto={(asset) => {
+              fillPhotoPlaceholder(photoPickerMode.pageId, photoPickerMode.layerId, asset);
+              setPhotoPickerMode(null);
+            }}
+            onClose={() => setPhotoPickerMode(null)}
+          />
+        ) : (
+          <PhotoPickerModal
+            actionLabel="Use as pattern"
+            assets={assets}
+            title="Choose pattern photo"
+            onAddPhoto={setWashiTapePhotoPattern}
+            onClose={() => setPhotoPickerMode(null)}
+          />
+        )
       ) : null}
       {isLibraryPickerOpen ? (
         <BookLibraryPickerModal
@@ -1868,6 +1923,13 @@ export function BookEditorView() {
                             layerId,
                           })
                         }
+                        onChoosePhoto={(layerId) =>
+                          setPhotoPickerMode({
+                            kind: "photoPlaceholder",
+                            pageId: activePageId,
+                            layerId,
+                          })
+                        }
                       />
                     ) : (
                       <ArrangePanel
@@ -1916,14 +1978,17 @@ export function BookEditorView() {
                 viewMode={viewMode}
                 visiblePageIds={visiblePageIds}
                 onActiveSelectionPanelChange={setActiveSelectionPanel}
+                onChoosePhoto={(pageId, layerId) =>
+                  setPhotoPickerMode({ kind: "photoPlaceholder", pageId, layerId })
+                }
                 onDeleteLayer={deletePageLayer}
-                onDropAsset={(pageId, assetId, point) => {
+                onDropAsset={(pageId, assetId, point, placeholder) => {
                   const asset = assetById.get(assetId);
                   if (!asset) return;
-                  addPhotoFromDrop(pageId, asset, point);
+                  placeDroppedPhoto(pageId, asset, point, placeholder);
                 }}
-                onDropFiles={(pageId, files, point) => {
-                  void addPhotosFromFileDrop(pageId, files, point);
+                onDropFiles={(pageId, files, point, placeholder) => {
+                  void addPhotosFromFileDrop(pageId, files, point, placeholder);
                 }}
                 onReorderLayer={reorderPageLayer}
                 onSelectLayer={selectLayer}
