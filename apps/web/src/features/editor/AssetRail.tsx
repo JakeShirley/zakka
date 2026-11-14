@@ -3,6 +3,7 @@ import {
   AddRegular,
   EmojiSparkleRegular,
   ImageAddRegular,
+  LayoutCellFourRegular,
   MapRegular,
   TextTRegular,
 } from "@fluentui/react-icons";
@@ -24,6 +25,7 @@ type AssetRailCommonProps = {
   inspector?: AssetRailInspector | null;
   onAddMap: () => void;
   onAddText: () => void;
+  onOpenLayoutPicker?: (() => void) | undefined;
   onOpenStickerPicker: () => void;
   onOpenWashiTapePicker: () => void;
 };
@@ -51,6 +53,7 @@ export function AssetRail(props: AssetRailProps) {
     inspector,
     onAddMap,
     onAddText,
+    onOpenLayoutPicker,
     onOpenStickerPicker,
     onOpenWashiTapePicker,
   } = props;
@@ -107,6 +110,16 @@ export function AssetRail(props: AssetRailProps) {
         >
           Add map
         </Button>
+        {onOpenLayoutPicker ? (
+          <Button
+            type="button"
+            className="secondary-button full-width-button"
+            icon={<LayoutCellFourRegular />}
+            onClick={onOpenLayoutPicker}
+          >
+            Page layout
+          </Button>
+        ) : null}
         {isReferencedMode ? (
           <Button
             appearance="primary"

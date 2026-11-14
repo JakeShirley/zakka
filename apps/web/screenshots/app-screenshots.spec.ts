@@ -830,6 +830,38 @@ const scenarios: ScreenshotScenario[] = [
     waitFor: waitForBookEditor,
   },
   {
+    name: "book-editor-layout-picker",
+    path: "/books/book_summer",
+    prepare: async (page) => {
+      // Page layouts are absent on merge-base; stage them only when the editor offers them.
+      const layoutButton = page.getByRole("button", { name: "Page layout" });
+      if (!(await isVisible(layoutButton))) return;
+      await layoutButton.click();
+      const picker = page.getByRole("dialog", { name: "Page layouts" });
+      await expect(
+        picker.getByRole("button", { name: /^Apply Polaroid pair layout/ }).first(),
+      ).toBeVisible();
+      await expect(picker.getByRole("button", { name: /\(Shutterfly\)/ }).first()).toBeVisible();
+    },
+    viewports: ["desktop"],
+    waitFor: waitForBookEditor,
+  },
+  {
+    name: "book-editor-layout-applied",
+    path: "/books/book_summer",
+    prepare: async (page) => {
+      const layoutButton = page.getByRole("button", { name: "Page layout" });
+      if (!(await isVisible(layoutButton))) return;
+      await layoutButton.click();
+      const picker = page.getByRole("dialog", { name: "Page layouts" });
+      await picker.getByLabel("Source").selectOption("zakka");
+      await picker.getByRole("button", { name: /^Apply Polaroid pair layout/ }).click();
+      await expect(picker).toBeHidden();
+    },
+    viewports: ["desktop"],
+    waitFor: waitForBookEditor,
+  },
+  {
     name: "library",
     path: "/library",
     waitFor: async (page) => {

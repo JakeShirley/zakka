@@ -640,6 +640,11 @@ export type RenderPageSvgOptions = {
    */
   showPhotoPlaceholders?: boolean;
   /**
+   * Draws empty text boxes (text layers with no text) as dashed "Add text" outlines, typically
+   * created by page layouts. Exports leave this off so they do not print.
+   */
+  showTextPlaceholders?: boolean;
+  /**
    * Photo layer ids that should render an extra translucent unclipped image
    * behind the cropped one, so the editor can preview the full source photo
    * while the user is positioning a crop.
@@ -2118,6 +2123,27 @@ const renderPhotoPlaceholderSvg = (
   };
 };
 
+/** Draws an empty text box as a dashed outline with an "Add text" hint in the layer's style. */
+const renderTextPlaceholderSvg = (layer: TextLayer): string => {
+  const outlineWidth = Math.max(
+    1,
+    Math.min(layer.width, layer.height) * 0.012,
+    layer.fontSize * 0.04,
+  );
+  const inset = outlineWidth;
+  const hintSize = Math.min(layer.fontSize, layer.height * 0.6);
+  const anchor = layer.align === "center" ? "middle" : layer.align === "right" ? "end" : "start";
+  const padding = Math.min(layer.width * 0.04, hintSize * 0.5);
+  const hintX =
+    layer.align === "center"
+      ? layer.width / 2
+      : layer.align === "right"
+        ? layer.width - padding
+        : padding;
+
+  return `<g data-layer-id="${escapeXml(layer.id)}" data-text-placeholder="true" opacity="${layer.opacity}" transform="${layerTransform(layer)}"><g transform="translate(${layer.x} ${layer.y})"><rect x="${inset}" y="${inset}" width="${Math.max(0, layer.width - inset * 2)}" height="${Math.max(0, layer.height - inset * 2)}" fill="${photoPlaceholderFill}" fill-opacity="0.35" stroke="${photoPlaceholderInk}" stroke-opacity="0.7" stroke-width="${outlineWidth}" stroke-dasharray="${outlineWidth * 4} ${outlineWidth * 3}" /><text x="${hintX}" y="${layer.height / 2}" dominant-baseline="central" text-anchor="${anchor}" fill="${photoPlaceholderInk}" font-family="${escapeXml(layer.fontFamily)}, sans-serif" font-size="${hintSize}">Add text</text></g></g>`;
+};
+
 const renderPhotoLayerSvg = (
   layer: PhotoLayer,
   href: string | null | undefined,
@@ -2476,6 +2502,11 @@ export const renderPageDocumentSvg = (
     }
 
     if (layer.kind === "text") {
+      if (options.showTextPlaceholders && isTextPlaceholder(layer)) {
+        bodies.push(renderTextPlaceholderSvg(layer));
+        continue;
+      }
+
       const rendered = renderTextLayerSvg(layer, index, options.idPrefix);
 
       if (rendered.defs) {
@@ -2632,6 +2663,10 @@ export const resetPhotoLayerEdits = (layer: PhotoLayer): PhotoLayer =>
 /** True for a photo frame that is waiting for a photo (no asset assigned yet). */
 export const isPhotoPlaceholder = (layer: PageLayer): boolean =>
   layer.kind === "photo" && !layer.assetId;
+
+/** True for an empty text box waiting for text, such as one created by a page layout. */
+export const isTextPlaceholder = (layer: PageLayer): boolean =>
+  layer.kind === "text" && layer.text.trim().length === 0;
 
 /**
  * Layer update that puts a photo into a frame (typically a placeholder), keeping the frame's
