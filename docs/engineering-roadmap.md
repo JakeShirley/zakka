@@ -392,7 +392,7 @@ Goal: let users bring existing projects from other photo book services into Zakk
 
 | ID | Task | Status | Depends on | Deliverable | Acceptance |
 | --- | --- | --- | --- | --- | --- |
-| E15.1 | Import Shutterfly photo books | `Needs review` | E11.3, E11.7 | Paste-token Shutterfly connection, encrypted credential storage, project list, and project-to-book import | A connected user can import a saved Shutterfly photo book as a Zakka book with page order, layflat spreads, photo crops, text, solid backgrounds, and stickers; unsupported elements are reported. Uses unofficial Shutterfly endpoints; see `docs/configuration.md`. Updated 2026-11-10. |
+| E15.1 | Import Shutterfly photo books | `Needs review` | E11.3, E11.7 | Paste-token Shutterfly connection, encrypted credential storage, project list, and project-to-book import | A connected user can import a saved Shutterfly photo book as a Zakka book with page order, layflat spreads, photo crops, empty photo placeholders, text, solid backgrounds, and stickers; unsupported elements are reported. Uses unofficial Shutterfly endpoints; see `docs/configuration.md`. Updated 2026-11-10. |
 
 ## Validation Matrix
 

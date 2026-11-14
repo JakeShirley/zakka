@@ -26,9 +26,20 @@ type BookCanvasDeckProps = {
   visiblePageIds: string[];
   getSpreadPreviewLayers: (pageId: string) => CanvasPreviewLayer[];
   onActiveSelectionPanelChange?: (panel: SelectionPanel | null) => void;
+  onChoosePhoto?: (pageId: string, layerId: string) => void;
   onDeleteLayer: (pageId: string, layerId: string) => void;
-  onDropAsset?: (pageId: string, assetId: string, canvasPoint: CanvasPoint) => void;
-  onDropFiles?: (pageId: string, files: File[], canvasPoint: CanvasPoint) => void;
+  onDropAsset?: (
+    pageId: string,
+    assetId: string,
+    canvasPoint: CanvasPoint,
+    placeholderLayerId?: string,
+  ) => void;
+  onDropFiles?: (
+    pageId: string,
+    files: File[],
+    canvasPoint: CanvasPoint,
+    placeholderLayerId?: string,
+  ) => void;
   onReorderLayer: (pageId: string, layerId: string, command: ReorderLayerCommand) => void;
   onSelectLayer: (pageId: string, layerId: string | null, options?: SelectLayerOptions) => void;
   onTransformEnd: (pageId: string, layerId: string, update: Partial<PageLayer> | null) => void;
@@ -54,6 +65,7 @@ export function BookCanvasDeck({
   visiblePageIds,
   getSpreadPreviewLayers,
   onActiveSelectionPanelChange,
+  onChoosePhoto,
   onDeleteLayer,
   onDropAsset,
   onDropFiles,
@@ -100,12 +112,21 @@ export function BookCanvasDeck({
               {...(spreadReorderCapabilities ? { spreadReorderCapabilities } : {})}
               onActiveSelectionPanelChange={isActivePage ? onActiveSelectionPanelChange : undefined}
               onChangeLayer={(layerId, update) => onUpdateLayerTransform(pageId, layerId, update)}
+              onChoosePhoto={
+                onChoosePhoto ? (layerId) => onChoosePhoto(pageId, layerId) : undefined
+              }
               onDeleteLayer={(layerId) => onDeleteLayer(pageId, layerId)}
               {...(onDropAsset
-                ? { onDropAsset: (assetId, point) => onDropAsset(pageId, assetId, point) }
+                ? {
+                    onDropAsset: (assetId, point, placeholderLayerId) =>
+                      onDropAsset(pageId, assetId, point, placeholderLayerId),
+                  }
                 : {})}
               {...(onDropFiles
-                ? { onDropFiles: (files, point) => onDropFiles(pageId, files, point) }
+                ? {
+                    onDropFiles: (files, point, placeholderLayerId) =>
+                      onDropFiles(pageId, files, point, placeholderLayerId),
+                  }
                 : {})}
               onReorderLayer={(layerId, command) => onReorderLayer(pageId, layerId, command)}
               onSelectPreviewLayer={onSelectLayer}

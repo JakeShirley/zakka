@@ -15,6 +15,8 @@ import {
   createTextLayer,
   createWashiTapeLayer,
   deleteLayer,
+  fillPhotoLayerUpdate,
+  isPhotoPlaceholder,
   type PageDocument,
   type PageLayer,
   reorderLayer,
@@ -84,7 +86,11 @@ import {
   syncLayerAcrossSpread,
 } from "./spreadLayers";
 
-type PhotoPickerMode = { kind: "washiTapePattern"; layerId: string; pageId: string };
+type PhotoPickerMode = {
+  kind: "photoPlaceholder" | "washiTapePattern";
+  layerId: string;
+  pageId: string;
+};
 
 /**
  * Layer properties that are driven by continuous controls (typing, sliders, colour pickers). Runs of
@@ -1030,10 +1036,35 @@ export function BookEditorView() {
     setSelectedLayerIds([layer.id]);
   };
 
+  const fillPhotoPlaceholder = (pageId: string, layerId: string, asset: Asset): boolean => {
+    const layer = pageDetails.get(pageId)?.document.layers.find((item) => item.id === layerId);
+    if (!layer || !isPhotoPlaceholder(layer)) return false;
+
+    updateLayerTransform(pageId, layerId, fillPhotoLayerUpdate(asset.id) as Partial<PageLayer>);
+    setActivePageId(pageId);
+    setSelectedLayerIds([layerId]);
+    return true;
+  };
+
+  const placeDroppedPhoto = (
+    pageId: string,
+    asset: Asset,
+    point: { x: number; y: number },
+    placeholderLayerId?: string,
+  ) => {
+    if (placeholderLayerId && fillPhotoPlaceholder(pageId, placeholderLayerId, asset)) return;
+    addPhotoFromDrop(pageId, asset, point);
+  };
+
+  // Uploads finish after later renders, so file drops must place photos against the latest pages.
+  const placeDroppedPhotoRef = useRef(placeDroppedPhoto);
+  placeDroppedPhotoRef.current = placeDroppedPhoto;
+
   const addPhotosFromFileDrop = async (
     pageId: string,
     files: File[],
     point: { x: number; y: number },
+    placeholderLayerId?: string,
   ) => {
     if (!book || files.length === 0) {
       return;
@@ -1051,10 +1082,13 @@ export function BookEditorView() {
           assetIds: [uploadedAsset.id],
         });
         setAssets(bookAssetsResponse.assets);
-        addPhotoFromDrop(pageId, uploadedAsset, {
-          x: point.x + dropOffset,
-          y: point.y + dropOffset,
-        });
+        placeDroppedPhotoRef.current(
+          pageId,
+          uploadedAsset,
+          { x: point.x + dropOffset, y: point.y + dropOffset },
+          // Only the first photo fills the placeholder; the rest land on the page as usual.
+          dropOffset === 0 ? placeholderLayerId : undefined,
+        );
         dropOffset += 24;
       } catch (uploadError: unknown) {
         failures.push(`${file.name}: ${getErrorMessage(uploadError)}`);
@@ -1605,13 +1639,26 @@ export function BookEditorView() {
         />
       ) : null}
       {photoPickerMode ? (
-        <PhotoPickerModal
-          actionLabel="Use as pattern"
-          assets={assets}
-          title="Choose pattern photo"
-          onAddPhoto={setWashiTapePhotoPattern}
-          onClose={() => setPhotoPickerMode(null)}
-        />
+        photoPickerMode.kind === "photoPlaceholder" ? (
+          <PhotoPickerModal
+            actionLabel="Add to placeholder"
+            assets={assets}
+            title="Choose photo"
+            onAddPhoto={(asset) => {
+              fillPhotoPlaceholder(photoPickerMode.pageId, photoPickerMode.layerId, asset);
+              setPhotoPickerMode(null);
+            }}
+            onClose={() => setPhotoPickerMode(null)}
+          />
+        ) : (
+          <PhotoPickerModal
+            actionLabel="Use as pattern"
+            assets={assets}
+            title="Choose pattern photo"
+            onAddPhoto={setWashiTapePhotoPattern}
+            onClose={() => setPhotoPickerMode(null)}
+          />
+        )
       ) : null}
       {isLibraryPickerOpen ? (
         <BookLibraryPickerModal
@@ -1755,6 +1802,13 @@ export function BookEditorView() {
                           layerId,
                         })
                       }
+                      onChoosePhoto={(layerId) =>
+                        setPhotoPickerMode({
+                          kind: "photoPlaceholder",
+                          pageId: activePageId,
+                          layerId,
+                        })
+                      }
                     />
                   ),
                 }
@@ -1791,14 +1845,17 @@ export function BookEditorView() {
                 viewMode={viewMode}
                 visiblePageIds={visiblePageIds}
                 onActiveSelectionPanelChange={setActiveSelectionPanel}
+                onChoosePhoto={(pageId, layerId) =>
+                  setPhotoPickerMode({ kind: "photoPlaceholder", pageId, layerId })
+                }
                 onDeleteLayer={deletePageLayer}
-                onDropAsset={(pageId, assetId, point) => {
+                onDropAsset={(pageId, assetId, point, placeholderLayerId) => {
                   const asset = assetById.get(assetId);
                   if (!asset) return;
-                  addPhotoFromDrop(pageId, asset, point);
+                  placeDroppedPhoto(pageId, asset, point, placeholderLayerId);
                 }}
-                onDropFiles={(pageId, files, point) => {
-                  void addPhotosFromFileDrop(pageId, files, point);
+                onDropFiles={(pageId, files, point, placeholderLayerId) => {
+                  void addPhotosFromFileDrop(pageId, files, point, placeholderLayerId);
                 }}
                 onReorderLayer={reorderPageLayer}
                 onSelectLayer={selectLayer}

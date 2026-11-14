@@ -8,15 +8,18 @@ import {
   DeleteRegular,
   EditRegular,
   HandLeftRegular,
+  ImageAddRegular,
   ImageBorderRegular,
   SubtractRegular,
   TextTRegular,
 } from "@fluentui/react-icons";
 import {
+  findPhotoPlaceholderAtPoint,
+  isCustomStickerId,
+  isPhotoPlaceholder,
   type PageDocument,
   type PageLayer,
   type PhotoLayer,
-  isCustomStickerId,
   renderPageDocumentSvg,
   type StickerSvg,
   type WashiTapeLayer,
@@ -310,6 +313,7 @@ export function PageCanvas({
   onActiveSelectionPanelChange,
   onDeleteLayer,
   onChangeLayer,
+  onChoosePhoto,
   onDropAsset,
   onDropFiles,
   onReorderLayer,
@@ -329,8 +333,11 @@ export function PageCanvas({
   onActiveSelectionPanelChange?: ((panel: SelectionPanel | null) => void) | undefined;
   onDeleteLayer: (layerId: string) => void;
   onChangeLayer?: (layerId: string, update: Partial<PageLayer>) => void;
-  onDropAsset?: (assetId: string, canvasPoint: CanvasPoint) => void;
-  onDropFiles?: (files: File[], canvasPoint: CanvasPoint) => void;
+  /** Opens a photo picker to fill an empty photo placeholder. */
+  onChoosePhoto?: ((layerId: string) => void) | undefined;
+  /** `placeholderLayerId` is the empty photo placeholder under the drop point, if any. */
+  onDropAsset?: (assetId: string, canvasPoint: CanvasPoint, placeholderLayerId?: string) => void;
+  onDropFiles?: (files: File[], canvasPoint: CanvasPoint, placeholderLayerId?: string) => void;
   onReorderLayer: (layerId: string, command: ReorderLayerCommand) => void;
   onSelectPreviewLayer?: (pageId: string, layerId: string) => void;
   onSelectLayer: (layerId: string | null, options?: SelectLayerOptions) => void;
@@ -439,7 +446,9 @@ export function PageCanvas({
     () =>
       renderPageDocumentSvg(renderedDocument, {
         idPrefix: svgIdPrefix,
-        resolvePhotoHref: (layer) => resolveBrowserPhotoHref(assetById.get(layer.assetId)),
+        resolvePhotoHref: (layer) =>
+          layer.assetId ? resolveBrowserPhotoHref(assetById.get(layer.assetId)) : null,
+        showPhotoPlaceholders: true,
         resolveStickerSvg: (layer) => stickerSvgById.get(layer.stickerId),
         resolveStickerHref: (layer) =>
           isCustomStickerId(layer.stickerId)
@@ -503,6 +512,8 @@ export function PageCanvas({
       ? "above"
       : "below";
   const selectedPhotoLayer = selectedLayer?.kind === "photo" ? selectedLayer : null;
+  const selectedPhotoPlaceholder =
+    selectedPhotoLayer && isPhotoPlaceholder(selectedPhotoLayer) ? selectedPhotoLayer : null;
   const getLayerBoxStyle = (layer: PageLayer): CSSProperties => ({
     left: `${(layer.x / document.canvas.width) * 100}%`,
     top: `${(layer.y / document.canvas.height) * 100}%`,
@@ -514,7 +525,9 @@ export function PageCanvas({
     ? selectedLayer.kind === "text"
       ? 248
       : selectedLayer.kind === "photo"
-        ? 164
+        ? selectedPhotoPlaceholder && onChoosePhoto
+          ? 204
+          : 164
         : 68
     : 68;
   const selectedLayerMenuStyle: CSSProperties | undefined = selectedSelectionFrame
@@ -1053,12 +1066,13 @@ export function PageCanvas({
     setIsAssetDragOver(false);
     const point = getDropCanvasPoint(event);
     if (!point) return;
+    const placeholderLayerId = findPhotoPlaceholderAtPoint(document, point)?.id;
     if (onDropFiles && hasFileDragPayload(event)) {
       const files = Array.from(event.dataTransfer.files).filter((file) =>
         file.type.startsWith("image/"),
       );
       if (files.length > 0) {
-        onDropFiles(files, point);
+        onDropFiles(files, point, placeholderLayerId);
         return;
       }
     }
@@ -1066,7 +1080,7 @@ export function PageCanvas({
     const assetId =
       event.dataTransfer.getData(assetDragMimeType) || event.dataTransfer.getData("text/plain");
     if (!assetId) return;
-    onDropAsset(assetId, point);
+    onDropAsset(assetId, point, placeholderLayerId);
   };
 
   return (
@@ -1235,7 +1249,7 @@ export function PageCanvas({
                         />
                       );
                     })}
-                    {layer.kind === "photo" ? (
+                    {layer.kind === "photo" && !isPhotoPlaceholder(layer) ? (
                       <button
                         type="button"
                         aria-label="Click and drag to adjust photo"
@@ -1300,7 +1314,7 @@ export function PageCanvas({
             </div>
           );
         })}
-        {selectedPhotoLayer && !selectedPhotoLayer.locked ? (
+        {selectedPhotoLayer && !selectedPhotoLayer.locked && !selectedPhotoPlaceholder ? (
           // Rendered above every layer so neighbouring hitboxes can't steal clicks when the slider
           // sits outside a small photo; the box mirrors the layer's geometry and rotation.
           <div
@@ -1382,6 +1396,17 @@ export function PageCanvas({
             className="selected-layer-action-bar"
             role="toolbar"
           >
+            {selectedPhotoPlaceholder && onChoosePhoto ? (
+              <button
+                type="button"
+                aria-label="Add photo to placeholder"
+                title="Add photo"
+                onClick={() => onChoosePhoto(selectedPhotoPlaceholder.id)}
+              >
+                <ImageAddRegular />
+                <span>Add photo</span>
+              </button>
+            ) : null}
             {selectedLayer.kind === "photo" ? (
               <button
                 type="button"

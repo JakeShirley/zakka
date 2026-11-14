@@ -568,7 +568,9 @@ const validatePageDocumentAssets = (
   repositories: Repositories,
 ): boolean => {
   const assetIds = new Set(
-    document.layers.filter((layer) => layer.kind === "photo").map((layer) => layer.assetId),
+    document.layers.flatMap((layer) =>
+      layer.kind === "photo" && layer.assetId ? [layer.assetId] : [],
+    ),
   );
 
   for (const assetId of assetIds) {

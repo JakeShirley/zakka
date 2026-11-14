@@ -57,8 +57,9 @@ export function createTestAsset(id = "asset_test"): Asset {
 
 export type CanvasProbe = {
   activeSelectionPanel: SelectionPanel | null;
+  choosePhotoRequests: string[];
   document: PageDocument;
-  droppedAssets: Array<{ assetId: string; point: CanvasPoint }>;
+  droppedAssets: Array<{ assetId: string; placeholderLayerId?: string; point: CanvasPoint }>;
   reorders: Array<{ command: ReorderLayerCommand; layerId: string }>;
   selectedLayerIds: string[];
 };
@@ -80,6 +81,7 @@ export async function renderCanvas({
 }: RenderCanvasOptions) {
   const probe: CanvasProbe = {
     activeSelectionPanel: null,
+    choosePhotoRequests: [],
     document: createPageDocument({ canvas: { width: 2000, height: 2000 }, layers }),
     droppedAssets: [],
     reorders: [],
@@ -118,11 +120,18 @@ export async function renderCanvas({
           selectedLayerIds={selection}
           onActiveSelectionPanelChange={setPanel}
           onChangeLayer={applyUpdate}
+          onChoosePhoto={(layerId) => probe.choosePhotoRequests.push(layerId)}
           onDeleteLayer={(layerId) => {
             setDocument((current) => deleteLayer(current, layerId));
             setSelection((current) => current.filter((id) => id !== layerId));
           }}
-          onDropAsset={(assetId, point) => probe.droppedAssets.push({ assetId, point })}
+          onDropAsset={(assetId, point, placeholderLayerId) =>
+            probe.droppedAssets.push({
+              assetId,
+              point,
+              ...(placeholderLayerId ? { placeholderLayerId } : {}),
+            })
+          }
           onReorderLayer={(layerId, command) => {
             probe.reorders.push({ command, layerId });
             setDocument((current) => {

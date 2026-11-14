@@ -13,7 +13,10 @@ import {
   duplicateLayer,
   editorFontDefinitions,
   editorFontFaceCss,
+  fillPhotoLayerUpdate,
+  findPhotoPlaceholderAtPoint,
   getPhotoFrameLayout,
+  isPhotoPlaceholder,
   getTextLayerRenderedBounds,
   loveYaLikeASisterFontFamily,
   pageDocumentSchema,
@@ -286,6 +289,56 @@ describe("page document helpers", () => {
     expect(reset.photoTransform).toMatchObject({ scale: 1, offsetX: 0 });
     expect(reset.crop).toMatchObject({ x: 0, y: 0, width: 1, height: 1 });
     expect(reset.mask.shape).toBe("rectangle");
+  });
+
+  it("treats photo layers without an asset as fillable placeholders", () => {
+    const placeholder = createPhotoLayer({
+      id: "photo_empty",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 300,
+    });
+    const filled = updateLayer(
+      addLayer(createPageDocument(), placeholder),
+      "photo_empty",
+      fillPhotoLayerUpdate("asset_1"),
+    ).layers[0];
+
+    expect(pageDocumentSchema.parse(createPageDocument({ layers: [placeholder] }))).toBeTruthy();
+    expect(placeholder.assetId).toBeUndefined();
+    expect(isPhotoPlaceholder(placeholder)).toBe(true);
+    expect(filled).toMatchObject({ assetId: "asset_1", crop: { x: 0, y: 0, width: 1, height: 1 } });
+    expect(filled && isPhotoPlaceholder(filled)).toBe(false);
+  });
+
+  it("draws photo placeholders only when requested", () => {
+    const document = createPageDocument({
+      layers: [createPhotoLayer({ id: "photo_empty", x: 0, y: 0, width: 400, height: 300 })],
+    });
+
+    expect(renderPageDocumentSvg(document)).not.toContain("data-photo-placeholder");
+    expect(renderPageDocumentSvg(document, { showPhotoPlaceholders: true })).toContain(
+      'data-photo-placeholder="true"',
+    );
+  });
+
+  it("finds the topmost unlocked photo placeholder under a point", () => {
+    const document = createPageDocument({
+      layers: [
+        createPhotoLayer({ id: "bottom", x: 0, y: 0, width: 400, height: 400 }),
+        createPhotoLayer({ id: "top", x: 200, y: 200, width: 400, height: 400 }),
+        createPhotoLayer({ id: "locked", x: 250, y: 250, width: 100, height: 100, locked: true }),
+        createPhotoLayer({ assetId: "asset_1", id: "filled", x: 0, y: 0, width: 100, height: 100 }),
+        createPhotoLayer({ id: "rotated", x: 1000, y: 0, width: 400, height: 40, rotation: 90 }),
+      ],
+    });
+
+    expect(findPhotoPlaceholderAtPoint(document, { x: 300, y: 300 })?.id).toBe("top");
+    expect(findPhotoPlaceholderAtPoint(document, { x: 50, y: 50 })?.id).toBe("bottom");
+    expect(findPhotoPlaceholderAtPoint(document, { x: 1200, y: 190 })?.id).toBe("rotated");
+    expect(findPhotoPlaceholderAtPoint(document, { x: 1300, y: 20 })).toBeNull();
+    expect(findPhotoPlaceholderAtPoint(document, { x: 700, y: 700 })).toBeNull();
   });
 
   it("creates package-backed sticker layers and normalizes legacy ids", () => {

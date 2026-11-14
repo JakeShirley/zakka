@@ -3346,7 +3346,8 @@ textarea:focus-visible {
   outline-offset: 1px;
 }
 
-.text-content-hint {
+.text-content-hint,
+.photo-placeholder-hint {
   margin: 0;
   color: var(--sb-neutral-foreground-3);
   font-size: 0.72rem;
