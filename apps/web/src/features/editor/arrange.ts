@@ -321,11 +321,14 @@ export const planSpread = (
         cursor = gap;
       }
     } else {
-      cursor = Math.min(...sorted.map((item) => start(item.bounds)));
+      // Span from the first sorted layer's start to the last one's end so both stay put.
+      const first = sorted[0] as MeasuredLayer;
+      const last = sorted[count - 1] as MeasuredLayer;
+      cursor = start(first.bounds);
       if (settings.gapMode === "fixed") {
         gap = settings.gap;
       } else {
-        const end = Math.max(...sorted.map((item) => start(item.bounds) + size(item.bounds)));
+        const end = start(last.bounds) + size(last.bounds);
         gap = (end - cursor - totalSize) / (count - 1);
       }
     }
@@ -362,19 +365,26 @@ export const getGridColumns = (settings: ArrangeSettings["grid"], count: number)
   return Math.max(1, Math.min(Math.round(columns), Math.max(count, 1)));
 };
 
-const sortReadingOrder = (measured: MeasuredLayer[], columns: number): MeasuredLayer[] => {
+/** Groups layers into their current visual rows (by vertical overlap), then reads each row left to right. */
+const sortReadingOrder = (measured: MeasuredLayer[]): MeasuredLayer[] => {
   const centerX = ({ bounds }: MeasuredLayer) => bounds.x + bounds.width / 2;
   const centerY = ({ bounds }: MeasuredLayer) => bounds.y + bounds.height / 2;
-  const byRow = [...measured].sort((left, right) => centerY(left) - centerY(right));
-  const ordered: MeasuredLayer[] = [];
+  const byY = [...measured].sort((left, right) => centerY(left) - centerY(right));
+  const rows: MeasuredLayer[][] = [];
+  let rowBottom = Number.NEGATIVE_INFINITY;
 
-  for (let index = 0; index < byRow.length; index += columns) {
-    ordered.push(
-      ...byRow.slice(index, index + columns).sort((left, right) => centerX(left) - centerX(right)),
-    );
+  for (const item of byY) {
+    const row = rows[rows.length - 1];
+    if (row && item.bounds.y < rowBottom) {
+      row.push(item);
+      rowBottom = Math.max(rowBottom, item.bounds.y + item.bounds.height);
+    } else {
+      rows.push([item]);
+      rowBottom = item.bounds.y + item.bounds.height;
+    }
   }
 
-  return ordered;
+  return rows.flatMap((row) => row.sort((left, right) => centerX(left) - centerX(right)));
 };
 
 const scaleLayerAboutCenter = (layer: PageLayer, scale: number): Partial<PageLayer> => {
@@ -411,7 +421,7 @@ export const planGrid = (
 
   const columns = getGridColumns(settings, movable.length);
   const rows = Math.ceil(movable.length / columns);
-  const ordered = settings.order === "reading" ? sortReadingOrder(movable, columns) : [...movable];
+  const ordered = settings.order === "reading" ? sortReadingOrder(movable) : [...movable];
   const selectionBounds = unionBounds(movable.map(({ bounds }) => bounds)) as Bounds;
   const pageBounds: Bounds = { height: canvas.height, width: canvas.width, x: 0, y: 0 };
   let cellWidth: number;

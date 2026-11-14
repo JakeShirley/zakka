@@ -58,15 +58,22 @@ export type InspectorTab = "properties" | ArrangeTab;
 export function useInspectorTab({
   canArrange,
   layerCount,
+  selectionKey,
   settings,
   onSettingsChange,
 }: {
   canArrange: boolean;
   layerCount: number;
+  /** Identifies the current selection; a new selection reopens on its default tab. */
+  selectionKey: string;
   settings: ArrangeSettings;
   onSettingsChange: (settings: ArrangeSettings) => void;
 }) {
-  const [view, setView] = useState<"properties" | "arrange">("properties");
+  const [viewState, setViewState] = useState<{ key: string; view: "properties" | "arrange" }>({
+    key: selectionKey,
+    view: "properties",
+  });
+  const view = viewState.key === selectionKey ? viewState.view : "properties";
   const isMultiple = layerCount > 1;
   const activeTab: InspectorTab =
     !canArrange || (!isMultiple && view === "properties")
@@ -76,10 +83,10 @@ export function useInspectorTab({
         : "align";
   const selectTab = (tab: InspectorTab) => {
     if (tab === "properties") {
-      setView("properties");
+      setViewState({ key: selectionKey, view: "properties" });
       return;
     }
-    setView("arrange");
+    setViewState({ key: selectionKey, view: "arrange" });
     onSettingsChange({ ...settings, tab });
   };
   return { activeTab, selectTab };

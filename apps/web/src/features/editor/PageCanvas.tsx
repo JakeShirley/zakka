@@ -521,13 +521,18 @@ export function PageCanvas({
   });
   const getLayerFrameStyle = (layer: PageLayer): CSSProperties => {
     const frame = getLayerSelectionFrame(layer);
+    // Rotate about the layer's own center, which differs from the frame's for measured text.
+    const originX =
+      frame.width > 0 ? ((layer.x + layer.width / 2 - frame.x) / frame.width) * 100 : 50;
+    const originY =
+      frame.height > 0 ? ((layer.y + layer.height / 2 - frame.y) / frame.height) * 100 : 50;
     return {
       left: `${(frame.x / document.canvas.width) * 100}%`,
       top: `${(frame.y / document.canvas.height) * 100}%`,
       width: `${(frame.width / document.canvas.width) * 100}%`,
       height: `${(frame.height / document.canvas.height) * 100}%`,
-      // Text frames are already measured from the rotated, rendered text.
-      transform: layer.kind === "text" ? undefined : `rotate(${layer.rotation}deg)`,
+      transform: `rotate(${layer.rotation}deg)`,
+      transformOrigin: `${originX}% ${originY}%`,
     };
   };
   const selectedLayerMenuHalfWidth = selectedLayer

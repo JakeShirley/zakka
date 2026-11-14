@@ -154,6 +154,18 @@ describe("planSpread", () => {
     ]);
   });
 
+  it("keeps the outer layers put when an inner layer is wider than the span", () => {
+    const wide = box("wide", 0, 0, 1000, 100);
+    const left = box("left", 200, 0, 100, 100);
+    const right = box("right", 800, 0, 100, 100);
+    const plan = planSpread([wide, left, right], canvas, spread({}));
+
+    expect(positions([wide, left, right], plan)).toMatchObject({
+      left: { x: 200 },
+      right: { x: 800 },
+    });
+  });
+
   it("needs three unlocked layers to even gaps within the selection", () => {
     expect(planSpread([a, b], canvas, spread({}))).toBeNull();
     expect(planSpread([a, b, { ...c, locked: true }], canvas, spread({}))).toBeNull();
@@ -176,6 +188,23 @@ describe("planGrid", () => {
       b: { x: 120, y: 0 },
       c: { x: 25, y: 110 },
       d: { x: 120, y: 135 },
+    });
+  });
+
+  it("reads existing rows independently of the destination column count", () => {
+    const rowLayers = [
+      box("a", 0, 0, 100, 100),
+      box("b", 300, 0, 100, 100),
+      box("c", 600, 0, 100, 100),
+      box("d", 0, 300, 100, 100),
+    ];
+    const plan = planGrid(rowLayers, canvas, grid({ columns: 2, gapX: 0, gapY: 0 }));
+
+    expect(positions(rowLayers, plan)).toMatchObject({
+      a: { x: 0, y: 0 },
+      b: { x: 100, y: 0 },
+      c: { x: 0, y: 100 },
+      d: { x: 100, y: 100 },
     });
   });
 

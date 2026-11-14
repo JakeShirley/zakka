@@ -29,26 +29,34 @@ function ArrangeHarness({
   onPreviewChange?: (enabled: boolean) => void;
 }) {
   const [layers, setLayers] = useState(initialLayers);
+  const [selectedIds, setSelectedIds] = useState(() => initialLayers.map((layer) => layer.id));
   const [settings, setSettings] = useState<ArrangeSettings>(defaultArrangeSettings);
-  const isSingle = layers.length === 1;
+  const selected = layers.filter((layer) => selectedIds.includes(layer.id));
+  const isSingle = selected.length === 1;
   const { activeTab, selectTab } = useInspectorTab({
     canArrange: true,
-    layerCount: layers.length,
+    layerCount: selected.length,
+    selectionKey: selectedIds.join("|"),
     settings,
     onSettingsChange: setSettings,
   });
   const plan = planArrange(
-    layers,
+    selected,
     canvas,
     isSingle ? getSingleLayerArrangeSettings(settings) : settings,
   );
 
   return (
     <>
+      {layers.map((layer) => (
+        <button key={layer.id} type="button" onClick={() => setSelectedIds([layer.id])}>
+          Select {layer.id}
+        </button>
+      ))}
       <InspectorTabs
         activeTab={activeTab}
         canArrange
-        layerCount={layers.length}
+        layerCount={selected.length}
         onSelect={selectTab}
       />
       {activeTab === "properties" ? (
@@ -57,7 +65,7 @@ function ArrangeHarness({
         <ArrangePanel
           canApply={Boolean(plan && plan.updates.length > 0)}
           isPreviewEnabled
-          movableLayerCount={layers.length}
+          movableLayerCount={selected.length}
           settings={settings}
           singleLayer={isSingle}
           onApply={() => {
@@ -176,6 +184,20 @@ describe("ArrangePanel", () => {
     expect(onPreviewChange).toHaveBeenCalledWith(false);
 
     await tab("Properties").click();
+    await expect.element(page.getByText("Layer properties")).toBeVisible();
+  });
+
+  test("reopens Properties when the selection changes to a single layer", async () => {
+    await renderPanel([box("a", 100, 100), box("b", 400, 100), box("c", 700, 100)]);
+
+    await tab("Grid").click();
+    await page.getByRole("button", { name: "Select a" }).click();
+    await expect.element(tab("Properties")).toHaveAttribute("aria-selected", "true");
+
+    await tab("Align").click();
+    await expect.element(tab("Align")).toHaveAttribute("aria-selected", "true");
+    await page.getByRole("button", { name: "Select b" }).click();
+    await expect.element(tab("Properties")).toHaveAttribute("aria-selected", "true");
     await expect.element(page.getByText("Layer properties")).toBeVisible();
   });
 });

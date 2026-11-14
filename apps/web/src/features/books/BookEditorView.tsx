@@ -374,6 +374,7 @@ export function BookEditorView() {
   const { activeTab: inspectorTab, selectTab: selectInspectorTab } = useInspectorTab({
     canArrange: canArrangeSelection,
     layerCount: arrangeLayers.length,
+    selectionKey: selectedLayerIds.join("|"),
     settings: arrangeSettings,
     onSettingsChange: setArrangeSettings,
   });
