@@ -358,6 +358,41 @@ const firstLineBaseline = (item: ShutterflyLayeredItem): number | null => {
   return numberValue(firstLine?.y);
 };
 
+const middleRowAnchors = ["4", "5", "6"];
+
+/**
+ * Maps Shutterfly's 3x3 alignment anchor to Zakka's vertical alignment. Only the middle row is
+ * unambiguous, so other anchors pick the Zakka alignment whose first baseline lands closest to
+ * the baseline Shutterfly recorded inside the box.
+ */
+const verticalAlignment = (
+  item: ShutterflyLayeredItem,
+  boxHeight: number,
+  fontPixels: number,
+): "top" | "middle" | "bottom" => {
+  if (middleRowAnchors.includes(String(item.content.userData.alignmentAnchor ?? ""))) {
+    return "middle";
+  }
+
+  const baseline = firstLineBaseline(item);
+  const lines = item.content.userData.linesOfText;
+
+  if (baseline === null || !Array.isArray(lines)) {
+    return "top";
+  }
+
+  const freeHeight = Math.max(0, boxHeight - lines.length * fontPixels * 1.2);
+  const candidates = [
+    { align: "top", baseline: fontPixels },
+    { align: "middle", baseline: freeHeight / 2 + fontPixels },
+    { align: "bottom", baseline: freeHeight + fontPixels },
+  ] as const;
+
+  return candidates.reduce((best, candidate) =>
+    Math.abs(candidate.baseline - baseline) < Math.abs(best.baseline - baseline) ? candidate : best,
+  ).align;
+};
+
 type MapContext = {
   pageWidth: number;
   pageHeight: number;
@@ -596,12 +631,6 @@ const mapItemToPlacement = (
         );
       }
 
-      // Zakka places the first baseline at `y + fontSize`; Shutterfly records the baseline inside the box.
-      const baseline = firstLineBaseline(item);
-      const topInset =
-        baseline === null
-          ? 0
-          : clamp(baseline - sourceFontPixels, 0, sourceRect.h) * placement.transform.scale;
       const color = userDataString(item, "fontColor");
       const escapedText = escapeShutterflyText(text);
 
@@ -614,49 +643,33 @@ const mapItemToPlacement = (
       }
 
       const background = textBackground(item);
-
-      if (background) {
-        // Shutterfly fills its whole text box, while the text layer below starts at the first
-        // baseline, so the fill gets its own empty text layer at Shutterfly's box.
-        pushLayer(
-          context,
-          page,
-          createTextLayer({
-            ...common,
-            id: `${layerId}_background`,
-            text: "",
-            background: {
-              enabled: true,
-              color: background.color,
-              opacity: background.opacity,
-              padding: 0,
-              radius: 0,
-            },
-          }),
-        );
-      }
-
-      const height = Math.max(rect.h - topInset, fontSize * 1.2);
-      // Keep the shortened text layer where it sits inside Shutterfly's rotated box: Zakka
-      // rotates each layer about its own center, so move that center along the rotated y axis.
-      const centerOffset = topInset + height / 2 - rect.h / 2;
-      const radians = (common.rotation * Math.PI) / 180;
-      const centerX = rect.x + rect.w / 2 - centerOffset * Math.sin(radians);
-      const centerY = rect.y + rect.h / 2 + centerOffset * Math.cos(radians);
+      // Grow boxes too short for one line about their center so rotation stays put.
+      const height = Math.max(rect.h, fontSize * 1.2);
 
       pushLayer(
         context,
         page,
         createTextLayer({
           ...common,
-          x: centerX - rect.w / 2,
-          y: centerY - height / 2,
+          y: rect.y + rect.h / 2 - height / 2,
           height,
           text: escapedText.text,
           fontFamily: font.family,
           fontSize,
           color: color && hexColorPattern.test(color) ? color.toLowerCase() : "#000000",
           align: alignmentFromAnchor(item.content.userData.alignmentAnchor),
+          verticalAlign: verticalAlignment(item, sourceRect.h, sourceFontPixels),
+          ...(background
+            ? {
+                background: {
+                  enabled: true,
+                  color: background.color,
+                  opacity: background.opacity,
+                  padding: 0,
+                  radius: 0,
+                },
+              }
+            : {}),
         }),
       );
       return;

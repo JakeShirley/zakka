@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { NumericInput } from "../../components/NumericInput";
 import { FontFamilySelect } from "./FontFamilySelect";
 import { RichTextEditor, type RichTextEditorHandle } from "./RichTextEditor";
-import { TextAlignmentControl } from "./TextAlignmentControl";
+import { TextAlignmentControl, TextVerticalAlignmentControl } from "./TextAlignmentControl";
 
 type TextLayer = Extract<PageLayer, { kind: "text" }>;
 type TextEffectKey = "background" | "bubble" | "glow" | "shadow" | "stroke";
@@ -84,6 +84,13 @@ export function TextControls({
             <TextAlignmentControl
               value={layer.align}
               onChange={(align) => onChange({ align } as Partial<PageLayer>)}
+            />
+          </div>
+          <div className="text-content-toolbar-field text-alignment-field">
+            <span>Vertical</span>
+            <TextVerticalAlignmentControl
+              value={layer.verticalAlign}
+              onChange={(verticalAlign) => onChange({ verticalAlign } as Partial<PageLayer>)}
             />
           </div>
         </div>

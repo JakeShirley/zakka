@@ -17,6 +17,7 @@ import {
   findPhotoPlaceholderAtPoint,
   getMapLayerGeographyDetail,
   getMapZoomRange,
+  getTextLayerContentOffsetY,
   isCustomStickerId,
   isPhotoPlaceholder,
   type MapGeography,
@@ -45,7 +46,7 @@ import { assetDragMimeType } from "./AssetRail";
 import type { ActiveTransform, CanvasPoint, ResizeHandle, TransformMode } from "./editorTypes";
 import { FontFamilySelect } from "./FontFamilySelect";
 import { RichTextEditor, type RichTextEditorHandle } from "./RichTextEditor";
-import { TextAlignmentControl } from "./TextAlignmentControl";
+import { TextAlignmentControl, TextVerticalAlignmentControl } from "./TextAlignmentControl";
 import {
   applyGroupMove,
   applyGroupRotate,
@@ -1493,6 +1494,7 @@ export function PageCanvas({
                       color: layer.color,
                       fontFamily: `"${layer.fontFamily}", sans-serif`,
                       fontSize: `calc(${layer.fontSize / document.canvas.width} * 100cqi)`,
+                      paddingTop: `calc(${getTextLayerContentOffsetY(layer) / document.canvas.width} * 100cqi)`,
                       textAlign: layer.align,
                     }}
                     onBlur={(event) => {
@@ -1742,6 +1744,18 @@ export function PageCanvas({
                 onChange={(align) =>
                   changeLayer(selectedLayer.id, {
                     align,
+                  } as Partial<PageLayer>)
+                }
+              />
+            ) : null}
+            {selectedLayer.kind === "text" ? (
+              <TextVerticalAlignmentControl
+                compact
+                className="selected-layer-align-control"
+                value={selectedLayer.verticalAlign}
+                onChange={(verticalAlign) =>
+                  changeLayer(selectedLayer.id, {
+                    verticalAlign,
                   } as Partial<PageLayer>)
                 }
               />

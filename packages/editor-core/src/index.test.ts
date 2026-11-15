@@ -17,6 +17,7 @@ import {
   findPhotoPlaceholderAtPoint,
   getPhotoFrameLayout,
   isPhotoPlaceholder,
+  getTextLayerContentOffsetY,
   getTextLayerRenderedBounds,
   loveYaLikeASisterFontFamily,
   pageDocumentSchema,
@@ -919,6 +920,28 @@ describe("page document helpers", () => {
     expect(tspanMatches.length).toBeLessThanOrEqual(2);
     expect(svg).toContain("…");
     expect(svg).not.toContain("line five");
+  });
+
+  it("positions text lines by vertical alignment", () => {
+    const textAt = (verticalAlign: "top" | "middle" | "bottom") =>
+      createTextLayer({
+        id: `text_${verticalAlign}`,
+        text: "line one\nline two",
+        width: 480,
+        height: 400,
+        fontSize: 50,
+        verticalAlign,
+      });
+    const firstBaseline = (verticalAlign: "top" | "middle" | "bottom") =>
+      renderPageDocumentSvg(createPageDocument({ layers: [textAt(verticalAlign)] })).match(
+        /<text x="0" y="([^"]+)"/,
+      )?.[1];
+
+    // Two 60px lines leave 280px of free height in the 400px box.
+    expect(firstBaseline("top")).toBe("50");
+    expect(firstBaseline("middle")).toBe("190");
+    expect(firstBaseline("bottom")).toBe("330");
+    expect(getTextLayerContentOffsetY(textAt("middle"))).toBe(140);
   });
 
   it("renders fallback-font markdown bold and italic as styled tspans", () => {
