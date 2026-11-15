@@ -131,14 +131,16 @@ describe("mapShutterflyProject", () => {
     expect(sticker.width).toBeCloseTo(1444.6, 1);
   });
 
-  const mapEditedText = (edit: (userData: Record<string, unknown>) => void) => {
+  const mapEditedText = (
+    edit: (userData: Record<string, unknown>, item: { container: { h: number } }) => void,
+  ) => {
     const edited = structuredClone(project);
 
     for (const category of edited.surfaceCategories) {
       for (const surface of category.surfaces) {
         for (const item of surface.surfaceData.layeredItems) {
           if (item.type === "text" && item.content.userData.assetId === "DA_46646") {
-            edit(item.content.userData);
+            edit(item.content.userData, item);
           }
         }
       }
@@ -165,6 +167,24 @@ describe("mapShutterflyProject", () => {
     expect(layers[0]?.y).toBeCloseTo(445.95, 0);
     expect(layers[0]?.width).toBeCloseTo(954, 0);
     expect(layers[0]?.height).toBeCloseTo(477, 0);
+  });
+
+  it("keeps the exact fill of text boxes shorter than one line on a separate layer", () => {
+    const layers = mapEditedText((userData, item) => {
+      userData.backgroundColor = "#818053";
+      item.container.h = 100;
+    });
+
+    expect(layers).toHaveLength(2);
+    expect(layers[0]).toMatchObject({
+      text: "",
+      height: 100,
+      background: { enabled: true, color: "#818053" },
+    });
+    expect(layers[0]?.y).toBeCloseTo(445.95, 0);
+    expect(layers[1]?.text).toBe("Test test box");
+    expect(layers[1]?.height).toBeGreaterThan(100);
+    expect(layers[1]?.background.enabled).toBe(false);
   });
 
   it("infers top or bottom alignment from Shutterfly's baseline for non-middle anchors", () => {

@@ -645,6 +645,31 @@ const mapItemToPlacement = (
       const background = textBackground(item);
       // Grow boxes too short for one line about their center so rotation stays put.
       const height = Math.max(rect.h, fontSize * 1.2);
+      const backgroundFill = background
+        ? {
+            enabled: true,
+            color: background.color,
+            opacity: background.opacity,
+            padding: 0,
+            radius: 0,
+          }
+        : null;
+      // A grown box would also grow its fill, so short boxes keep the fill on its own layer at
+      // Shutterfly's exact rect.
+      const separateBackground = backgroundFill !== null && height > rect.h;
+
+      if (separateBackground) {
+        pushLayer(
+          context,
+          page,
+          createTextLayer({
+            ...common,
+            id: `${layerId}_background`,
+            text: "",
+            background: backgroundFill,
+          }),
+        );
+      }
 
       pushLayer(
         context,
@@ -659,17 +684,7 @@ const mapItemToPlacement = (
           color: color && hexColorPattern.test(color) ? color.toLowerCase() : "#000000",
           align: alignmentFromAnchor(item.content.userData.alignmentAnchor),
           verticalAlign: verticalAlignment(item, sourceRect.h, sourceFontPixels),
-          ...(background
-            ? {
-                background: {
-                  enabled: true,
-                  color: background.color,
-                  opacity: background.opacity,
-                  padding: 0,
-                  radius: 0,
-                },
-              }
-            : {}),
+          ...(backgroundFill && !separateBackground ? { background: backgroundFill } : {}),
         }),
       );
       return;

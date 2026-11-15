@@ -768,6 +768,24 @@ describe("page document helpers", () => {
     expect(bounds.y).toBeLessThanOrEqual(bubbleText.y);
   });
 
+  it("includes blank lines when bounding bottom-aligned bubble text", () => {
+    const bubbleText = createTextLayer({
+      fontFamily: loveYaLikeASisterFontFamily,
+      id: "text_bubble_blank_line",
+      text: "A\n\nB",
+      fontSize: 50,
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 400,
+      verticalAlign: "bottom",
+      bubble: { enabled: true, color: "#ffd6e0", opacity: 0.9, padding: 10, spacing: 0 },
+    });
+    const bounds = getTextLayerRenderedBounds(bubbleText);
+
+    expect(bounds.y + bounds.height).toBe(410);
+  });
+
   it("keeps bundled text path geometry stable when moving layers", () => {
     const text = createTextLayer({
       fontFamily: loveYaLikeASisterFontFamily,

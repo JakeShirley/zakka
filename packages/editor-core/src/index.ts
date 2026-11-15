@@ -3011,7 +3011,8 @@ export const getTextLayerRenderedBounds = (
   const metrics = bubbleLayoutMetrics(layer);
 
   const renderedLines: { width: number; startX: number }[] = [];
-  for (const line of lines) {
+  let lastRenderedLineIndex = -1;
+  for (const [lineIndex, line] of lines.entries()) {
     if (!line || line.length === 0) continue;
     let width = 0;
     for (const run of line) {
@@ -3027,6 +3028,7 @@ export const getTextLayerRenderedBounds = (
           ? layer.width - width
           : 0;
     renderedLines.push({ width, startX });
+    lastRenderedLineIndex = lineIndex;
   }
 
   if (renderedLines.length === 0) {
@@ -3040,8 +3042,9 @@ export const getTextLayerRenderedBounds = (
     if (startX + width > rightLocal) rightLocal = startX + width;
   }
   const topLocal = offsetY + layer.fontSize * 0.1 - Math.max(0, layer.bubble.padding);
+  // Blank lines still advance the line index in the renderer, so measure to the last drawn line.
   const bottomLocal =
-    offsetY + renderedLines.length * lineHeight + Math.max(0, layer.bubble.padding);
+    offsetY + (lastRenderedLineIndex + 1) * lineHeight + Math.max(0, layer.bubble.padding);
 
   const left = Math.min(0, leftLocal);
   const right = Math.max(layer.width, rightLocal);
