@@ -539,6 +539,22 @@ describe("inline text editing", () => {
     expect(layer("text", "text").text).toBe("Hello!");
   });
 
+  test("vertical alignment buttons move the text and the inline editor follows it", async () => {
+    const { layer } = await renderCanvas({ layers: [textLayer()], selectedLayerIds: ["text"] });
+    const alignBottom = toolbar("Text").getByRole("button", { name: "Align bottom" });
+
+    await alignBottom.click();
+
+    expect(layer("text", "text").verticalAlign).toBe("bottom");
+    await expect.element(alignBottom).toHaveAttribute("aria-pressed", "true");
+
+    await toolbar("Text").getByRole("button", { name: "Type text" }).click();
+    const editor = inlineEditor().element() as HTMLElement;
+    // One 86.4-unit line (72px font) leaves 113.6 of the 200-unit box above it.
+    const expectedPadding = (113.6 / 200) * editor.getBoundingClientRect().height;
+    expect(Number.parseFloat(getComputedStyle(editor).paddingTop)).toBeCloseTo(expectedPadding, 0);
+  });
+
   test("selecting another layer ends inline editing", async () => {
     await renderCanvas({ layers: [textLayer(), photoLayer()] });
 

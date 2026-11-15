@@ -394,6 +394,7 @@ export const textLayerSchema = pageLayerBaseSchema.extend({
   fontSize: z.number().finite().min(6).max(240),
   color: colorSchema,
   align: z.enum(["left", "center", "right"]),
+  verticalAlign: z.enum(["top", "middle", "bottom"]).default("top"),
   stroke: z
     .object({
       enabled: z.boolean(),
@@ -765,6 +766,7 @@ export type CreateTextLayerInput = Partial<
     | "stroke"
     | "background"
     | "bubble"
+    | "verticalAlign"
     | "width"
     | "x"
     | "y"
@@ -1643,6 +1645,7 @@ const renderBubbleLetterTextLayerSvg = (
   bundledFont: Font | null,
   lines: RichTextRun[][],
   lineHeight: number,
+  offsetY: number,
   background: string,
   contentAttributes: string,
 ): string => {
@@ -1674,7 +1677,7 @@ const renderBubbleLetterTextLayerSvg = (
         : layer.align === "right"
           ? layer.width - lineWidth
           : 0;
-    const baselineY = fontSize + lineIndex * lineHeight;
+    const baselineY = offsetY + fontSize + lineIndex * lineHeight;
     const bubbleCy = baselineY - fontSize * 0.35;
 
     let cursorX = lineStartX;
@@ -2031,7 +2034,7 @@ const appendEllipsisToLastRichLine = (
 const computeTextLayerLines = (
   layer: TextLayer,
   bundledFont: Font | null,
-): { lines: RichTextRun[][]; lineHeight: number } => {
+): { lines: RichTextRun[][]; lineHeight: number; offsetY: number } => {
   const lineHeight = layer.fontSize * 1.2;
   const maxLines = Math.max(1, Math.floor(layer.height / lineHeight));
   const canvasMeasure = bundledFont
@@ -2052,9 +2055,20 @@ const computeTextLayerLines = (
   const displayLines = truncated
     ? appendEllipsisToLastRichLine(lines, layer.width, measure)
     : lines;
+  const freeHeight = Math.max(0, layer.height - displayLines.length * lineHeight);
+  const offsetY =
+    layer.verticalAlign === "middle"
+      ? freeHeight / 2
+      : layer.verticalAlign === "bottom"
+        ? freeHeight
+        : 0;
 
-  return { lines: displayLines, lineHeight };
+  return { lines: displayLines, lineHeight, offsetY };
 };
+
+/** Distance from the top of a text layer to the top of its first rendered line. */
+export const getTextLayerContentOffsetY = (layer: TextLayer): number =>
+  computeTextLayerLines(layer, getBundledEditorFont(layer.fontFamily)).offsetY;
 
 const renderTextLayerSvg = (
   layer: TextLayer,
@@ -2085,7 +2099,7 @@ const renderTextLayerSvg = (
   const contentAttributes = `${filterAttribute} clip-path="url(#${clipId})"`;
   const background = renderTextBackgroundSvg(layer);
   const defs = `${clipDef}${filterDef}`;
-  const { lines, lineHeight } = computeTextLayerLines(layer, bundledFont);
+  const { lines, lineHeight, offsetY } = computeTextLayerLines(layer, bundledFont);
 
   if (isBubbleEnabled(layer)) {
     return {
@@ -2094,6 +2108,7 @@ const renderTextLayerSvg = (
         bundledFont,
         lines,
         lineHeight,
+        offsetY,
         background,
         contentAttributes,
       ),
@@ -2108,6 +2123,7 @@ const renderTextLayerSvg = (
         bundledFont,
         lines,
         lineHeight,
+        offsetY,
         background,
         contentAttributes,
       ),
@@ -2140,7 +2156,7 @@ const renderTextLayerSvg = (
 
   return {
     defs,
-    body: `<g data-layer-id="${escapeXml(layer.id)}" data-font-family="${escapeXml(layer.fontFamily)}" opacity="${layer.opacity}" transform="${layerTransform(layer)}"><g data-layer-local-transform="true" transform="translate(${layer.x} ${layer.y})">${background}<g${contentAttributes}><text x="${x}" y="${layer.fontSize}" fill="${escapeXml(layer.color)}" font-family="${escapeXml(layer.fontFamily)}" font-size="${layer.fontSize}" text-anchor="${anchor}"${strokeAttributes}>${tspans}</text></g></g></g>`,
+    body: `<g data-layer-id="${escapeXml(layer.id)}" data-font-family="${escapeXml(layer.fontFamily)}" opacity="${layer.opacity}" transform="${layerTransform(layer)}"><g data-layer-local-transform="true" transform="translate(${layer.x} ${layer.y})">${background}<g${contentAttributes}><text x="${x}" y="${layer.fontSize + offsetY}" fill="${escapeXml(layer.color)}" font-family="${escapeXml(layer.fontFamily)}" font-size="${layer.fontSize}" text-anchor="${anchor}"${strokeAttributes}>${tspans}</text></g></g></g>`,
   };
 };
 
@@ -2149,6 +2165,7 @@ const renderBundledFontTextLayerSvg = (
   bundledFont: Font,
   lines: RichTextRun[][],
   lineHeight: number,
+  offsetY: number,
   background: string,
   contentAttributes: string,
 ): string => {
@@ -2168,7 +2185,7 @@ const renderBundledFontTextLayerSvg = (
           : layer.align === "right"
             ? anchorX - totalAdvance
             : anchorX;
-      const baselineY = layer.fontSize + lineIndex * lineHeight;
+      const baselineY = offsetY + layer.fontSize + lineIndex * lineHeight;
 
       let cursorX = lineStartX;
       const runFragments: string[] = [];
@@ -2804,6 +2821,7 @@ export const createTextLayer = (input: CreateTextLayerInput): TextLayer =>
     fontSize: input.fontSize ?? 72,
     color: input.color ?? "#202426",
     align: input.align ?? "left",
+    verticalAlign: input.verticalAlign ?? "top",
     stroke: input.stroke ?? defaultTextStroke,
     shadow: input.shadow ?? defaultTextShadow,
     glow: input.glow ?? defaultTextGlow,
@@ -3059,11 +3077,12 @@ export const getTextLayerRenderedBounds = (
   }
 
   const bundledFont = getBundledEditorFont(layer.fontFamily);
-  const { lines, lineHeight } = computeTextLayerLines(layer, bundledFont);
+  const { lines, lineHeight, offsetY } = computeTextLayerLines(layer, bundledFont);
   const metrics = bubbleLayoutMetrics(layer);
 
   const renderedLines: { width: number; startX: number }[] = [];
-  for (const line of lines) {
+  let lastRenderedLineIndex = -1;
+  for (const [lineIndex, line] of lines.entries()) {
     if (!line || line.length === 0) continue;
     let width = 0;
     for (const run of line) {
@@ -3079,6 +3098,7 @@ export const getTextLayerRenderedBounds = (
           ? layer.width - width
           : 0;
     renderedLines.push({ width, startX });
+    lastRenderedLineIndex = lineIndex;
   }
 
   if (renderedLines.length === 0) {
@@ -3091,8 +3111,10 @@ export const getTextLayerRenderedBounds = (
     if (startX < leftLocal) leftLocal = startX;
     if (startX + width > rightLocal) rightLocal = startX + width;
   }
-  const topLocal = layer.fontSize * 0.1 - Math.max(0, layer.bubble.padding);
-  const bottomLocal = renderedLines.length * lineHeight + Math.max(0, layer.bubble.padding);
+  const topLocal = offsetY + layer.fontSize * 0.1 - Math.max(0, layer.bubble.padding);
+  // Blank lines still advance the line index in the renderer, so measure to the last drawn line.
+  const bottomLocal =
+    offsetY + (lastRenderedLineIndex + 1) * lineHeight + Math.max(0, layer.bubble.padding);
 
   const left = Math.min(0, leftLocal);
   const right = Math.max(layer.width, rightLocal);
