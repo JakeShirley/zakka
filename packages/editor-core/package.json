@@ -29,6 +29,16 @@
       "import": "./dist/map-places.js",
       "default": "./dist/map-places.js"
     },
+    "./page-layouts": {
+      "types": "./dist/page-layouts.d.ts",
+      "import": "./dist/page-layouts.js",
+      "default": "./dist/page-layouts.js"
+    },
+    "./page-layouts-shutterfly": {
+      "types": "./dist/page-layouts-shutterfly.d.ts",
+      "import": "./dist/page-layouts-shutterfly.js",
+      "default": "./dist/page-layouts-shutterfly.js"
+    },
     "./font-licenses.txt": "./dist/font-licenses.txt",
     "./backgrounds/*": "./dist/backgrounds/*"
   },
@@ -38,6 +48,7 @@
     "generate": "node scripts/generate-fonts.mjs && node scripts/generate-map-data.mjs && node scripts/generate-backgrounds.mjs",
     "generate:fonts": "node scripts/generate-fonts.mjs",
     "generate:maps": "node scripts/generate-map-data.mjs",
+    "import:shutterfly-layouts": "node scripts/import-shutterfly-layouts.mjs && biome format --write src/page-layouts-shutterfly.ts",
     "test": "pnpm run generate && vitest run src",
     "typecheck": "pnpm run generate && tsc -p tsconfig.json --noEmit",
     "vendor:maps": "node scripts/vendor-map-data.mjs"
