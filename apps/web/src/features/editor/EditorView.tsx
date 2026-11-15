@@ -47,6 +47,7 @@ import {
   type SelectionPanel,
 } from "./PageCanvas";
 import { PhotoPickerModal } from "./PhotoPickerModal";
+import { getNewPhotoFrameSize } from "./photoResolution";
 import { type PngExportSettings, PngExportSettingsModal } from "./PngExportSettingsModal";
 import { WashiTapeGalleryModal } from "../washi-tape/WashiTapeGalleryModal";
 import { StickerPickerModal } from "./StickerPickerModal";
@@ -201,8 +202,7 @@ export function EditorView() {
     if (!document) return;
     const layer = createPhotoLayer({
       assetId: asset.id,
-      width: Math.min(document.canvas.width * 0.5, 1000),
-      height: Math.min(document.canvas.height * 0.34, 760),
+      ...getNewPhotoFrameSize(document.canvas, asset),
     });
     editDocument(addLayer(document, layer));
     setSelectedLayerIds([layer.id]);
@@ -473,6 +473,7 @@ export function EditorView() {
                   title: `Edit ${formatLayerKindLabel(selectedLayer.kind)}`,
                   content: (
                     <LayerInspector
+                      assetById={assetById}
                       layer={selectedLayer}
                       onChange={(update) => updateLayerTransform(selectedLayer.id, update)}
                       onChooseWashiTapePhoto={(layerId) =>

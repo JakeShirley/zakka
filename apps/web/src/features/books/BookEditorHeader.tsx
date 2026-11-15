@@ -2,22 +2,28 @@ import { Button } from "@fluentui/react-components";
 import { ArrowDownloadRegular, DocumentPdfRegular, EditRegular } from "@fluentui/react-icons";
 
 import { WorkspaceHeader } from "../../components/layout";
+import type { BookPrintWarningGroup, BookPrintWarningPhoto } from "../editor/photoResolution";
+import { BookPrintWarnings } from "./BookPrintWarnings";
 
 type BookEditorHeaderProps = {
   hasPages: boolean;
   isWorking: boolean;
+  onEditPrintWarning: (photo: BookPrintWarningPhoto) => void;
   onEditSettings: () => void;
   onExportBookPdf: () => void;
   onExportBookPng: () => void;
+  printWarnings: BookPrintWarningGroup[];
   title: string;
 };
 
 export function BookEditorHeader({
   hasPages,
   isWorking,
+  onEditPrintWarning,
   onEditSettings,
   onExportBookPdf,
   onExportBookPng,
+  printWarnings,
   title,
 }: BookEditorHeaderProps) {
   return (
@@ -35,6 +41,7 @@ export function BookEditorHeader({
         />
       }
     >
+      <BookPrintWarnings groups={printWarnings} onEdit={onEditPrintWarning} />
       <Button
         type="button"
         className="secondary-button"

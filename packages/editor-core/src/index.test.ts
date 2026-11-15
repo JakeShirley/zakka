@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { getBundledEditorFont } from "./fonts.js";
 import {
   addLayer,
+  capPhotoFrameToPrintResolution,
+  classifyPhotoResolution,
   createBookSpreads,
   createPageDocument,
   createPhotoLayer,
@@ -15,11 +17,13 @@ import {
   editorFontFaceCss,
   fillPhotoLayerUpdate,
   findPhotoPlaceholderAtPoint,
+  getPhotoEffectiveDpi,
   getPhotoFrameLayout,
   isPhotoPlaceholder,
   getTextLayerRenderedBounds,
   loveYaLikeASisterFontFamily,
   pageDocumentSchema,
+  photoLowResolutionDpi,
   renderPageDocumentSvg,
   reorderLayer,
   resetPhotoLayerEdits,
@@ -337,6 +341,67 @@ describe("page document helpers", () => {
     expect(reset.photoTransform).toMatchObject({ scale: 1, offsetX: 0 });
     expect(reset.crop).toMatchObject({ x: 0, y: 0, width: 1, height: 1 });
     expect(reset.mask.shape).toBe("rectangle");
+  });
+
+  it("computes a placed photo's effective print DPI from crop, fit, zoom, and orientation", () => {
+    // 3x2 in frame at 300 units/in.
+    const layer = createPhotoLayer({ assetId: "asset_1", id: "photo_1", width: 900, height: 600 });
+    const source = { width: 1800, height: 1200 };
+
+    expect(getPhotoEffectiveDpi(layer, source)).toBeCloseTo(600);
+    expect(
+      getPhotoEffectiveDpi(
+        createPhotoLayer({
+          ...layer,
+          crop: { x: 0, y: 0, width: 0.5, height: 0.5, aspectRatioPreset: "free" },
+        }),
+        source,
+      ),
+    ).toBeCloseTo(300);
+    expect(
+      getPhotoEffectiveDpi(
+        createPhotoLayer({ ...layer, photoTransform: { ...layer.photoTransform, scale: 4 } }),
+        source,
+      ),
+    ).toBeCloseTo(150);
+    // Cover fills by the tighter axis; contain fits by the looser axis.
+    expect(getPhotoEffectiveDpi(layer, { width: 1200, height: 1200 })).toBeCloseTo(400);
+    expect(
+      getPhotoEffectiveDpi(createPhotoLayer({ ...layer, fit: "contain" }), {
+        width: 1200,
+        height: 1200,
+      }),
+    ).toBeCloseTo(600);
+    // EXIF orientation 6 stores a portrait photo's pixels as landscape.
+    expect(getPhotoEffectiveDpi(layer, { width: 1200, height: 1800, orientation: 6 })).toBeCloseTo(
+      600,
+    );
+    expect(getPhotoEffectiveDpi(layer, { width: 0, height: 0 })).toBeNull();
+
+    expect(classifyPhotoResolution(150)).toBe("good");
+    expect(classifyPhotoResolution(149)).toBe("low");
+    expect(classifyPhotoResolution(99)).toBe("veryLow");
+  });
+
+  it("caps a new photo frame at the largest size that still prints sharply", () => {
+    // 3.33 x 2.53 in default frame; 480 x 360 px fills it at 144 DPI.
+    const frame = createPhotoLayer({ assetId: "asset_1", width: 1000, height: 760 });
+    const source = { width: 480, height: 360 };
+
+    const capped = capPhotoFrameToPrintResolution(frame, source);
+
+    expect(capped.width / capped.height).toBeCloseTo(1000 / 760, 2);
+    const cappedDpi = getPhotoEffectiveDpi(createPhotoLayer({ ...frame, ...capped }), source);
+    expect(cappedDpi).toBeGreaterThanOrEqual(photoLowResolutionDpi);
+    expect(cappedDpi).toBeLessThan(photoLowResolutionDpi + 1);
+    expect(capPhotoFrameToPrintResolution(frame, { width: 4000, height: 3000 })).toEqual({
+      width: 1000,
+      height: 760,
+    });
+    expect(capPhotoFrameToPrintResolution(frame, { width: 0, height: 0 })).toEqual({
+      width: 1000,
+      height: 760,
+    });
   });
 
   it("treats photo layers without an asset as fillable placeholders", () => {

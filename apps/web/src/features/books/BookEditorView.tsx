@@ -60,6 +60,7 @@ import { AssetRail } from "../editor/AssetRail";
 import type { EditorSaveStatus } from "../editor/editorTypes";
 import { LayerInspector } from "../editor/LayerInspector";
 import { applyPageLayoutWithAssets, LayoutPickerModal } from "../editor/LayoutPickerModal";
+import { getBookPrintWarnings, getNewPhotoFrameSize } from "../editor/photoResolution";
 import {
   type ArrangeCanvasPreview,
   type CanvasPreviewLayer,
@@ -407,6 +408,10 @@ export function BookEditorView() {
   const editingPage = editingPageId ? (pageDetails.get(editingPageId) ?? null) : null;
   const editingPageIndex = editingPageId ? orderedPageIds.indexOf(editingPageId) : -1;
   const assetById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
+  const printWarnings = useMemo(
+    () => getBookPrintWarnings(book?.spreads ?? [], orderedPageIds, pageDetails, assetById),
+    [assetById, book, orderedPageIds, pageDetails],
+  );
   const primarySelectedLayerId = selectedLayerIds.length === 1 ? selectedLayerIds[0] : null;
   const selectedLayer = useMemo(
     () =>
@@ -1333,8 +1338,7 @@ export function BookEditorView() {
     const page = pageDetails.get(pageId);
     if (!page) return;
 
-    const width = Math.min(page.document.canvas.width * 0.5, 1000);
-    const height = Math.min(page.document.canvas.height * 0.34, 760);
+    const { width, height } = getNewPhotoFrameSize(page.document.canvas, asset);
     const layer = createPhotoLayer({
       assetId: asset.id,
       width,
@@ -1954,8 +1958,10 @@ export function BookEditorView() {
         hasPages={book.pages.length > 0}
         isWorking={isWorking}
         onEditSettings={() => setIsBookSettingsOpen(true)}
+        onEditPrintWarning={(photo) => selectPage(photo.pageId, photo.layerId)}
         onExportBookPdf={() => exportBook("pdf")}
         onExportBookPng={() => setPngExportTarget("book")}
+        printWarnings={printWarnings}
       />
       {pngExportTarget ? (
         <PngExportSettingsModal
@@ -2139,6 +2145,7 @@ export function BookEditorView() {
                   content:
                     selectedLayer && inspectorTab === "properties" ? (
                       <LayerInspector
+                        assetById={assetById}
                         layer={selectedLayer}
                         onChange={(update) =>
                           updateLayerTransform(activePageId, selectedLayer.id, update)

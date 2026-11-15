@@ -12,6 +12,7 @@ import {
   ImageBorderRegular,
   SubtractRegular,
   TextTRegular,
+  WarningFilled,
 } from "@fluentui/react-icons";
 import {
   findPhotoPlaceholderAtPoint,
@@ -44,6 +45,7 @@ import { resolveBrowserBackgroundHref } from "../backgrounds/backgroundHrefs";
 import { assetDragMimeType } from "./AssetRail";
 import type { ActiveTransform, CanvasPoint, ResizeHandle, TransformMode } from "./editorTypes";
 import { FontFamilySelect } from "./FontFamilySelect";
+import { getPhotoResolutionWarning } from "./photoResolution";
 import { RichTextEditor, type RichTextEditorHandle } from "./RichTextEditor";
 import { TextAlignmentControl } from "./TextAlignmentControl";
 import {
@@ -1330,6 +1332,10 @@ export function PageCanvas({
           };
           const layerLabel = `${formatLayerKindLabel(layer.kind)} layer`;
           const isInlineEditingText = editingTextLayerId === layer.id && layer.kind === "text";
+          const resolutionWarning =
+            layer.kind === "photo" && layer.assetId
+              ? getPhotoResolutionWarning(layer, assetById.get(layer.assetId))
+              : null;
           return (
             <div
               key={isPreview ? `${interactiveLayer.sourcePageId}:${layer.id}` : layer.id}
@@ -1413,6 +1419,17 @@ export function PageCanvas({
               />
               <div className="canvas-selection-frame" style={selectionFrameStyle}>
                 <span className="canvas-layer-content" />
+                {resolutionWarning ? (
+                  <span
+                    aria-label={resolutionWarning.message}
+                    className="canvas-photo-resolution-warning"
+                    data-quality={resolutionWarning.quality}
+                    role="img"
+                    title={resolutionWarning.message}
+                  >
+                    <WarningFilled />
+                  </span>
+                ) : null}
                 {isSelected && !layer.locked ? (
                   <>
                     {isInlineEditingText ? null : (
