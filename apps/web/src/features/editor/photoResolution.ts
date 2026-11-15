@@ -79,20 +79,29 @@ export const getBookPrintWarnings = (
   assetById: ReadonlyMap<string, Asset>,
 ): BookPrintWarningGroup[] =>
   spreads.flatMap((spread) => {
-    // A photo crossing the gutter is stored on each facing page under the same layer ID.
-    const seenLayerIds = new Set<string>();
-    const photos = spread.pageIds.flatMap((pageId) =>
-      (pageDetails.get(pageId)?.document.layers ?? []).flatMap((layer) => {
-        if (layer.kind !== "photo" || !layer.assetId || seenLayerIds.has(layer.id)) return [];
-        seenLayerIds.add(layer.id);
+    // A photo crossing the gutter is stored on each facing page under the same layer ID at the
+    // same spread position. Duplicated pages also reuse layer IDs, so position tells them apart.
+    const seenPlacements = new Set<string>();
+    let pageOffsetX = 0;
+    const photos = spread.pageIds.flatMap((pageId) => {
+      const document = pageDetails.get(pageId)?.document;
+      if (!document) return [];
+      const offsetX = pageOffsetX;
+      pageOffsetX += document.canvas.width;
+
+      return document.layers.flatMap((layer) => {
+        if (layer.kind !== "photo" || !layer.assetId) return [];
+        const placement = `${layer.id}@${Math.round(offsetX + layer.x)},${Math.round(layer.y)}`;
+        if (seenPlacements.has(placement)) return [];
+        seenPlacements.add(placement);
         const asset = assetById.get(layer.assetId);
         const warning = getPhotoResolutionWarning(layer, asset);
 
         return asset && warning
           ? [{ asset, dpi: warning.dpi, layerId: layer.id, pageId, quality: warning.quality }]
           : [];
-      }),
-    );
+      });
+    });
     if (photos.length === 0) return [];
     const pageNumbers = spread.pageIds
       .map((pageId) => orderedPageIds.indexOf(pageId) + 1)

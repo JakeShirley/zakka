@@ -10,7 +10,10 @@ import { getBookPrintWarnings } from "../editor/photoResolution";
 import { BookPrintWarnings } from "./BookPrintWarnings";
 
 // The 400x300 px test asset prints at 150 DPI in an 800x600 unit frame.
-const photoPage = (id: string, frames: { id: string; width: number; height: number }[]) =>
+const photoPage = (
+  id: string,
+  frames: { id: string; x?: number; width: number; height: number }[],
+) =>
   ({
     createdAt: "2026-05-25T12:00:00.000Z",
     document: createPageDocument({
@@ -78,15 +81,36 @@ describe("book print warnings", () => {
   });
 
   test("counts a photo spanning both facing pages once", async () => {
+    // Default canvases are 2400 units wide; the copy on page_2 sits at the same spread position.
     await renderWarnings(
       [
-        photoPage("page_1", [{ id: "spanning", width: 2000, height: 1500 }]),
+        photoPage("page_1", [{ id: "spanning", x: 1400, width: 2000, height: 1500 }]),
         photoPage("page_2", [
-          { id: "spanning", width: 2000, height: 1500 },
+          { id: "spanning", x: -1000, width: 2000, height: 1500 },
           { id: "other_copy", width: 2000, height: 1500 },
         ]),
       ],
       [["page_1", "page_2"]],
+    );
+
+    await page.getByRole("button", { name: "2 warnings" }).click();
+
+    await expect
+      .element(
+        page
+          .getByRole("group", { name: "Print warnings" })
+          .getByText("2 very low resolution photos"),
+      )
+      .toBeVisible();
+  });
+
+  test("counts photos on a duplicated facing page separately", async () => {
+    await renderWarnings(
+      [
+        photoPage("page_1", [{ id: "duplicated", width: 2000, height: 1500 }]),
+        photoPage("page_1_copy", [{ id: "duplicated", width: 2000, height: 1500 }]),
+      ],
+      [["page_1", "page_1_copy"]],
     );
 
     await page.getByRole("button", { name: "2 warnings" }).click();
