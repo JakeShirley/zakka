@@ -12,6 +12,7 @@ import { describe, expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
+import { createTestAsset } from "../../test/canvasHarness";
 import { applyPageLayoutWithAssets, LayoutPickerModal } from "./LayoutPickerModal";
 
 const canvas = { width: 1000, height: 1000 };
@@ -161,5 +162,39 @@ describe("LayoutPickerModal", () => {
     await expect
       .element(fitting.getByRole("button", { name: /^Apply Hero with title layout/ }))
       .not.toBeInTheDocument();
+  });
+
+  test("treats EXIF-rotated photos by their displayed shape when picking slots", () => {
+    // Both photos are stored 400x300; the EXIF quarter turn makes "rotated" display as portrait.
+    const rotated = { ...createTestAsset("rotated"), orientation: 6 };
+    const upright = { ...createTestAsset("upright"), orientation: 1 };
+    const wideAndTall: PageLayout = {
+      id: "wide-and-tall",
+      name: "Wide and tall",
+      source: "zakka",
+      orientation: "any",
+      slots: [
+        { kind: "photo", x: 0.1, y: 0.1, width: 0.8, height: 0.3, rotation: 0 },
+        { kind: "photo", x: 0.35, y: 0.45, width: 0.3, height: 0.5, rotation: 0 },
+      ],
+      photoSlotCount: 2,
+      textSlotCount: 0,
+    };
+    const document = createPageDocument({
+      canvas,
+      layers: [
+        createPhotoLayer({ id: "rotated", assetId: "rotated", width: 300, height: 300 }),
+        createPhotoLayer({ id: "upright", assetId: "upright", width: 300, height: 300 }),
+      ],
+    });
+
+    const { document: result } = applyPageLayoutWithAssets(document, wideAndTall, [
+      rotated,
+      upright,
+    ]);
+
+    const byId = new Map(result.layers.map((layer) => [layer.id, layer]));
+    expect(byId.get("upright")).toMatchObject({ width: 800, height: 300 });
+    expect(byId.get("rotated")).toMatchObject({ width: 300, height: 500 });
   });
 });

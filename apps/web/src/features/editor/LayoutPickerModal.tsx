@@ -68,7 +68,11 @@ export const applyPageLayoutWithAssets = (
   return applyPageLayout(document, layout, {
     getPhotoAspectRatio: (layer) => {
       const asset = layer.assetId ? assetsById.get(layer.assetId) : undefined;
-      return asset?.width && asset.height ? asset.width / asset.height : null;
+      if (!asset?.width || !asset.height) return null;
+      // Stored dimensions are pre-rotation; EXIF orientations 5-8 display rotated a quarter turn.
+      const isQuarterTurned =
+        asset.orientation !== null && asset.orientation >= 5 && asset.orientation <= 8;
+      return isQuarterTurned ? asset.height / asset.width : asset.width / asset.height;
     },
   });
 };

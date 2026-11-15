@@ -112,6 +112,7 @@ import {
   fillPhotoPlaceholderAcrossSpread,
   getSpreadPageContexts,
   layerOverlapsPageCanvas,
+  reconcileSpreadPageEdit,
   replacePageDocument,
   type SpreadLayerSyncResult,
   type SpreadPageContext,
@@ -1303,7 +1304,18 @@ export function BookEditorView() {
       layout,
       assets,
     );
-    editPageDocument(activePage.id, nextDocument);
+    if (viewMode === "spread" && visiblePageIds.length > 1) {
+      editPageDocuments(
+        reconcileSpreadPageEdit({
+          details: pageDetails,
+          nextDocument,
+          sourcePageId: activePage.id,
+          spreadPageIds: visiblePageIds,
+        }),
+      );
+    } else {
+      editPageDocument(activePage.id, nextDocument);
+    }
     setSelectedLayerIds([]);
   };
 

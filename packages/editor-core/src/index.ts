@@ -2551,11 +2551,6 @@ export const renderPageDocumentSvg = (
     }
 
     if (layer.kind === "text") {
-      if (options.showTextPlaceholders && isTextPlaceholder(layer)) {
-        bodies.push(renderTextPlaceholderSvg(layer));
-        continue;
-      }
-
       const rendered = renderTextLayerSvg(layer, index, options.idPrefix);
 
       if (rendered.defs) {
@@ -2563,6 +2558,12 @@ export const renderPageDocumentSvg = (
       }
 
       bodies.push(rendered.body);
+
+      // The hint sits over the box's own styling so the editor still shows what will print.
+      if (options.showTextPlaceholders && isTextPlaceholder(layer)) {
+        bodies.push(renderTextPlaceholderSvg(layer));
+      }
+
       continue;
     }
 

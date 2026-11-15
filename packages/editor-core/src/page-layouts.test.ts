@@ -327,4 +327,22 @@ describe("page layouts", () => {
       'data-text-placeholder="true"',
     );
   });
+
+  it("keeps an empty text box's background under its editor placeholder, matching the export", () => {
+    const document = createPageDocument({
+      canvas,
+      layers: [
+        createTextLayer({
+          id: "empty",
+          text: "",
+          background: { enabled: true, color: "#ff0000", opacity: 1, padding: 0, radius: 0 },
+        }),
+      ],
+    });
+
+    expect(renderPageDocumentSvg(document)).toContain('data-text-background="true"');
+    const editorSvg = renderPageDocumentSvg(document, { showTextPlaceholders: true });
+    expect(editorSvg).toContain('data-text-background="true"');
+    expect(editorSvg).toContain('data-text-placeholder="true"');
+  });
 });
