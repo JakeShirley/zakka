@@ -1,9 +1,11 @@
 import { Button } from "@fluentui/react-components";
-import { ImageAddRegular, PageFitRegular } from "@fluentui/react-icons";
+import { ImageAddRegular, PageFitRegular, WarningFilled } from "@fluentui/react-icons";
 import { isPhotoPlaceholder, type PhotoLayer, resetPhotoLayerEdits } from "@zakka/editor-core";
 import { useId } from "react";
 
 import { NumericInput } from "../../components/NumericInput";
+import type { Asset } from "../../types";
+import { getPhotoResolutionWarning } from "./photoResolution";
 
 type PhotoAdjustmentKey = "brightness" | "contrast" | "saturation" | "shadows" | "highlights";
 
@@ -76,10 +78,13 @@ function PhotoAdjustmentSlider({
 }
 
 export function PhotoControls({
+  asset,
   layer,
   onChange,
   onChoosePhoto,
 }: {
+  /** The placed photo's asset, used to warn when it is too low resolution for its printed size. */
+  asset?: Asset | undefined;
   layer: PhotoLayer;
   onChange: (update: Partial<PhotoLayer>) => void;
   onChoosePhoto?: ((layerId: string) => void) | undefined;
@@ -98,6 +103,7 @@ export function PhotoControls({
     onChange({ shadow: { ...layer.shadow, ...update } });
 
   const placeholder = isPhotoPlaceholder(layer);
+  const resolutionWarning = placeholder ? null : getPhotoResolutionWarning(layer, asset);
 
   return (
     <>
@@ -121,6 +127,12 @@ export function PhotoControls({
         <>
           <fieldset className="inspector-section">
             <legend>Photo</legend>
+            {resolutionWarning ? (
+              <p className="photo-resolution-notice" data-quality={resolutionWarning.quality}>
+                <WarningFilled aria-hidden="true" />
+                <span>{resolutionWarning.message}</span>
+              </p>
+            ) : null}
             <label>
               <span>Fit</span>
               <select

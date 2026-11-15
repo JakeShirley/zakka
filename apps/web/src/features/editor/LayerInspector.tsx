@@ -1,17 +1,20 @@
 import type { MapLayer, PageLayer, PhotoLayer, WashiTapeLayer } from "@zakka/editor-core";
 
 import { NumericInput } from "../../components/NumericInput";
+import type { Asset } from "../../types";
 import { MapControls } from "./MapControls";
 import { PhotoControls } from "./PhotoControls";
 import { TextControls } from "./TextControls";
 import { WashiTapeControls } from "./WashiTapeControls";
 
 export function LayerInspector({
+  assetById,
   layer,
   onChange,
   onChoosePhoto,
   onChooseWashiTapePhoto,
 }: {
+  assetById?: Map<string, Asset> | undefined;
   layer: PageLayer | null;
   onChange: (update: Partial<PageLayer>) => void;
   /** Opens a photo picker to fill an empty photo placeholder. */
@@ -54,7 +57,12 @@ export function LayerInspector({
       </fieldset>
       {layer.kind === "text" ? <TextControls layer={layer} onChange={onChange} /> : null}
       {layer.kind === "photo" ? (
-        <PhotoControls layer={layer} onChange={updatePhotoLayer} onChoosePhoto={onChoosePhoto} />
+        <PhotoControls
+          asset={layer.assetId ? assetById?.get(layer.assetId) : undefined}
+          layer={layer}
+          onChange={updatePhotoLayer}
+          onChoosePhoto={onChoosePhoto}
+        />
       ) : null}
       {layer.kind === "washiTape" ? (
         <WashiTapeControls

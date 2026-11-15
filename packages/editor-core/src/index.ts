@@ -1036,6 +1036,76 @@ export const getPhotoFrameLayout = (layer: PhotoLayer): PhotoFrameLayout => {
   }
 };
 
+/** Page coordinates are print pixels at this density (a 12 x 12 in page is 3600 units wide). */
+export const pageUnitsPerInch = 300;
+
+/** Below this effective DPI a photo may look soft in print. */
+export const photoLowResolutionDpi = 150;
+/** Below this effective DPI a photo will likely look pixelated or blurry in print. */
+export const photoVeryLowResolutionDpi = 100;
+
+export type PhotoSourceDimensions = {
+  width: number;
+  height: number;
+  /** EXIF orientation; 5-8 store the pixels rotated a quarter turn from how they display. */
+  orientation?: number | null | undefined;
+};
+
+export type PhotoResolutionQuality = "good" | "low" | "veryLow";
+
+/**
+ * Source-image pixels per printed inch for a placed photo, after frame insets, crop, fit, and
+ * photo zoom. Returns null when the source dimensions are unknown.
+ */
+export const getPhotoEffectiveDpi = (
+  layer: PhotoLayer,
+  source: PhotoSourceDimensions,
+): number | null => {
+  if (!(source.width > 0 && source.height > 0)) return null;
+  const isQuarterTurned = source.orientation != null && source.orientation >= 5;
+  const sourceWidth = isQuarterTurned ? source.height : source.width;
+  const sourceHeight = isQuarterTurned ? source.width : source.height;
+  const { image } = getPhotoFrameLayout(layer);
+  // Mirrors renderPhotoLayerSvg: the crop window is stretched to the aperture, and the source is
+  // fitted (slice for cover, meet for contain) into that stretched box before zooming.
+  const boxWidth = image.width / Math.max(layer.crop.width, 0.05);
+  const boxHeight = image.height / Math.max(layer.crop.height, 0.05);
+  const fitScale =
+    layer.fit === "cover"
+      ? Math.max(boxWidth / sourceWidth, boxHeight / sourceHeight)
+      : Math.min(boxWidth / sourceWidth, boxHeight / sourceHeight);
+  const pageUnitsPerSourcePixel = fitScale * layer.photoTransform.scale;
+
+  return pageUnitsPerInch / pageUnitsPerSourcePixel;
+};
+
+export const classifyPhotoResolution = (effectiveDpi: number): PhotoResolutionQuality =>
+  effectiveDpi < photoVeryLowResolutionDpi
+    ? "veryLow"
+    : effectiveDpi < photoLowResolutionDpi
+      ? "low"
+      : "good";
+
+/**
+ * Shrinks a new photo frame, keeping its shape, so the photo prints at no less than
+ * {@link photoLowResolutionDpi}. Frames that already print sharply are returned unchanged.
+ */
+export const capPhotoFrameToPrintResolution = (
+  layer: PhotoLayer,
+  source: PhotoSourceDimensions,
+): { width: number; height: number } => {
+  const effectiveDpi = getPhotoEffectiveDpi(layer, source);
+  if (effectiveDpi === null || effectiveDpi >= photoLowResolutionDpi) {
+    return { width: layer.width, height: layer.height };
+  }
+  // Effective DPI is inversely proportional to frame size; flooring keeps it at or above the cap.
+  const scale = effectiveDpi / photoLowResolutionDpi;
+  return {
+    width: Math.max(1, Math.floor(layer.width * scale)),
+    height: Math.max(1, Math.floor(layer.height * scale)),
+  };
+};
+
 const photoMaskShapeSvg = (
   shape: PhotoLayer["mask"]["shape"],
   rect: PhotoFrameRect,

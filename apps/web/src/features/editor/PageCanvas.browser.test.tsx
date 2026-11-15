@@ -395,6 +395,39 @@ describe("photo handles", () => {
   });
 });
 
+describe("photo resolution warnings", () => {
+  const resolutionWarning = (layerId: string) =>
+    layerElement(layerId).querySelector<HTMLElement>(".canvas-photo-resolution-warning");
+
+  test("zooming a photo past its print resolution shows a low-resolution warning", async () => {
+    // The 400x300 px test asset fills an 800x600 unit (2.67 in) frame at exactly 150 DPI.
+    const { layer } = await renderCanvas({ layers: [photoLayer()], selectedLayerIds: ["photo"] });
+
+    expect(resolutionWarning("photo")).toBeNull();
+
+    await page.getByRole("button", { name: "Zoom photo in" }).click();
+
+    expect(layer("photo", "photo").photoTransform.scale).toBe(1.1);
+    await expect.element(page.getByRole("img", { name: /^Low resolution\./ })).toBeInTheDocument();
+    expect(resolutionWarning("photo")?.dataset.quality).toBe("low");
+  });
+
+  test("a photo placed far beyond its pixel size shows a very-low-resolution warning", async () => {
+    await renderCanvas({
+      layers: [
+        photoLayer({ width: 1600, height: 1200, x: 100, y: 100 }),
+        photoLayer({ id: "small", width: 300, height: 225, x: 1700, y: 1700 }),
+      ],
+    });
+
+    expect(resolutionWarning("photo")?.dataset.quality).toBe("veryLow");
+    expect(resolutionWarning("photo")?.getAttribute("aria-label")).toMatch(
+      /^Very low resolution\./,
+    );
+    expect(resolutionWarning("small")).toBeNull();
+  });
+});
+
 describe("map handles", () => {
   const mapLayer = (overrides: Partial<Parameters<typeof createMapLayer>[0]> = {}) =>
     createMapLayer({
