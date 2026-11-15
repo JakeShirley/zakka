@@ -77,6 +77,29 @@ describe("book print warnings", () => {
     await expect.element(surface).not.toBeInTheDocument();
   });
 
+  test("counts a photo spanning both facing pages once", async () => {
+    await renderWarnings(
+      [
+        photoPage("page_1", [{ id: "spanning", width: 2000, height: 1500 }]),
+        photoPage("page_2", [
+          { id: "spanning", width: 2000, height: 1500 },
+          { id: "other_copy", width: 2000, height: 1500 },
+        ]),
+      ],
+      [["page_1", "page_2"]],
+    );
+
+    await page.getByRole("button", { name: "2 warnings" }).click();
+
+    await expect
+      .element(
+        page
+          .getByRole("group", { name: "Print warnings" })
+          .getByText("2 very low resolution photos"),
+      )
+      .toBeVisible();
+  });
+
   test("stays hidden when every photo prints sharply", async () => {
     await renderWarnings(
       [photoPage("page_1", [{ id: "sharp", width: 800, height: 600 }])],
