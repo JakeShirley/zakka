@@ -26,6 +26,7 @@ import {
   type WashiTapeDesign,
   type WashiTapeLayer,
 } from "@zakka/editor-core";
+import type { PageLayout } from "@zakka/editor-core/page-layouts";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 
@@ -37,6 +38,7 @@ import { AssetRail } from "./AssetRail";
 import { EditorToolbar } from "./EditorToolbar";
 import type { EditorSaveStatus } from "./editorTypes";
 import { LayerInspector } from "./LayerInspector";
+import { applyPageLayoutWithAssets, LayoutPickerModal } from "./LayoutPickerModal";
 import {
   PageCanvas,
   formatLayerKindLabel,
@@ -67,6 +69,7 @@ export function EditorView() {
   const [photoPickerMode, setPhotoPickerMode] = useState<PhotoPickerMode | null>(null);
   const [isPngExportSettingsOpen, setIsPngExportSettingsOpen] = useState(false);
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false);
+  const [isLayoutPickerOpen, setIsLayoutPickerOpen] = useState(false);
   const [isWashiTapeGalleryOpen, setIsWashiTapeGalleryOpen] = useState(false);
   const [activeSelectionPanel, setActiveSelectionPanel] = useState<SelectionPanel | null>(null);
   const [status, setStatus] = useState<EditorSaveStatus>("loading");
@@ -182,6 +185,12 @@ export function EditorView() {
     const layer = createTextLayer({ text: "New text" });
     editDocument(addLayer(document, layer));
     setSelectedLayerIds([layer.id]);
+  };
+  const applyLayout = (layout: PageLayout) => {
+    setIsLayoutPickerOpen(false);
+    if (!document) return;
+    editDocument(applyPageLayoutWithAssets(document, layout, assets).document);
+    setSelectedLayerIds([]);
   };
   const addMap = () => {
     if (!document) return;
@@ -426,6 +435,14 @@ export function EditorView() {
           onClose={() => setIsStickerPickerOpen(false)}
         />
       ) : null}
+      {isLayoutPickerOpen && document ? (
+        <LayoutPickerModal
+          confirmPhotoRemoval
+          document={document}
+          onApply={applyLayout}
+          onClose={() => setIsLayoutPickerOpen(false)}
+        />
+      ) : null}
       {isWashiTapeGalleryOpen ? (
         <WashiTapeGalleryModal
           onAddWashiTape={addWashiTape}
@@ -472,6 +489,7 @@ export function EditorView() {
           }
           onAddMap={addMap}
           onAddText={addText}
+          onOpenLayoutPicker={document ? () => setIsLayoutPickerOpen(true) : undefined}
           onOpenPhotoPicker={() => setPhotoPickerMode({ kind: "photo" })}
           onOpenStickerPicker={() => setIsStickerPickerOpen(true)}
           onOpenWashiTapePicker={() => setIsWashiTapeGalleryOpen(true)}

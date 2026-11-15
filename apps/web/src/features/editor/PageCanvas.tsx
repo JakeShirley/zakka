@@ -550,6 +550,7 @@ export function PageCanvas({
         resolvePhotoHref: (layer) =>
           layer.assetId ? resolveBrowserPhotoHref(assetById.get(layer.assetId)) : null,
         showPhotoPlaceholders: true,
+        showTextPlaceholders: true,
         resolveStickerSvg: (layer) => stickerSvgById.get(layer.stickerId),
         resolveStickerHref: (layer) =>
           isCustomStickerId(layer.stickerId)

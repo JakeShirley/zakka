@@ -152,6 +152,22 @@ Street map (OpenStreetMap) and Topographic (Esri World Topo) are raster tile sty
 
 Both tile providers have usage policies: the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/) and [Esri's terms of use](https://www.esri.com/en-us/legal/terms/full-master-agreement). Keep the attribution that the renderer draws on each tile map. The proxy limits concurrent upstream requests and reuses cached tiles, but heavy deployments should still review those policies.
 
+## Page Layouts
+
+**Page layout** in the editor sidebar opens a picker of page layouts. Applying a layout moves the page's photos into the photo slots that best match their shape, moves text into the text slots, and adds photo and text placeholders for any empty slots. On an empty page, a layout is a set of placeholders to fill in. Stickers, washi tape, maps, and locked layers stay where they are. "Fits this page" lists layouts with room for every photo. "Other layouts" have fewer photo slots, and applying one removes the smallest photos. Applying a layout is one undo step.
+
+`packages/editor-core/src/page-layouts.ts` defines the layout format, the Zakka layouts, and `applyPageLayout`. Layout slots are fractions of the page, so a layout works on any page size. A layout's orientation (square, portrait, or landscape) limits it to pages of that shape. Zakka layouts work on every page.
+
+The picker filters by category (Photos only, Titled, Captions, Journaling, Feature photo, Grid, Collage). `getPageLayoutCategories` derives them from slot geometry because imported layouts rarely mark text roles. A wide, short text box counts as a title and a large one as journaling space, and a layout can be in several categories.
+
+`src/page-layouts-shutterfly.ts` is generated. It holds Shutterfly's single-page book layouts converted to the compact Zakka format, with duplicate geometries removed. Raw Shutterfly data is not checked in. To regenerate it, set `SHUTTERFLY_API_KEY` (see [Shutterfly import](configuration.md#shutterfly-import)) and run:
+
+```sh
+pnpm --filter @zakka/editor-core import:shutterfly-layouts
+```
+
+The web app loads the Shutterfly layouts lazily when the picker opens. Empty text boxes render as dashed "Add text" outlines in the editor, like photo placeholders, and are left out of exports.
+
 ## UI Themes
 
 App themes change only the app chrome. Books and page content keep their own colors. Each account stores its theme (`uiTheme` in `/api/v1/account/preferences`), and the browser caches it in localStorage so the first paint uses the right colors.

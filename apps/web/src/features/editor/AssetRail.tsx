@@ -3,6 +3,7 @@ import {
   AddRegular,
   EmojiSparkleRegular,
   ImageAddRegular,
+  LayoutCellFourRegular,
   MapRegular,
   TextTRegular,
   WallpaperRegular,
@@ -25,6 +26,7 @@ type AssetRailCommonProps = {
   inspector?: AssetRailInspector | null;
   onAddMap: () => void;
   onAddText: () => void;
+  onOpenLayoutPicker?: (() => void) | undefined;
   onOpenStickerPicker: () => void;
   onOpenWashiTapePicker: () => void;
   onOpenBackgroundPanel?: () => void;
@@ -53,6 +55,7 @@ export function AssetRail(props: AssetRailProps) {
     inspector,
     onAddMap,
     onAddText,
+    onOpenLayoutPicker,
     onOpenStickerPicker,
     onOpenWashiTapePicker,
     onOpenBackgroundPanel,
@@ -118,6 +121,16 @@ export function AssetRail(props: AssetRailProps) {
             onClick={onOpenBackgroundPanel}
           >
             Backgrounds
+          </Button>
+        ) : null}
+        {onOpenLayoutPicker ? (
+          <Button
+            type="button"
+            className="secondary-button full-width-button"
+            icon={<LayoutCellFourRegular />}
+            onClick={onOpenLayoutPicker}
+          >
+            Page layout
           </Button>
         ) : null}
         {isReferencedMode ? (

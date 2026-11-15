@@ -7,7 +7,11 @@ import {
 import { describe, expect, it } from "vitest";
 
 import type { PageDetail } from "../../types";
-import { fillPhotoPlaceholderAcrossSpread, syncLayerAcrossSpread } from "./spreadLayers";
+import {
+  fillPhotoPlaceholderAcrossSpread,
+  reconcileSpreadPageEdit,
+  syncLayerAcrossSpread,
+} from "./spreadLayers";
 
 const pageDetail = (id: string, document: PageDocument): PageDetail => ({
   id,
@@ -217,6 +221,45 @@ describe("spread layer syncing", () => {
     ]);
     expect(result.details.get(right.id)?.document.layers).toEqual([
       expect.objectContaining({ assetId: "asset_1", id: "frame", rotation: 45, x: -300 }),
+    ]);
+  });
+
+  it("moves or drops facing copies of shared layers after a whole-page edit", () => {
+    const canvas = { width: 600, height: 400 };
+    const moved = createPhotoLayer({ assetId: "a", id: "moved", x: 400, y: 0, width: 210 });
+    const removed = createPhotoLayer({ assetId: "b", id: "removed", x: 400, y: 200, width: 210 });
+    const untouched = createTextLayer({ id: "untouched", text: "hi", x: 500, width: 200 });
+    const left = pageDetail(
+      "left",
+      createPageDocument({ canvas, layers: [moved, removed, untouched] }),
+    );
+    const right = pageDetail(
+      "right",
+      createPageDocument({
+        canvas,
+        layers: [
+          { ...moved, x: -200 },
+          { ...removed, x: -200 },
+          { ...untouched, x: -100 },
+          createTextLayer({ id: "right_only", text: "own" }),
+        ],
+      }),
+    );
+
+    const documents = reconcileSpreadPageEdit({
+      details: new Map([
+        [left.id, left],
+        [right.id, right],
+      ]),
+      nextDocument: createPageDocument({ canvas, layers: [{ ...moved, x: 20 }, untouched] }),
+      sourcePageId: left.id,
+      spreadPageIds: [left.id, right.id],
+    });
+
+    expect(documents.get(left.id)?.layers.map((layer) => layer.id)).toEqual(["moved", "untouched"]);
+    expect(documents.get(right.id)?.layers).toEqual([
+      expect.objectContaining({ id: "untouched", x: -100 }),
+      expect.objectContaining({ id: "right_only" }),
     ]);
   });
 });

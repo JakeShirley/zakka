@@ -105,6 +105,74 @@ export const fillPhotoPlaceholderAcrossSpread = ({
   };
 };
 
+/**
+ * After a whole-page edit (such as applying a page layout) on one spread page, updates the facing
+ * pages' copies of any shared layer the edit moved or removed. Moved layers keep a facing copy
+ * only while they still overlap that page; unchanged shared layers are left alone. Returns the
+ * documents to write, including the edited page.
+ */
+export const reconcileSpreadPageEdit = ({
+  details,
+  nextDocument,
+  sourcePageId,
+  spreadPageIds,
+}: {
+  details: Map<string, PageDetail>;
+  nextDocument: PageDocument;
+  sourcePageId: string;
+  spreadPageIds: string[];
+}): Map<string, PageDocument> => {
+  const documents = new Map<string, PageDocument>([[sourcePageId, nextDocument]]);
+  const spreadPages = getSpreadPageContexts(details, spreadPageIds);
+  const sourceContext = spreadPages.find((spreadPage) => spreadPage.pageId === sourcePageId);
+
+  if (!sourceContext) {
+    return documents;
+  }
+
+  const previousLayers = new Map(
+    sourceContext.page.document.layers.map((layer) => [layer.id, layer]),
+  );
+  const nextLayers = new Map(nextDocument.layers.map((layer) => [layer.id, layer]));
+
+  for (const spreadPage of spreadPages) {
+    if (spreadPage.pageId === sourcePageId) {
+      continue;
+    }
+
+    let facingDocument = spreadPage.page.document;
+
+    for (const facingLayer of spreadPage.page.document.layers) {
+      const previousLayer = previousLayers.get(facingLayer.id);
+
+      if (!previousLayer || previousLayer.kind !== facingLayer.kind) {
+        continue;
+      }
+
+      const nextLayer = nextLayers.get(facingLayer.id);
+
+      if (nextLayer && JSON.stringify(nextLayer) === JSON.stringify(previousLayer)) {
+        continue;
+      }
+
+      const localLayer = nextLayer
+        ? { ...nextLayer, x: sourceContext.offsetX + nextLayer.x - spreadPage.offsetX }
+        : null;
+
+      facingDocument =
+        localLayer && layerOverlapsPageCanvas(localLayer, facingDocument)
+          ? updateLayer(facingDocument, facingLayer.id, localLayer)
+          : deleteLayer(facingDocument, facingLayer.id);
+    }
+
+    if (facingDocument !== spreadPage.page.document) {
+      documents.set(spreadPage.pageId, facingDocument);
+    }
+  }
+
+  return documents;
+};
+
 type SpreadLayerStackPlacement =
   | { kind: "bottom" }
   | { index: number; kind: "index" }

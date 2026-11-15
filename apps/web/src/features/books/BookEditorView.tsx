@@ -29,6 +29,7 @@ import {
   type WashiTapeDesign,
   type WashiTapeLayer,
 } from "@zakka/editor-core";
+import type { PageLayout } from "@zakka/editor-core/page-layouts";
 import type { DragEvent, FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
@@ -58,6 +59,7 @@ import {
 import { AssetRail } from "../editor/AssetRail";
 import type { EditorSaveStatus } from "../editor/editorTypes";
 import { LayerInspector } from "../editor/LayerInspector";
+import { applyPageLayoutWithAssets, LayoutPickerModal } from "../editor/LayoutPickerModal";
 import { getBookPrintWarnings, getNewPhotoFrameSize } from "../editor/photoResolution";
 import {
   type ArrangeCanvasPreview,
@@ -111,6 +113,7 @@ import {
   fillPhotoPlaceholderAcrossSpread,
   getSpreadPageContexts,
   layerOverlapsPageCanvas,
+  reconcileSpreadPageEdit,
   replacePageDocument,
   type SpreadLayerSyncResult,
   type SpreadPageContext,
@@ -248,6 +251,7 @@ export function BookEditorView() {
   const [photoPickerMode, setPhotoPickerMode] = useState<PhotoPickerMode | null>(null);
   const [isLibraryPickerOpen, setIsLibraryPickerOpen] = useState(false);
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false);
+  const [isLayoutPickerOpen, setIsLayoutPickerOpen] = useState(false);
   const [isWashiTapeGalleryOpen, setIsWashiTapeGalleryOpen] = useState(false);
   const [isBackgroundPanelOpen, setIsBackgroundPanelOpen] = useState(false);
   const [backgroundApplyTarget, setBackgroundApplyTarget] =
@@ -650,6 +654,7 @@ export function BookEditorView() {
         photoPickerMode !== null ||
         isLibraryPickerOpen ||
         isStickerPickerOpen ||
+        isLayoutPickerOpen ||
         isWashiTapeGalleryOpen ||
         pngExportTarget
       ) {
@@ -680,6 +685,7 @@ export function BookEditorView() {
     photoPickerMode,
     isLibraryPickerOpen,
     isStickerPickerOpen,
+    isLayoutPickerOpen,
     isWashiTapeGalleryOpen,
     pngExportTarget,
     redoBookEdit,
@@ -698,6 +704,7 @@ export function BookEditorView() {
         photoPickerMode !== null ||
         isLibraryPickerOpen ||
         isStickerPickerOpen ||
+        isLayoutPickerOpen ||
         isWashiTapeGalleryOpen ||
         pngExportTarget ||
         editingPageId
@@ -730,6 +737,7 @@ export function BookEditorView() {
     isBookSettingsOpen,
     isLibraryPickerOpen,
     isStickerPickerOpen,
+    isLayoutPickerOpen,
     isWashiTapeGalleryOpen,
     photoPickerMode,
     pngExportTarget,
@@ -1288,6 +1296,32 @@ export function BookEditorView() {
     const layer = createTextLayer({ text: "New text" });
     editPageDocument(activePage.id, addLayer(activePage.document, layer));
     setSelectedLayerIds([layer.id]);
+  };
+
+  const applyLayoutToActivePage = (layout: PageLayout) => {
+    setIsLayoutPickerOpen(false);
+    if (!activePage) {
+      return;
+    }
+
+    const { document: nextDocument } = applyPageLayoutWithAssets(
+      activePage.document,
+      layout,
+      assets,
+    );
+    if (viewMode === "spread" && visiblePageIds.length > 1) {
+      editPageDocuments(
+        reconcileSpreadPageEdit({
+          details: pageDetails,
+          nextDocument,
+          sourcePageId: activePage.id,
+          spreadPageIds: visiblePageIds,
+        }),
+      );
+    } else {
+      editPageDocument(activePage.id, nextDocument);
+    }
+    setSelectedLayerIds([]);
   };
 
   const addMap = () => {
@@ -1972,6 +2006,13 @@ export function BookEditorView() {
           onClose={() => setIsStickerPickerOpen(false)}
         />
       ) : null}
+      {isLayoutPickerOpen && activePage ? (
+        <LayoutPickerModal
+          document={activePage.document}
+          onApply={applyLayoutToActivePage}
+          onClose={() => setIsLayoutPickerOpen(false)}
+        />
+      ) : null}
       {isWashiTapeGalleryOpen ? (
         <WashiTapeGalleryModal
           onAddWashiTape={addWashiTape}
@@ -2193,6 +2234,7 @@ export function BookEditorView() {
           onAddMap={addMap}
           onAddText={addText}
           onOpenBackgroundPanel={openBackgroundPanel}
+          onOpenLayoutPicker={activePage ? () => setIsLayoutPickerOpen(true) : undefined}
           onOpenLibraryPicker={() => setIsLibraryPickerOpen(true)}
           onOpenStickerPicker={() => setIsStickerPickerOpen(true)}
           onOpenWashiTapePicker={() => setIsWashiTapeGalleryOpen(true)}
