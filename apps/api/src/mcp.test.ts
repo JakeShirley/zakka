@@ -13,6 +13,7 @@ import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createApp } from "./app.js";
+import { maxMcpRequestByteSize } from "./mcp/server.js";
 import { createDatabaseConnection, type DatabaseConnection } from "./persistence/database.js";
 import { runMigrations } from "./persistence/migrations.js";
 import { createPageDocumentStore } from "./persistence/page-documents.js";
@@ -209,6 +210,25 @@ describe("mcp endpoint", () => {
 
     expect(response.status).toBe(405);
     expect(response.headers.get("allow")).toBe("POST");
+  });
+
+  it("rejects oversized requests and image data before decoding them", async () => {
+    const app = await createTestApp();
+    const cookie = await registerAccount(app, "ada@example.com");
+    const { secret } = await createToken(app, cookie);
+
+    const oversizedRequest = await postMcp(
+      app,
+      { jsonrpc: "2.0", method: "ping", params: { padding: "A".repeat(maxMcpRequestByteSize) } },
+      secret,
+    );
+    const oversizedImage = await callTool(app, secret, "upload_image", {
+      data: "A".repeat(Math.ceil((20 * 1024 * 1024) / 3) * 4 + 4),
+    });
+
+    expect(oversizedRequest.status).toBe(413);
+    expect(oversizedImage.isError).toBe(true);
+    expect(oversizedImage.content[0]?.text).toContain("20 MB");
   });
 
   it("initializes, lists tools and records token use", async () => {

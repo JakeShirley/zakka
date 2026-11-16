@@ -31,7 +31,7 @@ type UploadFile = {
 
 type SupportedImageFormat = "heic" | "heif" | "jpeg" | "png" | "tiff" | "webp";
 
-const maxUploadByteSize = 20 * 1024 * 1024;
+export const maxUploadByteSize = 20 * 1024 * 1024;
 const maxImageDimension = 20_000;
 const previewMaxDimension = 2400;
 const thumbnailMaxDimension = 360;

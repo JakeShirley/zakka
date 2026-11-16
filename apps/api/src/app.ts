@@ -173,7 +173,7 @@ import {
   validatePageDocumentAssets,
 } from "./library.js";
 import { isMapTileInRange, type MapTileImage, type MapTileSource } from "./map-tiles.js";
-import { createZakkaMcpServer } from "./mcp/server.js";
+import { createZakkaMcpServer, maxMcpRequestByteSize } from "./mcp/server.js";
 import {
   OwnershipError,
   type Repositories,
@@ -3602,8 +3602,12 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
       storage: options.storage,
       version: packageVersion,
     });
-    // Omitting sessionIdGenerator runs the transport in stateless mode.
-    const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
+    // Omitting sessionIdGenerator runs the transport in stateless mode. The transport refuses
+    // larger bodies before reading them, so an upload_image payload can't exhaust memory.
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      enableJsonResponse: true,
+      maxRequestBodySize: maxMcpRequestByteSize,
+    });
 
     await server.connect(transport);
 

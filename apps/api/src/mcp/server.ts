@@ -25,7 +25,12 @@ import {
 import { searchStickers } from "@zakka/editor-core/stickers";
 import sharp from "sharp";
 
-import { type AssetStorage, AssetUploadError, createAssetFromUpload } from "../assets.js";
+import {
+  type AssetStorage,
+  AssetUploadError,
+  createAssetFromUpload,
+  maxUploadByteSize,
+} from "../assets.js";
 import { ExportRenderError, renderPageExport } from "../exports.js";
 import {
   createBookWithCovers,
@@ -45,6 +50,11 @@ export type ZakkaMcpServerOptions = {
 };
 
 const layerKinds = ["photo", "text", "sticker", "washiTape", "map"] as const;
+
+const maxUploadBase64Length = Math.ceil(maxUploadByteSize / 3) * 4;
+
+// Room for one base64 upload_image payload plus JSON-RPC framing and line-wrapped base64.
+export const maxMcpRequestByteSize = Math.ceil(maxUploadBase64Length * 1.1) + 64 * 1024;
 type LayerKind = (typeof layerKinds)[number];
 
 const hexColorSchema = z
@@ -492,6 +502,14 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
         }
 
         const base64 = data.replace(/^data:[^,]*,/, "").replace(/\s/g, "");
+
+        if (base64.length > maxUploadBase64Length) {
+          throw new AssetUploadError(
+            "image_too_large",
+            "Uploaded image must be 20 MB or smaller",
+            413,
+          );
+        }
 
         if (!/^[A-Za-z0-9+/_-]*={0,2}$/.test(base64)) {
           throw new Error("Image data must be base64 encoded");
