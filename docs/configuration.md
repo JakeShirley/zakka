@@ -34,4 +34,40 @@ Each Zakka user then connects their own Shutterfly account under **Settings > In
 
 Imported photos are downloaded at the largest size Shutterfly's renderer provides (up to 2600 px on the long edge). Empty photo wells, and photos that could not be downloaded, come across as photo placeholders that keep the frame's size, rotation, and shape. Fill one in the editor by dropping a photo onto it or by choosing **Add photo**. Exports leave unfilled placeholders blank. Shutterfly's licensed fonts are replaced with the closest bundled Zakka font. Text larger than Zakka's maximum size is reduced to fit, and spine text is skipped because Zakka books have no spine. Each import reports anything it could not bring across.
 
+## AI assistants (MCP)
+
+Zakka includes a [Model Context Protocol](https://modelcontextprotocol.io) server, so AI assistants such as Claude, ChatGPT, and VS Code can browse a user's photos and books and design pages. It needs no server configuration.
+
+The server uses the Streamable HTTP transport at `/api/v1/mcp` on the same origin as the app, for example `http://localhost:4000/api/v1/mcp` for a local Docker deployment. It runs statelessly and accepts only `POST` requests.
+
+Each user creates a personal access token under **Settings > Integrations**. The full token is shown only once. Zakka stores only a SHA-256 hash of it, and records when it was last used. Clients send the token as a bearer token:
+
+```json
+{
+  "mcpServers": {
+    "zakka": {
+      "type": "http",
+      "url": "http://localhost:4000/api/v1/mcp",
+      "headers": { "Authorization": "Bearer zakka_pat_..." }
+    }
+  }
+}
+```
+
+A token can do everything its user can do through these tools, so treat it like a password. Revoke it in **Settings > Integrations** when it is no longer needed.
+
+| Tools | Purpose |
+| --- | --- |
+| `list_books`, `get_book`, `list_pages`, `get_page` | Read books, pages, and full page documents. |
+| `list_photos`, `view_photo`, `list_albums` | Browse the photo library and view photos as images. |
+| `upload_image` | Add a base64-encoded image to the library, optionally to an album or book. |
+| `add_photos_to_book`, `remove_photos_from_book` | Collect library photos for a book, or remove them from it. |
+| `search_stickers`, `list_fonts`, `list_backgrounds` | Find decorations to use on pages. |
+| `render_page` | Render a page to a JPEG so the assistant can check its work. |
+| `create_book`, `update_book`, `set_book_pages` | Create, rename, and reorder books. |
+| `create_page`, `update_page` | Create pages and change their title, background, or whole document. |
+| `add_layer`, `update_layer`, `delete_layer` | Add, edit, reorder, and remove photos, text, stickers, washi tape, and maps. |
+
+The tools never delete photos, pages, or books. If a page is open in the browser editor while an assistant edits it, the editor's next autosave may overwrite the assistant's changes. Reload the page to pick them up.
+
 Future production-only secrets for CSRF, password reset tokens, and native refresh tokens should be added here in the same change that introduces the behavior.

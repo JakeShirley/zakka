@@ -823,6 +823,68 @@ textarea:focus-visible {
   gap: 8px;
 }
 
+.mcp-copy-row,
+.mcp-token-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.mcp-copy-row input,
+.mcp-config {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+}
+
+.mcp-new-token {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--sb-border);
+  border-radius: 8px;
+  background: var(--sb-surface-sunken);
+}
+
+.mcp-config {
+  overflow-x: auto;
+  margin: 0;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--sb-surface-subtle);
+  white-space: pre;
+}
+
+.mcp-token-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mcp-token-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--sb-border);
+  border-radius: 8px;
+}
+
+.mcp-token-details {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mcp-token-details span {
+  color: var(--sb-text-muted);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
 .shutterfly-import {
   width: min(720px, calc(100vw - 48px));
   max-height: calc(100vh - 140px);

@@ -428,6 +428,25 @@ export const accountPreferences = sqliteTable("account_preferences", {
   ...timestampColumns(),
 });
 
+export const accessTokens = sqliteTable(
+  "access_tokens",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    tokenPrefix: text("token_prefix").notNull(),
+    lastUsedAt: text("last_used_at"),
+    ...timestampColumns(),
+  },
+  (table) => [
+    index("access_tokens_account_id_idx").on(table.accountId),
+    uniqueIndex("access_tokens_token_hash_unique").on(table.tokenHash),
+  ],
+);
+
 export type AccountRecord = typeof accounts.$inferSelect;
 export type AuthIdentityRecord = typeof authIdentities.$inferSelect;
 export type SessionRecord = typeof sessions.$inferSelect;
@@ -447,3 +466,4 @@ export type ExportJobRecord = typeof exportJobs.$inferSelect;
 export type IntegrationConnectionRecord = typeof integrationConnections.$inferSelect;
 export type ExternalMediaLinkRecord = typeof externalMediaLinks.$inferSelect;
 export type AccountPreferencesRecord = typeof accountPreferences.$inferSelect;
+export type AccessTokenRecord = typeof accessTokens.$inferSelect;

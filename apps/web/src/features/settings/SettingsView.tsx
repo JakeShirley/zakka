@@ -10,6 +10,7 @@ import { getErrorMessage } from "../../lib/errors";
 import type { AuthSession } from "../../types";
 import { AboutPanel } from "./AboutPanel";
 import { AppearancePanel } from "./AppearancePanel";
+import { McpIntegrationPanel } from "./McpIntegrationPanel";
 import { ShutterflyIntegrationPanel } from "./ShutterflyIntegrationPanel";
 
 const settingsTabs = ["account", "appearance", "integrations", "logs", "about"] as const;
@@ -116,6 +117,7 @@ export function SettingsView({ session }: { session: AuthSession }) {
       ) : selectedTab === "integrations" ? (
         <div className="settings-grid settings-integrations-grid">
           <ShutterflyIntegrationPanel />
+          <McpIntegrationPanel />
         </div>
       ) : selectedTab === "about" ? (
         <AboutPanel />

@@ -24,6 +24,7 @@ describe("SQLite migrations", () => {
         "0013_add_integrations",
         "0014_add_account_preferences",
         "0015_add_custom_backgrounds",
+        "0016_add_access_tokens",
       ]);
       expect(runMigrations(connection.sqlite)).toEqual([]);
       expect(getAppliedMigrations(connection.sqlite)).toEqual([
@@ -42,6 +43,7 @@ describe("SQLite migrations", () => {
         "0013_add_integrations",
         "0014_add_account_preferences",
         "0015_add_custom_backgrounds",
+        "0016_add_access_tokens",
       ]);
 
       const tableNames = connection.sqlite
@@ -50,6 +52,7 @@ describe("SQLite migrations", () => {
         .map((row) => (row as { name: string }).name);
 
       expect(tableNames).toEqual([
+        "access_tokens",
         "account_preferences",
         "accounts",
         "album_assets",
