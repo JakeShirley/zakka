@@ -2044,6 +2044,19 @@ textarea:focus-visible {
   font-weight: 700;
 }
 
+/* An empty first column mirrors the full-screen button so the view toggle stays centred. */
+.book-modebar-view {
+  display: grid;
+  grid-template-columns: 34px auto 34px;
+  gap: 6px;
+  align-items: center;
+  justify-self: center;
+}
+
+.book-modebar-view::before {
+  content: "";
+}
+
 .book-view-toggle {
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(82px, 1fr));
@@ -6563,6 +6576,36 @@ body {
 .book-editor-page .book-page-frame {
   align-content: center;
   min-height: 0;
+}
+
+/*
+ * Full-screen canvas: the stage covers the window (the browser's fullscreen mode, when granted,
+ * then makes the window the whole screen). It sits under app modals so pickers still open on top.
+ */
+.book-editor-page .book-editor-stage[data-fullscreen="true"] {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.book-editor-stage[data-fullscreen="true"]
+  > :not(.book-modebar, .book-canvas-deck, .empty-book-editor) {
+  display: none;
+}
+
+.book-editor-stage[data-fullscreen="true"] .book-canvas-deck {
+  container-type: size;
+  padding: 16px 24px;
+}
+
+/* Grow each page to the largest size that fits the deck's height instead of the 760px cap. */
+.book-editor-stage[data-fullscreen="true"] .book-page-frame .editor-canvas {
+  --editor-canvas-max-width: calc(100cqh * var(--editor-canvas-aspect-ratio));
+  width: 100%;
 }
 
 .book-editor-page .book-filmstrip {
