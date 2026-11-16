@@ -125,6 +125,7 @@ import {
   type SpreadPageContext,
   syncLayerAcrossSpread,
 } from "./spreadLayers";
+import { useCanvasFullscreen } from "./useCanvasFullscreen";
 
 type PhotoPickerMode = {
   kind: "photoPlaceholder" | "washiTapePattern";
@@ -249,6 +250,8 @@ export function BookEditorView() {
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [activeSelectionPanel, setActiveSelectionPanel] = useState<SelectionPanel | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("spread");
+  const { isFullscreen: isCanvasFullscreen, toggle: toggleCanvasFullscreen } =
+    useCanvasFullscreen();
   const [exportJob, setExportJob] = useState<ExportJob | null>(null);
   const [pendingExportFormat, setPendingExportFormat] = useState<"pdf" | "png" | null>(null);
   const [editingPageId, setEditingPageId] = useState<string | null>(null);
@@ -2329,16 +2332,22 @@ export function BookEditorView() {
         <aside className="editor-panel editor-asset-rail" aria-label="Editor sidebar">
           {renderDock("side")}
         </aside>
-        <section className="book-editor-stage" aria-label="Book editor">
+        <section
+          className="book-editor-stage"
+          aria-label="Book editor"
+          data-fullscreen={isCanvasFullscreen || undefined}
+        >
           <BookModeBar
             canNavigateNext={canNavigateNext}
             canNavigatePrevious={canNavigatePrevious}
+            isFullscreen={isCanvasFullscreen}
             isWorking={isWorking}
             leftPageName={leftPageName}
             navigationLabel={navigationLabel}
             rightPageName={rightPageName}
             viewMode={viewMode}
             onNavigate={navigateBook}
+            onToggleFullscreen={toggleCanvasFullscreen}
             onViewModeChange={setViewMode}
           />
           {activePage ? (

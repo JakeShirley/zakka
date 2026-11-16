@@ -1285,11 +1285,14 @@ export function PageCanvas({
       ref={canvasRef}
       className="editor-canvas"
       data-asset-drop-target={isAssetDragOver || undefined}
-      style={{
-        aspectRatio: `${document.canvas.width} / ${document.canvas.height}`,
-        background: document.canvas.backgroundColor,
-        maxWidth: `min(760px, calc(72vh * ${document.canvas.width / document.canvas.height}))`,
-      }}
+      style={
+        {
+          "--editor-canvas-aspect-ratio": document.canvas.width / document.canvas.height,
+          aspectRatio: `${document.canvas.width} / ${document.canvas.height}`,
+          background: document.canvas.backgroundColor,
+          maxWidth: `var(--editor-canvas-max-width, min(760px, calc(72vh * ${document.canvas.width / document.canvas.height})))`,
+        } as CSSProperties
+      }
       onPointerCancel={stopTransform}
       onPointerDown={clearSelection}
       onPointerMove={transformLayer}
