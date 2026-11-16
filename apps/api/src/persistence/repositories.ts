@@ -6,6 +6,7 @@ import type { AppDatabase } from "./database.js";
 import { createEntityId, createInternalId } from "./ids.js";
 import { createMemoryPageDocumentStore, type PageDocumentStore } from "./page-documents.js";
 import {
+  type AccessTokenRecord,
   type AccountPreferencesRecord,
   type AccountRecord,
   type AlbumAssetRecord,
@@ -15,6 +16,7 @@ import {
   type AssetVariantRecord,
   type AuthIdentityProvider,
   type AuthIdentityRecord,
+  accessTokens,
   accountPreferences,
   accounts,
   albumAssets,
@@ -304,6 +306,73 @@ export class SessionRepository {
         ),
       )
       .run();
+  }
+}
+
+export class AccessTokenRepository {
+  constructor(
+    private readonly db: AppDatabase,
+    private readonly clock: RepositoryClock = defaultClock,
+  ) {}
+
+  create(input: {
+    accountId: string;
+    name: string;
+    tokenHash: string;
+    tokenPrefix: string;
+    id?: string;
+  }): AccessTokenRecord {
+    const timestamp = now(this.clock);
+    const record: AccessTokenRecord = {
+      id: input.id ?? createInternalId("accessToken"),
+      accountId: input.accountId,
+      name: input.name,
+      tokenHash: input.tokenHash,
+      tokenPrefix: input.tokenPrefix,
+      lastUsedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    this.db.insert(accessTokens).values(record).run();
+
+    return record;
+  }
+
+  listForAccount(accountId: string): AccessTokenRecord[] {
+    return this.db
+      .select()
+      .from(accessTokens)
+      .where(eq(accessTokens.accountId, accountId))
+      .orderBy(desc(accessTokens.createdAt), desc(accessTokens.id))
+      .all();
+  }
+
+  findByTokenHash(tokenHash: string): AccessTokenRecord | null {
+    return (
+      this.db.select().from(accessTokens).where(eq(accessTokens.tokenHash, tokenHash)).get() ?? null
+    );
+  }
+
+  touchLastUsed(tokenId: string): ISODateTime {
+    const timestamp = now(this.clock);
+
+    this.db
+      .update(accessTokens)
+      .set({ lastUsedAt: timestamp })
+      .where(eq(accessTokens.id, tokenId))
+      .run();
+
+    return timestamp;
+  }
+
+  deleteByIdForAccount(accountId: string, tokenId: string): boolean {
+    const result = this.db
+      .delete(accessTokens)
+      .where(and(eq(accessTokens.accountId, accountId), eq(accessTokens.id, tokenId)))
+      .run();
+
+    return result.changes > 0;
   }
 }
 
@@ -1912,6 +1981,7 @@ export const createRepositories = (
     accountPreferences: new AccountPreferencesRepository(db, clock),
     authIdentities: new AuthIdentityRepository(db, clock),
     sessions: new SessionRepository(db, clock),
+    accessTokens: new AccessTokenRepository(db, clock),
     assets: new AssetRepository(db, clock),
     albums: new AlbumRepository(db, clock),
     stickerPacks: new StickerPackRepository(db, clock),

@@ -628,6 +628,16 @@ const shutterflyConnection = {
   connectedAt: "2026-05-17T12:00:00.000Z",
 };
 
+const accessTokens = [
+  {
+    id: "access_token_claude",
+    name: "Claude Desktop",
+    tokenPrefix: "zakka_pat_K3dP",
+    lastUsedAt: "2026-05-17T11:42:00.000Z",
+    createdAt: "2026-05-10T09:15:00.000Z",
+  },
+];
+
 const shutterflyProjects = [
   {
     id: "1219497168070",
@@ -1020,6 +1030,24 @@ const scenarios: ScreenshotScenario[] = [
       );
       await integrationsTab.click();
       await expect(page.getByRole("button", { name: "Connect Shutterfly" })).toBeVisible();
+    },
+    waitFor: async (page) => {
+      await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    },
+  },
+  {
+    name: "settings-integrations-mcp-token",
+    path: "/settings?tab=integrations",
+    prepare: async (page) => {
+      const createButton = page.getByRole("button", { name: "Create token" });
+
+      if (!(await isVisible(createButton))) {
+        return;
+      }
+
+      await page.getByPlaceholder("Claude Desktop").fill("VS Code");
+      await createButton.click();
+      await expect(page.getByText("Copy your new token now.")).toBeVisible();
     },
     waitFor: async (page) => {
       await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
@@ -1425,6 +1453,29 @@ async function installMockApi(
 
     if (pathName === "/api/v1/integrations/shutterfly/projects") {
       await route.fulfill({ json: { projects: shutterflyProjects } });
+      return;
+    }
+
+    if (pathName === "/api/v1/account/access-tokens") {
+      if (route.request().method() === "POST") {
+        const { name } = route.request().postDataJSON() as { name: string };
+
+        await route.fulfill({
+          json: {
+            token: { ...accessTokens[0], id: "access_token_new", lastUsedAt: null, name },
+            secret: "zakka_pat_Xq7v2Lm9Rt4Np8Ks1Wd6Hj3Bf5Gc0Ye",
+          },
+          status: 201,
+        });
+        return;
+      }
+
+      await route.fulfill({ json: { tokens: accessTokens } });
+      return;
+    }
+
+    if (pathName.startsWith("/api/v1/account/access-tokens/")) {
+      await route.fulfill({ status: 204 });
       return;
     }
 

@@ -1,4 +1,9 @@
 import {
+  type AccessTokenCreateRequest,
+  type AccessTokenCreateResponse,
+  type AccessTokenListResponse,
+  accessTokenCreateResponseSchema,
+  accessTokenListResponseSchema,
   type AccountPreferencesPatchRequest,
   type AccountPreferencesResponse,
   accountPreferencesResponseSchema,
@@ -161,6 +166,26 @@ export const createApiClient = (baseUrl = defaultBaseUrl) => ({
       body: JSON.stringify(input),
       method: "PATCH",
     }),
+
+  listAccessTokens: (): Promise<AccessTokenListResponse> =>
+    requestJson(baseUrl, accessTokenListResponseSchema, "/api/v1/account/access-tokens"),
+
+  createAccessToken: (input: AccessTokenCreateRequest): Promise<AccessTokenCreateResponse> =>
+    requestJson(baseUrl, accessTokenCreateResponseSchema, "/api/v1/account/access-tokens", {
+      body: JSON.stringify(input),
+      method: "POST",
+    }),
+
+  deleteAccessToken: async (tokenId: string): Promise<void> => {
+    const response = await fetch(buildUrl(baseUrl, `/api/v1/account/access-tokens/${tokenId}`), {
+      credentials: "include",
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      throw await parseError(response);
+    }
+  },
 
   listAssets: (): Promise<AssetListResponse> =>
     requestJson(baseUrl, assetListResponseSchema, "/api/v1/assets"),

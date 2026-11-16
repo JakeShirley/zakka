@@ -345,6 +345,23 @@ CREATE UNIQUE INDEX custom_backgrounds_storage_key_unique ON custom_backgrounds 
 CREATE UNIQUE INDEX custom_backgrounds_external_unique ON custom_backgrounds (account_id, source, external_id);
 `,
   },
+  {
+    id: "0016_add_access_tokens",
+    sql: `
+CREATE TABLE access_tokens (
+  id TEXT PRIMARY KEY NOT NULL CHECK (id GLOB 'access_token_*'),
+  account_id TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  token_hash TEXT NOT NULL,
+  token_prefix TEXT NOT NULL,
+  last_used_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX access_tokens_account_id_idx ON access_tokens (account_id);
+CREATE UNIQUE INDEX access_tokens_token_hash_unique ON access_tokens (token_hash);
+`,
+  },
 ];
 
 export const ensureMigrationTable = (sqlite: Database.Database) => {

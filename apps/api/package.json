@@ -16,6 +16,7 @@
   "dependencies": {
     "@hono/node-server": "2.0.2",
     "@hono/zod-openapi": "1.4.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@zakka/api-contract": "workspace:*",
     "@zakka/config": "workspace:*",
     "@zakka/domain": "workspace:*",

@@ -1,6 +1,7 @@
 import type { EntityKind, OpaqueId } from "@zakka/domain";
 
 type InternalEntityKind =
+  | "accessToken"
   | "authIdentity"
   | "assetVariant"
   | "bookPage"
@@ -14,6 +15,7 @@ type InternalEntityKind =
   | "externalMediaLink";
 
 const internalPrefixes: Record<InternalEntityKind, string> = {
+  accessToken: "access_token",
   authIdentity: "auth_identity",
   assetVariant: "asset_variant",
   bookPage: "book_page",

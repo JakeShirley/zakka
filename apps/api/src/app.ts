@@ -1,7 +1,15 @@
 import { createRequire } from "node:module";
 
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import {
+  type AccessTokenResponse,
+  accessTokenCreateResponseSchema,
+  accessTokenCreateRoute,
+  accessTokenDeleteRoute,
+  accessTokenListResponseSchema,
+  accessTokenListRoute,
+  accessTokenResponseSchema,
   type AccountPreferencesResponse,
   type AccountResponse,
   accountPreferencesPatchRoute,
@@ -58,6 +66,7 @@ import {
   isUiThemePreference,
   loginRoute,
   logoutRoute,
+  mcpEndpointPath,
   type PageResponse,
   type PageSummaryResponse,
   pageCreateRoute,
@@ -130,9 +139,6 @@ import {
 import {
   createBookSpreads,
   createPageDocument,
-  getCustomBackgroundStorageId,
-  type PageDocument,
-  pageDocumentSchema,
   toCustomBackgroundId,
   type WashiTapeDesign,
   washiTapeDesignSchema,
@@ -147,18 +153,27 @@ import {
   ensureBrowserPreviewVariant,
 } from "./assets.js";
 import {
+  createAccessTokenSecret,
   createSessionCookieValue,
   createSessionSecret,
   defaultSessionTtlMs,
+  hashAccessTokenSecret,
   hashPassword,
   hashSessionSecret,
   normalizeEmail,
+  parseBearerAccessToken,
   parseSessionCookieValue,
   sessionCookieName,
   verifyPassword,
 } from "./auth.js";
 import { ExportRenderError, renderBookExport, renderPageExport } from "./exports.js";
+import {
+  createBookWithCovers,
+  parseStoredPageDocument,
+  validatePageDocumentAssets,
+} from "./library.js";
 import { isMapTileInRange, type MapTileImage, type MapTileSource } from "./map-tiles.js";
+import { createZakkaMcpServer } from "./mcp/server.js";
 import {
   OwnershipError,
   type Repositories,
@@ -169,6 +184,7 @@ import type {
   StickerPackWithCountRecord,
 } from "./persistence/repositories.js";
 import type {
+  AccessTokenRecord,
   AccountPreferencesRecord,
   AccountRecord,
   AssetRecord,
@@ -341,6 +357,15 @@ const toAccountPreferencesResponse = (
       : defaultUiThemePreference,
   });
 
+const toAccessTokenResponse = (token: AccessTokenRecord): AccessTokenResponse =>
+  accessTokenResponseSchema.parse({
+    id: token.id,
+    name: token.name,
+    tokenPrefix: token.tokenPrefix,
+    lastUsedAt: token.lastUsedAt,
+    createdAt: token.createdAt,
+  });
+
 const toArrayBuffer = (buffer: Buffer): ArrayBuffer =>
   buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
 
@@ -418,14 +443,6 @@ const listAssetVariantsForResponse = async (input: {
   });
 
   return [...variants, preview];
-};
-
-const parseStoredPageDocument = (page: PageRecord): PageDocument => {
-  try {
-    return pageDocumentSchema.parse(JSON.parse(page.documentJson));
-  } catch {
-    return createPageDocument({ canvas: { width: page.width, height: page.height } });
-  }
 };
 
 const toPageSummaryResponse = (page: PageRecord): PageSummaryResponse => {
@@ -617,37 +634,6 @@ const toExportJobResponse = (exportJob: ExportJobRecord): ExportJobResponse =>
     createdAt: exportJob.createdAt,
     updatedAt: exportJob.updatedAt,
   });
-
-const validatePageDocumentAssets = (
-  accountId: string,
-  document: PageDocument,
-  repositories: Repositories,
-): boolean => {
-  const assetIds = new Set(
-    document.layers.flatMap((layer) =>
-      layer.kind === "photo" && layer.assetId ? [layer.assetId] : [],
-    ),
-  );
-
-  for (const assetId of assetIds) {
-    if (!repositories.assets.findByIdForAccount(accountId, assetId)) {
-      return false;
-    }
-  }
-
-  const customBackgroundId = document.canvas.background
-    ? getCustomBackgroundStorageId(document.canvas.background.backgroundId)
-    : null;
-
-  if (
-    customBackgroundId &&
-    !repositories.customBackgrounds.findByIdForAccount(accountId, customBackgroundId)
-  ) {
-    return false;
-  }
-
-  return true;
-};
 
 type WashiTapeDesignValidation = "ok" | "photo_required" | "asset_not_found";
 
@@ -1025,6 +1011,95 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     });
 
     return context.json(toAccountPreferencesResponse(record), 200);
+  });
+
+  app.openapi(accessTokenListRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "auth_unavailable", "Auth is unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const tokens = options.repositories.accessTokens.listForAccount(authSession.account.id);
+
+    return context.json(
+      accessTokenListResponseSchema.parse({ tokens: tokens.map(toAccessTokenResponse) }),
+      200,
+    );
+  });
+
+  app.openapi(accessTokenCreateRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "auth_unavailable", "Auth is unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const input = context.req.valid("json");
+    const { displayPrefix, secret } = createAccessTokenSecret();
+    const record = options.repositories.accessTokens.create({
+      accountId: authSession.account.id,
+      name: input.name,
+      tokenHash: hashAccessTokenSecret(secret),
+      tokenPrefix: displayPrefix,
+    });
+
+    return context.json(
+      accessTokenCreateResponseSchema.parse({ token: toAccessTokenResponse(record), secret }),
+      201,
+    );
+  });
+
+  app.openapi(accessTokenDeleteRoute, (context) => {
+    if (!options.repositories) {
+      return context.json(
+        createErrorResponse(context, "auth_unavailable", "Auth is unavailable"),
+        500,
+      );
+    }
+
+    const authSession = getAuthenticatedSession(context, options.repositories);
+
+    if (!authSession) {
+      return context.json(
+        createErrorResponse(context, "not_authenticated", "Authentication is required"),
+        401,
+      );
+    }
+
+    const deleted = options.repositories.accessTokens.deleteByIdForAccount(
+      authSession.account.id,
+      context.req.valid("param").tokenId,
+    );
+
+    if (!deleted) {
+      return context.json(
+        createErrorResponse(context, "access_token_not_found", "Access token not found"),
+        404,
+      );
+    }
+
+    return context.body(null, 204);
   });
 
   app.openapi(assetUploadRoute, async (context) => {
@@ -1461,39 +1536,13 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     }
 
     const input = context.req.valid("json");
-    const pageWidth = input.pageWidth ?? defaultBookPageSize.width;
-    const pageHeight = input.pageHeight ?? defaultBookPageSize.height;
-    const book = options.repositories.books.create({
+    const book = createBookWithCovers({
       accountId: authSession.account.id,
       title: input.title.trim(),
-      pageWidth,
-      pageHeight,
+      pageWidth: input.pageWidth ?? defaultBookPageSize.width,
+      pageHeight: input.pageHeight ?? defaultBookPageSize.height,
       coverSpreadEnabled: input.coverSpreadEnabled ?? true,
-    });
-    const frontCover = options.repositories.pages.create({
-      accountId: authSession.account.id,
-      title: "Front cover",
-      width: pageWidth,
-      height: pageHeight,
-    });
-    const backCover = options.repositories.pages.create({
-      accountId: authSession.account.id,
-      title: "Back cover",
-      width: pageWidth,
-      height: pageHeight,
-    });
-
-    options.repositories.books.addPage({
-      accountId: authSession.account.id,
-      bookId: book.id,
-      pageId: frontCover.id,
-      sortOrder: 0,
-    });
-    options.repositories.books.addPage({
-      accountId: authSession.account.id,
-      bookId: book.id,
-      pageId: backCover.id,
-      sortOrder: 1,
+      repositories: options.repositories,
     });
 
     return context.json(toBookResponse(book, options.repositories), 201);
@@ -3507,6 +3556,62 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     }
 
     return context.json(toShutterflyImportJobResponse(job), 200);
+  });
+
+  app.all(mcpEndpointPath, async (context) => {
+    // Stateless JSON-response mode: there is no standalone SSE stream or session to delete.
+    if (context.req.method !== "POST") {
+      context.header("Allow", "POST");
+      return context.json(
+        createErrorResponse(context, "method_not_allowed", "The MCP endpoint only accepts POST"),
+        405,
+      );
+    }
+
+    if (!options.repositories || !options.storage) {
+      return context.json(
+        createErrorResponse(context, "mcp_unavailable", "The MCP server is unavailable"),
+        500,
+      );
+    }
+
+    const token = parseBearerAccessToken(context.req.header("authorization"));
+    const record = token
+      ? options.repositories.accessTokens.findByTokenHash(hashAccessTokenSecret(token))
+      : undefined;
+    const account = record ? options.repositories.accounts.findById(record.accountId) : undefined;
+
+    if (!record || !account) {
+      context.header("WWW-Authenticate", 'Bearer realm="zakka"');
+      return context.json(
+        createErrorResponse(
+          context,
+          "not_authenticated",
+          "A valid personal access token is required",
+        ),
+        401,
+      );
+    }
+
+    options.repositories.accessTokens.touchLastUsed(record.id);
+
+    const server = createZakkaMcpServer({
+      accountId: account.id,
+      ...(options.mapTiles ? { mapTiles: options.mapTiles } : {}),
+      repositories: options.repositories,
+      storage: options.storage,
+      version: packageVersion,
+    });
+    // Omitting sessionIdGenerator runs the transport in stateless mode.
+    const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
+
+    await server.connect(transport);
+
+    try {
+      return await transport.handleRequest(context.req.raw);
+    } finally {
+      await server.close();
+    }
   });
 
   app.doc("/api/v1/openapi.json", {

@@ -6,6 +6,8 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
+import { accessTokenPrefix } from "@zakka/api-contract";
+
 const scryptAsync = (
   password: string,
   salt: string,
@@ -104,6 +106,24 @@ export const createSessionSecret = (): string => randomBytes(32).toString("base6
 
 export const hashSessionSecret = (secret: string): string =>
   createHash("sha256").update(secret).digest("base64url");
+
+export const accessTokenSecretPrefix = accessTokenPrefix;
+const accessTokenDisplayLength = accessTokenSecretPrefix.length + 6;
+
+export const createAccessTokenSecret = (): { secret: string; displayPrefix: string } => {
+  const secret = `${accessTokenSecretPrefix}${randomBytes(32).toString("base64url")}`;
+
+  return { secret, displayPrefix: secret.slice(0, accessTokenDisplayLength) };
+};
+
+export const hashAccessTokenSecret = (secret: string): string => hashSessionSecret(secret);
+
+export const parseBearerAccessToken = (authorization: string | undefined): string | null => {
+  const match = authorization?.match(/^Bearer\s+(\S+)\s*$/i);
+  const token = match?.[1];
+
+  return token?.startsWith(accessTokenSecretPrefix) ? token : null;
+};
 
 export const createSessionCookieValue = ({ sessionId, secret }: SessionCookieParts): string =>
   `${sessionId}.${secret}`;
