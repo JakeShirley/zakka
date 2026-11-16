@@ -702,7 +702,7 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
       title: "Create book",
       description: "Creates a book with a blank front cover and back cover.",
       inputSchema: {
-        title: z.string().trim().min(1).max(160),
+        title: z.string().trim().min(1).max(120),
         pageWidth: z
           .number()
           .int()
@@ -743,7 +743,7 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
       description: "Renames a book.",
       inputSchema: {
         bookId: z.string(),
-        title: z.string().trim().min(1).max(160),
+        title: z.string().trim().min(1).max(120),
       },
       annotations: { idempotentHint: true },
     },
@@ -784,7 +784,7 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
       description:
         "Creates a blank page. With a bookId, the page is added to the book, by default just before the back cover, and uses the book's page size.",
       inputSchema: {
-        title: z.string().trim().max(160).optional(),
+        title: z.string().trim().max(120).optional(),
         bookId: z.string().optional().describe("Add the page to this book."),
         position: z
           .number()
@@ -837,7 +837,7 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
         "Updates a page's title, background color or background, or replaces its whole document. Prefer the layer tools for editing layers.",
       inputSchema: {
         pageId: z.string(),
-        title: z.string().trim().max(160).optional(),
+        title: z.string().trim().max(120).optional(),
         backgroundColor: hexColorSchema.optional(),
         background: z
           .object({

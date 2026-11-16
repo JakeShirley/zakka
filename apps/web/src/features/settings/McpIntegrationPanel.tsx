@@ -26,31 +26,43 @@ const createClientConfig = (url: string, secret: string): string =>
   );
 
 function CopyButton({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
+  const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
 
   useEffect(() => {
-    if (!copied) {
+    if (status !== "copied") {
       return undefined;
     }
 
-    const timeout = window.setTimeout(() => setCopied(false), 2000);
+    const timeout = window.setTimeout(() => setStatus("idle"), 2000);
 
     return () => window.clearTimeout(timeout);
-  }, [copied]);
+  }, [status]);
 
   return (
-    <Button
-      type="button"
-      className="secondary-button"
-      aria-label={label}
-      icon={copied ? <CheckmarkRegular /> : <CopyRegular />}
-      onClick={async () => {
-        await navigator.clipboard.writeText(value);
-        setCopied(true);
-      }}
-    >
-      {copied ? "Copied" : "Copy"}
-    </Button>
+    <>
+      <Button
+        type="button"
+        className="secondary-button"
+        aria-label={label}
+        icon={status === "copied" ? <CheckmarkRegular /> : <CopyRegular />}
+        onClick={async () => {
+          try {
+            // navigator.clipboard is undefined outside secure contexts, e.g. LAN over HTTP.
+            await navigator.clipboard.writeText(value);
+            setStatus("copied");
+          } catch {
+            setStatus("failed");
+          }
+        }}
+      >
+        {status === "copied" ? "Copied" : "Copy"}
+      </Button>
+      {status === "failed" ? (
+        <span className="integration-hint" role="alert">
+          Copying isn't available here. Select the text and copy it manually.
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -61,6 +73,8 @@ export function McpIntegrationPanel() {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const serverUrl = getMcpServerUrl();
+  // Creating before the initial list settles would let the late list response hide the new token.
+  const isLoadingTokens = tokens === null && error === null;
 
   useEffect(() => {
     let isMounted = true;
@@ -141,7 +155,7 @@ export function McpIntegrationPanel() {
               value={tokenName}
               maxLength={80}
               placeholder="Claude Desktop"
-              disabled={isSaving}
+              disabled={isSaving || isLoadingTokens}
               onChange={(event) => setTokenName(event.currentTarget.value)}
             />
           </Field>
@@ -149,7 +163,7 @@ export function McpIntegrationPanel() {
             appearance="primary"
             type="submit"
             className="primary-button"
-            disabled={isSaving || tokenName.trim().length === 0}
+            disabled={isSaving || isLoadingTokens || tokenName.trim().length === 0}
             icon={<AddRegular />}
           >
             Create token
@@ -190,7 +204,7 @@ export function McpIntegrationPanel() {
           </div>
         ) : null}
 
-        {tokens === null && !error ? (
+        {isLoadingTokens ? (
           <div className="integration-loading" aria-busy="true">
             <Spinner size="tiny" />
             <span>Loading access tokens</span>

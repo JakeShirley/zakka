@@ -65,4 +65,31 @@ describe("McpIntegrationPanel", () => {
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("Offline");
   });
+
+  test("keeps token creation disabled until the token list has loaded", async () => {
+    let resolveList: (value: { tokens: AccessTokenResponse[] }) => void = () => undefined;
+    vi.spyOn(apiClient, "listAccessTokens").mockReturnValue(
+      new Promise((resolve) => {
+        resolveList = resolve;
+      }),
+    );
+
+    await render(<McpIntegrationPanel />);
+
+    await expect.element(page.getByPlaceholder("Claude Desktop")).toBeDisabled();
+
+    resolveList({ tokens: [existingToken] });
+
+    await expect.element(page.getByPlaceholder("Claude Desktop")).toBeEnabled();
+  });
+
+  test("explains how to copy manually when the clipboard is unavailable", async () => {
+    vi.spyOn(apiClient, "listAccessTokens").mockResolvedValue({ tokens: [] });
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("Denied"));
+
+    await render(<McpIntegrationPanel />);
+    await page.getByRole("button", { name: "Copy MCP server URL" }).click();
+
+    await expect.element(page.getByRole("alert")).toHaveTextContent(/copy it manually/);
+  });
 });
