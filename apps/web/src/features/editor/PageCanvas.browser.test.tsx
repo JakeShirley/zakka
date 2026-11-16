@@ -17,6 +17,7 @@ import {
   layerHandle,
   layerHitbox,
 } from "../../test/gestures";
+import { assetDragMimeType } from "./AssetRail";
 
 // The harness canvas is 2000x2000 page units, so a drag of 0.1 canvas widths is 200 units.
 const textLayer = (overrides: Partial<Parameters<typeof createTextLayer>[0]> = {}) =>
@@ -52,6 +53,27 @@ const isSelected = (layerId: string) => layerElement(layerId).dataset.selected =
 const subThresholdJitter = () => {
   const bounds = canvasLocator().element().getBoundingClientRect();
   return { x: 2 / bounds.width, y: 2 / bounds.height };
+};
+/**
+ * Dispatches library-asset drag events at the canvas center. Playwright drags can't hold
+ * modifier keys mid-drag, so these synthetic events cover the live Alt preview.
+ */
+const dispatchAssetDragAtCanvasCenter = () => {
+  const canvas = canvasLocator().element();
+  const bounds = canvas.getBoundingClientRect();
+  const dataTransfer = new DataTransfer();
+  dataTransfer.setData(assetDragMimeType, "asset_test");
+  return (type: "dragenter" | "dragover" | "drop", altKey = false) =>
+    canvas.dispatchEvent(
+      new DragEvent(type, {
+        altKey,
+        bubbles: true,
+        cancelable: true,
+        clientX: bounds.left + bounds.width / 2,
+        clientY: bounds.top + bounds.height / 2,
+        dataTransfer,
+      }),
+    );
 };
 
 describe("selecting layers", () => {
@@ -98,6 +120,30 @@ describe("selecting layers", () => {
     expect(layer("text")).toMatchObject({ x: 400, y: 400 });
     expect(layerElement("text").querySelectorAll(".transform-resize-handle")).toHaveLength(0);
     expect(layerElement("text").querySelector(".transform-rotate-handle")).toBeNull();
+  });
+
+  test.each([
+    { confineLayerHitAreasToPage: true, hitsOverhang: false },
+    { confineLayerHitAreasToPage: false, hitsOverhang: true },
+  ])("a layer overhanging the page edge with confineLayerHitAreasToPage=$confineLayerHitAreasToPage takes hits there: $hitsOverhang", async ({
+    confineLayerHitAreasToPage,
+    hitsOverhang,
+  }) => {
+    // Centered on the left edge and rotated, so half of it hangs off the page.
+    await renderCanvas({
+      confineLayerHitAreasToPage,
+      layers: [photoLayer({ x: -300, y: 900, width: 600, height: 200, rotation: 30 })],
+    });
+    const bounds = canvasLocator().element().getBoundingClientRect();
+    const pixelsPerUnit = bounds.width / 2000;
+    const hitLayerIdAt = (pageX: number) =>
+      document
+        .elementFromPoint(bounds.left + pageX * pixelsPerUnit, bounds.top + 1000 * pixelsPerUnit)
+        ?.closest(".canvas-layer-hitbox")
+        ?.closest<HTMLElement>(".canvas-layer")?.dataset.layerId ?? null;
+
+    expect(hitLayerIdAt(50)).toBe("photo");
+    expect(hitLayerIdAt(-50)).toBe(hitsOverhang ? "photo" : null);
   });
 });
 
@@ -645,7 +691,7 @@ describe("toolbar and drop actions", () => {
     // Playwright drops on the target's center.
     expect(drop?.point.x).toBeCloseTo(1000, -2);
     expect(drop?.point.y).toBeCloseTo(1000, -2);
-    expect(drop?.placeholder).toBeUndefined();
+    expect(drop?.photoTarget).toBeUndefined();
   });
 
   test("dropping a library asset onto a photo placeholder targets that placeholder", async () => {
@@ -659,7 +705,7 @@ describe("toolbar and drop actions", () => {
     );
 
     expect(probe.droppedAssets).toEqual([
-      expect.objectContaining({ assetId: "asset_test", placeholder: { layerId: "photo" } }),
+      expect.objectContaining({ assetId: "asset_test", photoTarget: { layerId: "photo" } }),
     ]);
   });
 
@@ -683,9 +729,87 @@ describe("toolbar and drop actions", () => {
     expect(probe.droppedAssets).toEqual([
       expect.objectContaining({
         assetId: "asset_test",
-        placeholder: { layerId: "photo", pageId: "page_left" },
+        photoTarget: { layerId: "photo", pageId: "page_left" },
       }),
     ]);
+  });
+
+  test("dropping a library asset onto a filled photo targets it for replacement", async () => {
+    const { probe } = await renderCanvas({
+      layers: [photoLayer({ x: 600, y: 600, width: 800, height: 800 })],
+    });
+
+    await userEvent.dragAndDrop(
+      page.getByRole("img", { name: "Draggable test asset" }),
+      canvasLocator(),
+    );
+
+    expect(probe.droppedAssets).toEqual([
+      expect.objectContaining({ assetId: "asset_test", photoTarget: { layerId: "photo" } }),
+    ]);
+  });
+
+  test("dragging over a photo previews the replace, and holding Alt switches to adding", async () => {
+    const { probe } = await renderCanvas({
+      layers: [photoLayer({ x: 600, y: 600, width: 800, height: 800 })],
+    });
+    const fire = dispatchAssetDragAtCanvasCenter();
+    const dropMode = () => layerElement("photo").dataset.photoDrop;
+    const hint = page.getByRole("status");
+
+    fire("dragenter");
+    fire("dragover");
+    await expect.poll(dropMode).toBe("replace");
+    await expect.element(hint).toHaveTextContent(/Drop to replace this photo/);
+
+    fire("dragover", true);
+    await expect.poll(dropMode).toBeUndefined();
+    await expect.element(hint).toHaveTextContent(/Drop to add a new photo/);
+
+    fire("drop", true);
+    await expect.element(hint).not.toBeInTheDocument();
+    expect(probe.droppedAssets).toEqual([
+      expect.objectContaining({ assetId: "asset_test", point: expect.any(Object) }),
+    ]);
+    expect(probe.droppedAssets[0]?.photoTarget).toBeUndefined();
+  });
+
+  test("dragging over a photo placeholder previews filling it", async () => {
+    await renderCanvas({
+      layers: [photoLayer({ assetId: undefined, x: 600, y: 600, width: 800, height: 800 })],
+    });
+    const fire = dispatchAssetDragAtCanvasCenter();
+    fire("dragenter", true);
+    fire("dragover", true);
+
+    await expect.poll(() => layerElement("photo").dataset.photoDrop).toBe("fill");
+  });
+
+  test("holding Alt over a photo that covers a placeholder adds a new photo instead of filling it", async () => {
+    const { probe } = await renderCanvas({
+      layers: [
+        photoLayer({
+          assetId: undefined,
+          id: "placeholder",
+          x: 500,
+          y: 500,
+          width: 1000,
+          height: 1000,
+        }),
+        photoLayer({ x: 600, y: 600, width: 800, height: 800 }),
+      ],
+    });
+    const fire = dispatchAssetDragAtCanvasCenter();
+    fire("dragenter", true);
+    fire("dragover", true);
+
+    await expect.element(page.getByRole("status")).toHaveTextContent(/Drop to add a new photo/);
+    expect(layerElement("placeholder").dataset.photoDrop).toBeUndefined();
+    expect(layerElement("photo").dataset.photoDrop).toBeUndefined();
+
+    fire("drop", true);
+    expect(probe.droppedAssets).toHaveLength(1);
+    expect(probe.droppedAssets[0]?.photoTarget).toBeUndefined();
   });
 });
 

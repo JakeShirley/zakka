@@ -4,6 +4,7 @@ import {
   ArrowAutofitWidthRegular,
   ArrowClockwiseRegular,
   ArrowDownRegular,
+  ArrowSwapRegular,
   ArrowUpRegular,
   DeleteRegular,
   EditRegular,
@@ -15,7 +16,7 @@ import {
   WarningFilled,
 } from "@fluentui/react-icons";
 import {
-  findPhotoPlaceholderAtPoint,
+  findPhotoLayerAtPoint,
   getMapLayerGeographyDetail,
   getMapZoomRange,
   getTextLayerContentOffsetY,
@@ -87,7 +88,19 @@ export type CanvasPreviewLayer = {
   stackIndex: number;
 };
 
-export type PhotoPlaceholderDropTarget = { layerId: string; pageId?: string };
+export type PhotoDropTarget = { layerId: string; pageId?: string };
+
+/** What a photo dragged over the canvas will do if dropped at the pointer. */
+type PhotoDropPreview = {
+  mode: "add" | "fill" | "replace";
+  /** True when Alt/Option turned a replace into adding a new photo. */
+  replaceSkipped: boolean;
+  target: PhotoDropTarget | null;
+  targetKey: string | null;
+};
+
+const addAsNewKeyLabel =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Option" : "Alt";
 
 /** Dashed outlines showing where an arrange action will move layers. */
 export type ArrangeCanvasPreview = {
@@ -122,6 +135,9 @@ const mergeCanvasLayers = (
       stackIndex,
     })),
   ].sort((left, right) => left.stackIndex - right.stackIndex);
+
+const getInteractiveLayerKey = (entry: InteractiveCanvasLayer): string =>
+  entry.kind === "preview" ? `${entry.sourcePageId}:${entry.layer.id}` : entry.layer.id;
 
 const applyLayerUpdate = (layer: PageLayer, update: Partial<PageLayer>): PageLayer =>
   ({ ...layer, ...update }) as PageLayer;
@@ -381,6 +397,7 @@ export function PageCanvas({
   activeSelectionPanel = null,
   arrangePreview = null,
   assetById,
+  confineLayerHitAreasToPage = false,
   document,
   previewLayers = [],
   selectedLayerIds,
@@ -402,6 +419,11 @@ export function PageCanvas({
   activeSelectionPanel?: SelectionPanel | null;
   arrangePreview?: ArrangeCanvasPreview | null;
   assetById: Map<string, Asset>;
+  /**
+   * Stops layers that overhang this page from taking pointer and drop events outside it. Set when
+   * a facing page is shown, which renders its own copy of the overhang.
+   */
+  confineLayerHitAreasToPage?: boolean;
   document: PageDocument;
   previewLayers?: CanvasPreviewLayer[];
   selectedLayerIds: string[];
@@ -412,19 +434,11 @@ export function PageCanvas({
   /** Opens a photo picker to fill an empty photo placeholder. */
   onChoosePhoto?: ((layerId: string) => void) | undefined;
   /**
-   * `placeholder` is the empty photo placeholder under the drop point, if any. `pageId` is set
-   * when it is a spread preview layer owned by another page.
+   * `photoTarget` is the photo frame the drop fills (an empty placeholder) or replaces (a filled
+   * photo), if any. `pageId` is set when it is a spread preview layer owned by another page.
    */
-  onDropAsset?: (
-    assetId: string,
-    canvasPoint: CanvasPoint,
-    placeholder?: PhotoPlaceholderDropTarget,
-  ) => void;
-  onDropFiles?: (
-    files: File[],
-    canvasPoint: CanvasPoint,
-    placeholder?: PhotoPlaceholderDropTarget,
-  ) => void;
+  onDropAsset?: (assetId: string, canvasPoint: CanvasPoint, photoTarget?: PhotoDropTarget) => void;
+  onDropFiles?: (files: File[], canvasPoint: CanvasPoint, photoTarget?: PhotoDropTarget) => void;
   onReorderLayer: (layerId: string, command: ReorderLayerCommand) => void;
   onSelectPreviewLayer?: (pageId: string, layerId: string) => void;
   onSelectLayer: (layerId: string | null, options?: SelectLayerOptions) => void;
@@ -638,6 +652,45 @@ export function PageCanvas({
     height: `${(layer.height / document.canvas.height) * 100}%`,
     transform: `rotate(${layer.rotation}deg)`,
   });
+  /**
+   * Clips a layer's hitbox to this page when it overhangs the edge, expressed in the layer's
+   * rotated box. The facing page shows the overhang as its own layer, so without this an
+   * overhanging photo would steal clicks and drops meant for that page's layers.
+   */
+  const getPageHitAreaClipPath = (layer: PageLayer): string | undefined => {
+    const { width: pageWidth, height: pageHeight } = document.canvas;
+    const radians = (layer.rotation * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const centerX = layer.x + layer.width / 2;
+    const centerY = layer.y + layer.height / 2;
+    const overhangs = [
+      [-1, -1],
+      [1, -1],
+      [1, 1],
+      [-1, 1],
+    ].some(([signX = 0, signY = 0]) => {
+      const dx = (signX * layer.width) / 2;
+      const dy = (signY * layer.height) / 2;
+      const x = centerX + dx * cos - dy * sin;
+      const y = centerY + dx * sin + dy * cos;
+      return x < 0 || y < 0 || x > pageWidth || y > pageHeight;
+    });
+    if (!overhangs) return undefined;
+    const pageCorners = [
+      [0, 0],
+      [pageWidth, 0],
+      [pageWidth, pageHeight],
+      [0, pageHeight],
+    ].map(([pageX = 0, pageY = 0]) => {
+      const dx = pageX - centerX;
+      const dy = pageY - centerY;
+      const localX = dx * cos + dy * sin + layer.width / 2;
+      const localY = -dx * sin + dy * cos + layer.height / 2;
+      return `${(localX / layer.width) * 100}% ${(localY / layer.height) * 100}%`;
+    });
+    return `polygon(${pageCorners.join(", ")})`;
+  };
   const getLayerFrameStyle = (layer: PageLayer): CSSProperties => {
     const frame = getLayerSelectionFrame(layer);
     // Rotate about the layer's own center, which differs from the frame's for measured text.
@@ -1212,6 +1265,7 @@ export function PageCanvas({
   };
 
   const [isAssetDragOver, setIsAssetDragOver] = useState(false);
+  const [photoDropPreview, setPhotoDropPreview] = useState<PhotoDropPreview | null>(null);
   const dragOverDepthRef = useRef(0);
   const hasAssetDragPayload = (event: ReactDragEvent<HTMLFieldSetElement>): boolean =>
     Array.from(event.dataTransfer.types).includes(assetDragMimeType);
@@ -1229,6 +1283,34 @@ export function PageCanvas({
       y: ((event.clientY - bounds.top) / bounds.height) * document.canvas.height,
     };
   };
+  /**
+   * Resolves what a photo dropped at `point` will do: fill a placeholder, replace a photo, or add
+   * a new photo. Holding Alt (Option on macOS) skips filled photos so the drop adds a new one.
+   */
+  const resolvePhotoDrop = (point: CanvasPoint, addAsNew: boolean): PhotoDropPreview => {
+    // Hit-test what the canvas shows, including frames projected from the facing page.
+    const hitDocument = { ...document, layers: interactiveLayers.map((entry) => entry.layer) };
+    const topPhoto = findPhotoLayerAtPoint(hitDocument, point);
+    const replaceSkipped = Boolean(topPhoto && !isPhotoPlaceholder(topPhoto) && addAsNew);
+    // Alt over a filled photo always adds; never fall through to a placeholder hidden beneath it.
+    const hit = replaceSkipped ? null : topPhoto;
+    const entry = hit ? interactiveLayers.find((item) => item.layer.id === hit.id) : undefined;
+    if (!hit || !entry) return { mode: "add", replaceSkipped, target: null, targetKey: null };
+    return {
+      mode: isPhotoPlaceholder(hit) ? "fill" : "replace",
+      replaceSkipped,
+      target:
+        entry.kind === "preview"
+          ? { layerId: hit.id, pageId: entry.sourcePageId }
+          : { layerId: hit.id },
+      targetKey: getInteractiveLayerKey(entry),
+    };
+  };
+  const clearAssetDragState = () => {
+    dragOverDepthRef.current = 0;
+    setIsAssetDragOver(false);
+    setPhotoDropPreview(null);
+  };
   const handleAssetDragEnter = (event: ReactDragEvent<HTMLFieldSetElement>) => {
     if (!isAcceptedDragPayload(event)) return;
     dragOverDepthRef.current += 1;
@@ -1238,38 +1320,37 @@ export function PageCanvas({
     if (!isAcceptedDragPayload(event)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
+    const point = getDropCanvasPoint(event);
+    if (!point) return;
+    // Drag-over repeats while the pointer rests, so this also tracks Alt being pressed or released.
+    const next = resolvePhotoDrop(point, event.altKey);
+    setPhotoDropPreview((current) =>
+      current &&
+      current.mode === next.mode &&
+      current.replaceSkipped === next.replaceSkipped &&
+      current.targetKey === next.targetKey
+        ? current
+        : next,
+    );
   };
   const handleAssetDragLeave = (event: ReactDragEvent<HTMLFieldSetElement>) => {
     if (!isAcceptedDragPayload(event)) return;
     dragOverDepthRef.current = Math.max(0, dragOverDepthRef.current - 1);
-    if (dragOverDepthRef.current === 0) setIsAssetDragOver(false);
-  };
-  const findDropPlaceholder = (point: CanvasPoint): PhotoPlaceholderDropTarget | undefined => {
-    // Hit-test what the canvas shows, including placeholders projected from the facing page.
-    const hit = findPhotoPlaceholderAtPoint(
-      { ...document, layers: interactiveLayers.map((entry) => entry.layer) },
-      point,
-    );
-    if (!hit) return undefined;
-    const entry = interactiveLayers.find((item) => item.layer.id === hit.id);
-    return entry?.kind === "preview"
-      ? { layerId: hit.id, pageId: entry.sourcePageId }
-      : { layerId: hit.id };
+    if (dragOverDepthRef.current === 0) clearAssetDragState();
   };
   const handleAssetDrop = (event: ReactDragEvent<HTMLFieldSetElement>) => {
     if (!isAcceptedDragPayload(event)) return;
     event.preventDefault();
-    dragOverDepthRef.current = 0;
-    setIsAssetDragOver(false);
+    clearAssetDragState();
     const point = getDropCanvasPoint(event);
     if (!point) return;
-    const placeholder = findDropPlaceholder(point);
+    const photoTarget = resolvePhotoDrop(point, event.altKey).target ?? undefined;
     if (onDropFiles && hasFileDragPayload(event)) {
       const files = Array.from(event.dataTransfer.files).filter((file) =>
         file.type.startsWith("image/"),
       );
       if (files.length > 0) {
-        onDropFiles(files, point, placeholder);
+        onDropFiles(files, point, photoTarget);
         return;
       }
     }
@@ -1277,8 +1358,15 @@ export function PageCanvas({
     const assetId =
       event.dataTransfer.getData(assetDragMimeType) || event.dataTransfer.getData("text/plain");
     if (!assetId) return;
-    onDropAsset(assetId, point, placeholder);
+    onDropAsset(assetId, point, photoTarget);
   };
+  const photoDropHint = !isAssetDragOver
+    ? null
+    : photoDropPreview?.mode === "replace"
+      ? `Drop to replace this photo · Hold ${addAsNewKeyLabel} to add a new photo`
+      : photoDropPreview?.replaceSkipped
+        ? `Drop to add a new photo · Release ${addAsNewKeyLabel} to replace`
+        : null;
 
   return (
     <fieldset
@@ -1307,6 +1395,15 @@ export function PageCanvas({
       }}
     >
       <legend className="visually-hidden">Editable page canvas</legend>
+      {photoDropHint ? (
+        <div
+          className="canvas-photo-drop-hint"
+          data-mode={photoDropPreview?.mode === "replace" ? "replace" : "add"}
+          role="status"
+        >
+          {photoDropHint}
+        </div>
+      ) : null}
       <div
         className="editor-render-surface"
         /* biome-ignore lint/security/noDangerouslySetInnerHtml: Generated from validated page schema and escaped by editor-core. */
@@ -1321,10 +1418,17 @@ export function PageCanvas({
           const isSelected = !isPreview && layer.id === primarySelectedLayerId;
           const isGroupSelected =
             !isPreview && isMultiSelected && selectedLayerIds.includes(layer.id);
+          const layerKey = getInteractiveLayerKey(interactiveLayer);
+          const photoDropMode =
+            photoDropPreview && photoDropPreview.targetKey === layerKey
+              ? photoDropPreview.mode
+              : null;
           const layerStyle: CSSProperties = {
             ...getLayerBoxStyle(layer),
-            zIndex: layerIndex + 1,
-            opacity: layer.opacity,
+            // Lift the drop target so its indicator isn't hidden under overlapping layers.
+            zIndex: photoDropMode ? displayedInteractiveLayers.length + 1 : layerIndex + 1,
+            // The layer box only holds overlays, so keep the drop indicator fully visible.
+            opacity: photoDropMode ? 1 : layer.opacity,
           };
           const selectionFrame = getLayerSelectionFrame(layer);
           const selectionFrameStyle: CSSProperties = {
@@ -1342,11 +1446,12 @@ export function PageCanvas({
               : null;
           return (
             <div
-              key={isPreview ? `${interactiveLayer.sourcePageId}:${layer.id}` : layer.id}
+              key={layerKey}
               className="canvas-layer"
               data-kind={layer.kind}
               data-layer-id={layer.id}
               data-locked={layer.locked}
+              data-photo-drop={photoDropMode ?? undefined}
               data-preview={isPreview}
               data-selected={isSelected}
               data-group-selected={isGroupSelected}
@@ -1360,6 +1465,11 @@ export function PageCanvas({
                 type="button"
                 aria-label={`${layerLabel}${isPreview ? " from adjacent page" : ""}`}
                 className="canvas-layer-hitbox"
+                style={
+                  confineLayerHitAreasToPage
+                    ? { clipPath: getPageHitAreaClipPath(layer) }
+                    : undefined
+                }
                 onClick={(event) => {
                   if (interactiveLayer.kind === "preview") {
                     onSelectPreviewLayer?.(interactiveLayer.sourcePageId, layer.id);
@@ -1423,6 +1533,14 @@ export function PageCanvas({
               />
               <div className="canvas-selection-frame" style={selectionFrameStyle}>
                 <span className="canvas-layer-content" />
+                {photoDropMode === "fill" || photoDropMode === "replace" ? (
+                  <span className="canvas-photo-drop-indicator" data-mode={photoDropMode}>
+                    <span className="canvas-photo-drop-label">
+                      {photoDropMode === "replace" ? <ArrowSwapRegular /> : <ImageAddRegular />}
+                      {photoDropMode === "replace" ? "Replace photo" : "Add photo"}
+                    </span>
+                  </span>
+                ) : null}
                 {resolutionWarning ? (
                   <span
                     aria-label={resolutionWarning.message}

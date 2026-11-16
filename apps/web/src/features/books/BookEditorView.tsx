@@ -73,7 +73,7 @@ import { PhotoPickerModal } from "../editor/PhotoPickerModal";
 import { type PngExportSettings, PngExportSettingsModal } from "../editor/PngExportSettingsModal";
 import { StickerPickerModal } from "../editor/StickerPickerModal";
 import { WashiTapeGalleryModal } from "../washi-tape/WashiTapeGalleryModal";
-import { BookCanvasDeck, type PlaceholderTarget } from "./BookCanvasDeck";
+import { BookCanvasDeck, type PhotoTarget } from "./BookCanvasDeck";
 import { BookEditorHeader } from "./BookEditorHeader";
 import { BookFilmstrip } from "./BookFilmstrip";
 import { BookLibraryPickerModal } from "./BookLibraryPickerModal";
@@ -110,7 +110,7 @@ import {
   getLinkedBackgroundPages,
 } from "./spreadBackgrounds";
 import {
-  fillPhotoPlaceholderAcrossSpread,
+  fillPhotoAcrossSpread,
   getSpreadPageContexts,
   layerOverlapsPageCanvas,
   reconcileSpreadPageEdit,
@@ -1357,12 +1357,13 @@ export function BookEditorView() {
     setSelectedLayerIds([layer.id]);
   };
 
-  const fillPhotoPlaceholder = (pageId: string, layerId: string, asset: Asset): boolean => {
+  // Fills a placeholder or replaces a photo; the frame keeps its position and styling.
+  const fillPhotoFrame = (pageId: string, layerId: string, asset: Asset): boolean => {
     // Imported spread-spanning frames are mirrored on both facing pages, so fill every copy in the
     // page's spread even when the editor is in Page view or has navigated away.
     const spreadPageIds = book?.spreads.find((spread) => spread.pageIds.includes(pageId))
       ?.pageIds ?? [pageId];
-    const result = fillPhotoPlaceholderAcrossSpread({
+    const result = fillPhotoAcrossSpread({
       assetId: asset.id,
       details: pageDetails,
       layerId,
@@ -1380,9 +1381,9 @@ export function BookEditorView() {
     pageId: string,
     asset: Asset,
     point: { x: number; y: number },
-    placeholder?: PlaceholderTarget,
+    photoTarget?: PhotoTarget,
   ) => {
-    if (placeholder && fillPhotoPlaceholder(placeholder.pageId, placeholder.layerId, asset)) return;
+    if (photoTarget && fillPhotoFrame(photoTarget.pageId, photoTarget.layerId, asset)) return;
     addPhotoFromDrop(pageId, asset, point);
   };
 
@@ -1394,7 +1395,7 @@ export function BookEditorView() {
     pageId: string,
     files: File[],
     point: { x: number; y: number },
-    placeholder?: PlaceholderTarget,
+    photoTarget?: PhotoTarget,
   ) => {
     if (!book || files.length === 0) {
       return;
@@ -1416,8 +1417,8 @@ export function BookEditorView() {
           pageId,
           uploadedAsset,
           { x: point.x + dropOffset, y: point.y + dropOffset },
-          // Only the first photo fills the placeholder; the rest land on the page as usual.
-          dropOffset === 0 ? placeholder : undefined,
+          // Only the first photo fills or replaces the target frame; the rest land on the page as usual.
+          dropOffset === 0 ? photoTarget : undefined,
         );
         dropOffset += 24;
       } catch (uploadError: unknown) {
@@ -1980,7 +1981,7 @@ export function BookEditorView() {
             assets={assets}
             title="Choose photo"
             onAddPhoto={(asset) => {
-              fillPhotoPlaceholder(photoPickerMode.pageId, photoPickerMode.layerId, asset);
+              fillPhotoFrame(photoPickerMode.pageId, photoPickerMode.layerId, asset);
               setPhotoPickerMode(null);
             }}
             onClose={() => setPhotoPickerMode(null)}
@@ -2279,13 +2280,13 @@ export function BookEditorView() {
                   setPhotoPickerMode({ kind: "photoPlaceholder", pageId, layerId })
                 }
                 onDeleteLayer={deletePageLayer}
-                onDropAsset={(pageId, assetId, point, placeholder) => {
+                onDropAsset={(pageId, assetId, point, photoTarget) => {
                   const asset = assetById.get(assetId);
                   if (!asset) return;
-                  placeDroppedPhoto(pageId, asset, point, placeholder);
+                  placeDroppedPhoto(pageId, asset, point, photoTarget);
                 }}
-                onDropFiles={(pageId, files, point, placeholder) => {
-                  void addPhotosFromFileDrop(pageId, files, point, placeholder);
+                onDropFiles={(pageId, files, point, photoTarget) => {
+                  void addPhotosFromFileDrop(pageId, files, point, photoTarget);
                 }}
                 onReorderLayer={reorderPageLayer}
                 onSelectLayer={selectLayer}

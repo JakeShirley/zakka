@@ -2,7 +2,6 @@ import {
   addLayer,
   deleteLayer,
   fillPhotoLayerUpdate,
-  isPhotoPlaceholder,
   type PageDocument,
   type PageLayer,
   reorderLayer,
@@ -59,11 +58,12 @@ export const layerOverlapsPageCanvas = (layer: PageLayer, document: PageDocument
   layer.y + layer.height > 0;
 
 /**
- * Fills a photo placeholder on every spread page that carries a copy of it. Filling only changes
- * the photo content, so existing copies are updated in place rather than re-projected; this keeps
+ * Puts a photo into a photo frame (an empty placeholder or a photo being replaced) on every spread
+ * page that carries a copy of it. Only the photo content changes, so the frame's position and
+ * styling are kept and existing copies are updated in place rather than re-projected; this keeps
  * copies the importer placed from rotated bounds that geometry-based syncing would prune.
  */
-export const fillPhotoPlaceholderAcrossSpread = ({
+export const fillPhotoAcrossSpread = ({
   assetId,
   details,
   layerId,
@@ -84,7 +84,7 @@ export const fillPhotoPlaceholderAcrossSpread = ({
     const page = details.get(pageId);
     const layer = page?.document.layers.find((item) => item.id === layerId);
 
-    if (!page || !layer || !isPhotoPlaceholder(layer)) {
+    if (!page || layer?.kind !== "photo") {
       continue;
     }
 
