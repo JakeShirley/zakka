@@ -15,15 +15,22 @@ const isTextEntryTarget = (target: EventTarget | null): boolean =>
 export function useCanvasFullscreen() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const ownsBrowserFullscreenRef = useRef(false);
+  // Bumped on exit and unmount so a request that resolves afterwards releases fullscreen.
+  const requestIdRef = useRef(0);
 
   const enter = useCallback(() => {
     setIsFullscreen(true);
     const root = document.documentElement;
     if (document.fullscreenElement || typeof root.requestFullscreen !== "function") return;
+    const requestId = ++requestIdRef.current;
     root
       .requestFullscreen()
       .then(() => {
-        ownsBrowserFullscreenRef.current = true;
+        if (requestIdRef.current === requestId) {
+          ownsBrowserFullscreenRef.current = true;
+        } else if (document.fullscreenElement) {
+          void document.exitFullscreen().catch(() => undefined);
+        }
       })
       .catch(() => {
         // The window-filling layout still applies when the browser refuses fullscreen.
@@ -32,6 +39,7 @@ export function useCanvasFullscreen() {
 
   const exit = useCallback(() => {
     setIsFullscreen(false);
+    requestIdRef.current += 1;
     if (ownsBrowserFullscreenRef.current && document.fullscreenElement) {
       void document.exitFullscreen().catch(() => undefined);
     }
@@ -70,6 +78,7 @@ export function useCanvasFullscreen() {
 
   useEffect(
     () => () => {
+      requestIdRef.current += 1;
       if (ownsBrowserFullscreenRef.current && document.fullscreenElement) {
         void document.exitFullscreen().catch(() => undefined);
       }

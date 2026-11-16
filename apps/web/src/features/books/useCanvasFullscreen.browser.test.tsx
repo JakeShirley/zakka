@@ -1,5 +1,5 @@
 import { FluentProvider, webLightTheme } from "@fluentui/react-components";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
@@ -29,6 +29,44 @@ function FullscreenStage() {
 }
 
 describe("canvas full screen", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test.each([
+    "exit button",
+    "unmount",
+  ] as const)("releases browser full screen when a pending request completes after leaving via %s", async (leaveVia) => {
+    const root = document.documentElement;
+    let completeRequest: () => void = () => {};
+    const requestFullscreen = vi.spyOn(root, "requestFullscreen").mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          completeRequest = resolve;
+        }),
+    );
+    const exitFullscreen = vi.spyOn(document, "exitFullscreen").mockResolvedValue(undefined);
+    const fullscreenElement = vi.spyOn(document, "fullscreenElement", "get").mockReturnValue(null);
+
+    const screen = await render(
+      <FluentProvider theme={webLightTheme}>
+        <FullscreenStage />
+      </FluentProvider>,
+    );
+    await page.getByRole("button", { name: "Full screen" }).click();
+    expect(requestFullscreen).toHaveBeenCalledTimes(1);
+
+    if (leaveVia === "exit button") {
+      await page.getByRole("button", { name: "Exit full screen" }).click();
+    } else {
+      await screen.unmount();
+    }
+    expect(exitFullscreen).not.toHaveBeenCalled();
+
+    fullscreenElement.mockReturnValue(root);
+    completeRequest();
+    await expect.poll(() => exitFullscreen.mock.calls.length).toBe(1);
+  });
   test("toggles the stage into full screen and leaves it with the button or Esc", async () => {
     await render(
       <FluentProvider theme={webLightTheme}>
