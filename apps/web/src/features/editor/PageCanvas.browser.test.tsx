@@ -6,7 +6,7 @@ import {
   type PageLayer,
   resolveMapLayerView,
 } from "@zakka/editor-core";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 
 import { renderCanvas } from "../../test/canvasHarness";
@@ -17,6 +17,16 @@ import {
   layerHandle,
   layerHitbox,
 } from "../../test/gestures";
+
+// Auto enhance analysis is held until a test releases it, so slow-analysis races are deterministic.
+const toneAnalysis = vi.hoisted(() => ({ release: () => {} }));
+vi.mock("./photoAutoEnhance", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./photoAutoEnhance")>()),
+  analyzePhotoTones: () =>
+    new Promise<null>((resolve) => {
+      toneAnalysis.release = () => resolve(null);
+    }),
+}));
 
 // The harness canvas is 2000x2000 page units, so a drag of 0.1 canvas widths is 200 units.
 const textLayer = (overrides: Partial<Parameters<typeof createTextLayer>[0]> = {}) =>
@@ -466,6 +476,51 @@ describe("photo editor", () => {
     expect(rotation).toBe(90);
     // An 800x600 frame needs the rotated 4:3 photo zoomed to 800/600 to stay covered.
     expect(scale).toBeCloseTo(4 / 3, 2);
+  });
+
+  test("Rotate photo skips quarter turns a panorama cannot fill and turns it halfway instead", async () => {
+    const { layer } = await renderCanvas({ layers: [photoLayer({ width: 1200, height: 200 })] });
+    await openEditor();
+
+    await editor().getByRole("button", { name: "Rotate photo" }).click();
+    await editor().getByRole("button", { name: "Done" }).click();
+
+    // Upright, a 6:1 photo would need 6x zoom to fill its 6:1 frame, beyond the 5x limit.
+    const { rotation, scale } = layer("photo", "photo").photoTransform;
+    expect(rotation).toBe(180);
+    expect(scale).toBeCloseTo(1, 2);
+  });
+
+  test("Tab and Shift+Tab keep focus inside the editor", async () => {
+    await renderCanvas({ layers: [photoLayer()] });
+    await openEditor();
+    const done = editor().getByRole("button", { name: "Done" }).element() as HTMLElement;
+    const dialog = editor().element();
+
+    done.focus();
+    await userEvent.keyboard("{Tab}");
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(stage().element());
+
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(document.activeElement).toBe(done);
+  });
+
+  test("a slow auto enhance result does not overwrite adjustments made while it was pending", async () => {
+    const { layer } = await renderCanvas({ layers: [photoLayer()] });
+    await openEditor();
+
+    await editor().getByRole("switch", { name: "Auto enhance" }).click();
+    (editor().getByRole("slider", { name: "Exposure" }).element() as HTMLInputElement).focus();
+    await userEvent.keyboard("{End}");
+    toneAnalysis.release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    await expect.element(editor().getByText("+2.00 EV")).toBeVisible();
+    await expect.element(editor().getByRole("switch", { name: "Auto enhance" })).not.toBeChecked();
+    await editor().getByRole("button", { name: "Done" }).click();
+    expect(layer("photo", "photo").filter.exposure).toBe(2);
+    expect(layer("photo", "photo").filter.brightness).toBe(1);
   });
 
   test("Escape and Cancel discard the edits", async () => {

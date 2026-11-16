@@ -29,6 +29,7 @@ import {
   type PhotoAdjustmentValues,
 } from "./photoAutoEnhance";
 import {
+  canPhotoCoverFrame,
   flipPhotoTransform,
   getPhotoImagePlacement,
   getPhotoMinimumScale,
@@ -231,8 +232,16 @@ export function PhotoEditorModal({
   const frameWidth = layer.width * pixelsPerUnit;
   const frameHeight = layer.height * pixelsPerUnit;
 
+  // Bumped whenever tone values change by hand so a slow auto-enhance analysis can't overwrite them.
+  const analysisRequestRef = useRef(0);
+  const cancelPendingAnalysis = () => {
+    analysisRequestRef.current += 1;
+    setAnalyzing(false);
+  };
+
   const updateAdjustments = (update: Partial<PhotoAdjustmentValues>) => {
     // Hand-tuning takes over from auto enhance and keeps the values the user sees.
+    cancelPendingAnalysis();
     setAutoEnhanceBaseline(null);
     setFilter((current) => ({ ...current, ...update }));
   };
@@ -241,6 +250,7 @@ export function PhotoEditorModal({
 
   const toggleAutoEnhance = async (enabled: boolean) => {
     if (!enabled) {
+      cancelPendingAnalysis();
       if (autoEnhanceBaseline) {
         const baseline = autoEnhanceBaseline;
         setFilter((current) => ({ ...current, ...baseline }));
@@ -249,10 +259,14 @@ export function PhotoEditorModal({
       return;
     }
 
+    analysisRequestRef.current += 1;
+    const request = analysisRequestRef.current;
+    const baseline = pickAdjustments(filter);
     setAnalyzing(true);
     const stats = await analyzePhotoTones(href);
+    if (request !== analysisRequestRef.current) return;
     setAnalyzing(false);
-    setAutoEnhanceBaseline(pickAdjustments(filter));
+    setAutoEnhanceBaseline(baseline);
     setFilter((current) => ({
       ...current,
       ...(stats ? getAutoEnhanceAdjustments(stats) : fallbackAutoEnhance),
@@ -261,14 +275,44 @@ export function PhotoEditorModal({
 
   const reset = () => {
     const defaults = resetPhotoLayerEdits(layer);
+    cancelPendingAnalysis();
     setAutoEnhanceBaseline(null);
     setPhotoTransform(defaults.photoTransform);
     setFilter(defaults.filter);
   };
+  // Skip quarter turns the photo cannot fill within the maximum zoom (e.g. a panorama turned
+  // upright in a landscape frame); a half turn always fits because it keeps the photo's shape.
   const rotateQuarterTurn = () =>
-    setPhotoTransform((current) =>
-      rotatePhotoTransform(draftLayer, current, normalizePhotoRotation(current.rotation + 90)),
-    );
+    setPhotoTransform((current) => {
+      const rotation = [90, 180, 270]
+        .map((turn) => normalizePhotoRotation(current.rotation + turn))
+        .find((candidate) => canPhotoCoverFrame(draftLayer, candidate));
+      return rotation === undefined ? current : rotatePhotoTransform(draftLayer, current, rotation);
+    });
+
+  // Wrap Tab/Shift+Tab inside the dialog so keyboard focus never reaches the book editor behind it.
+  const keepFocusInDialog = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => element.getClientRects().length > 0);
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!first || !last) return;
+    const active = document.activeElement;
+    const outside = !(active instanceof Node) || !dialog.contains(active) || active === dialog;
+
+    if (event.shiftKey && (outside || active === first)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (outside || active === last)) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   const done = () => {
     const update = { filter, photoTransform };
@@ -356,6 +400,8 @@ export function PhotoEditorModal({
           if (event.key === "Escape") {
             event.preventDefault();
             onCancel();
+          } else if (event.key === "Tab") {
+            keepFocusInDialog(event);
           }
         }}
         onPointerDown={stopPropagation}

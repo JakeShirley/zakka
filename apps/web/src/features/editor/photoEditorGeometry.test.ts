@@ -2,6 +2,7 @@ import { createPhotoLayer, type PhotoLayer } from "@zakka/editor-core";
 import { describe, expect, test } from "vitest";
 
 import {
+  canPhotoCoverFrame,
   clampPhotoTransform,
   getPhotoMinimumScale,
   panPhotoTransform,
@@ -24,6 +25,16 @@ describe("getPhotoMinimumScale", () => {
 
   test("lets contain-fit photos zoom out to the schema minimum", () => {
     expect(getPhotoMinimumScale({ ...photo(), fit: "contain" }, 30)).toBe(0.1);
+  });
+});
+
+describe("canPhotoCoverFrame", () => {
+  test("rejects rotations that would need more than the maximum zoom", () => {
+    const panorama = createPhotoLayer({ assetId: "asset", height: 200, width: 1200, x: 0, y: 0 });
+    expect(canPhotoCoverFrame(panorama, 90)).toBe(false);
+    expect(canPhotoCoverFrame(panorama, 180)).toBe(true);
+    expect(canPhotoCoverFrame({ ...panorama, fit: "contain" }, 90)).toBe(true);
+    expect(canPhotoCoverFrame(photo(), 90)).toBe(true);
   });
 });
 

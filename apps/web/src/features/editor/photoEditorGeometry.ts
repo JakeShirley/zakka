@@ -53,6 +53,14 @@ export const getPhotoImagePlacement = (layer: PhotoLayer) => {
   };
 };
 
+const getCoverScale = (layer: PhotoLayer, rotation: number) => {
+  const { boxHeight, boxWidth, halfExtentX, halfExtentY } = getCoverGeometry(layer, rotation);
+  // Round up to the schema's precision so a saved scale never leaves a sliver uncovered.
+  return (
+    Math.ceil(Math.max((2 * halfExtentX) / boxWidth, (2 * halfExtentY) / boxHeight) * 1000) / 1000
+  );
+};
+
 /** Smallest zoom at which a cover-fit photo still fills its frame at the given rotation. */
 export const getPhotoMinimumScale = (
   layer: PhotoLayer,
@@ -62,13 +70,15 @@ export const getPhotoMinimumScale = (
     return PHOTO_SCALE_SCHEMA_MIN;
   }
 
-  const { boxHeight, boxWidth, halfExtentX, halfExtentY } = getCoverGeometry(layer, rotation);
-  // Round up to the schema's precision so a saved scale never leaves a sliver uncovered.
-  const minimum =
-    Math.ceil(Math.max((2 * halfExtentX) / boxWidth, (2 * halfExtentY) / boxHeight) * 1000) / 1000;
-
-  return clamp(minimum, PHOTO_SCALE_SCHEMA_MIN, PHOTO_EDITOR_SCALE_MAX);
+  return clamp(getCoverScale(layer, rotation), PHOTO_SCALE_SCHEMA_MIN, PHOTO_EDITOR_SCALE_MAX);
 };
+
+/**
+ * Whether a cover-fit photo can still fill its frame at the given rotation within the maximum
+ * zoom. Very wide or tall photos cannot be quarter-turned inside a frame of the opposite shape.
+ */
+export const canPhotoCoverFrame = (layer: PhotoLayer, rotation: number): boolean =>
+  layer.fit !== "cover" || getCoverScale(layer, rotation) <= PHOTO_EDITOR_SCALE_MAX;
 
 /**
  * Clamps zoom and pan so a cover-fit photo always fills its frame, including when the photo is
