@@ -131,6 +131,23 @@ test.describe("page backgrounds", () => {
     await expect(canvasBackgrounds(page, "zakka:stars")).toHaveCount(2);
   });
 
+  test("clicking Backgrounds again after switching tabs brings the controls back", async ({
+    account: _,
+    page,
+  }) => {
+    const book = await createBook(page.request);
+    await openBook(page, book.id);
+    const sidePanelTabs = page.getByRole("tablist", { name: "Side panel" });
+    const wholeSpread = page.getByRole("button", { name: "Whole spread" });
+
+    await page.getByRole("button", { name: "Backgrounds" }).click();
+    await expect(wholeSpread).toBeVisible();
+    await sidePanelTabs.getByRole("tab", { name: "Add", exact: true }).click();
+    await expect(wholeSpread).toHaveCount(0);
+    await page.getByRole("button", { name: "Backgrounds" }).click();
+    await expect(wholeSpread).toBeVisible();
+  });
+
   test("the Backgrounds page uploads, renames, and deletes custom backgrounds", async ({
     account: _,
     page,

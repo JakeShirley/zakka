@@ -895,6 +895,24 @@ const scenarios: ScreenshotScenario[] = [
     waitFor: waitForBookEditor,
   },
   {
+    name: "book-editor-photos-bottom",
+    path: "/books/book_summer",
+    prepare: async (page) => {
+      // Movable editor docks are absent on merge-base; stage them only when offered.
+      const photosTab = page
+        .getByRole("tablist", { name: "Side panel" })
+        .getByRole("tab", { name: "Photos" });
+      if (!(await isVisible(photosTab))) return;
+      await photosTab.click();
+      await page.getByRole("button", { name: "Move Photos tab to bottom" }).click();
+      await expect(
+        page.getByRole("tablist", { name: "Bottom panel" }).getByRole("tab", { name: "Photos" }),
+      ).toHaveAttribute("aria-selected", "true");
+    },
+    viewports: ["desktop"],
+    waitFor: waitForBookEditor,
+  },
+  {
     name: "library",
     path: "/library",
     waitFor: async (page) => {

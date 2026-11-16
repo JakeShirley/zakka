@@ -142,6 +142,7 @@ test.describe("washi tape gallery", () => {
     await openBook(page, book.id);
     const tapeLayers = canvasLayers(pageFrame(page, 1), "washiTape");
     const addPhotoTape = async () => {
+      await page.getByRole("tab", { name: "Add", exact: true }).click();
       await page.getByRole("button", { name: "Add washi tape" }).click();
       await page
         .getByRole("dialog", { name: "Add washi tape" })

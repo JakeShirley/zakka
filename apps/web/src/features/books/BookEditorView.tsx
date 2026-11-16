@@ -56,7 +56,13 @@ import {
   useArrangePreviewPreference,
   useInspectorTab,
 } from "../editor/ArrangePanel";
-import { AssetRail } from "../editor/AssetRail";
+import { AssetRailActions, AssetRailPhotoList } from "../editor/AssetRail";
+import {
+  type DockLocation,
+  EditorDock,
+  type EditorDockPane,
+  useDockLayout,
+} from "../editor/EditorDock";
 import type { EditorSaveStatus } from "../editor/editorTypes";
 import { LayerInspector } from "../editor/LayerInspector";
 import { applyPageLayoutWithAssets, LayoutPickerModal } from "../editor/LayoutPickerModal";
@@ -240,6 +246,7 @@ export function BookEditorView() {
   const [pageDetails, setPageDetails] = useState<Map<string, PageDetail>>(new Map());
   const [pageStatuses, setPageStatuses] = useState<Record<string, EditorSaveStatus>>({});
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [hideUsedPhotos, setHideUsedPhotos] = useState(false);
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [activeSelectionPanel, setActiveSelectionPanel] = useState<SelectionPanel | null>(null);
@@ -411,6 +418,17 @@ export function BookEditorView() {
   const editingPage = editingPageId ? (pageDetails.get(editingPageId) ?? null) : null;
   const editingPageIndex = editingPageId ? orderedPageIds.indexOf(editingPageId) : -1;
   const assetById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
+  const usedAssetIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const pageId of orderedPageIds) {
+      for (const layer of pageDetails.get(pageId)?.document.layers ?? []) {
+        if (layer.kind === "photo" && layer.assetId) {
+          ids.add(layer.assetId);
+        }
+      }
+    }
+    return ids;
+  }, [orderedPageIds, pageDetails]);
   const printWarnings = useMemo(
     () => getBookPrintWarnings(book?.spreads ?? [], orderedPageIds, pageDetails, assetById),
     [assetById, book, orderedPageIds, pageDetails],
@@ -439,6 +457,7 @@ export function BookEditorView() {
     onSettingsChange: setArrangeSettings,
   });
   const isArrangeTabOpen = inspectorTab !== "properties";
+  const dockLayout = useDockLayout();
   const effectiveArrangeSettings = useMemo(
     () => (isSingleLayerArrange ? getSingleLayerArrangeSettings(arrangeSettings) : arrangeSettings),
     [arrangeSettings, isSingleLayerArrange],
@@ -874,6 +893,8 @@ export function BookEditorView() {
   const openBackgroundPanel = () => {
     setSelectedLayerIds([]);
     setIsBackgroundPanelOpen(true);
+    // The effect below only fires when the edit target changes, so reopening needs an explicit focus.
+    dockLayout.focusPane("edit");
   };
 
   useEffect(() => {
@@ -881,6 +902,15 @@ export function BookEditorView() {
       setIsBackgroundPanelOpen(false);
     }
   }, [selectedLayerIds]);
+
+  // Selecting something new brings the Edit tab forward; switching tabs afterwards is up to the user.
+  const editTargetKey = isBackgroundPanelOpen ? "backgrounds" : selectedLayerIds.join("|");
+  const { focusPane } = dockLayout;
+  useEffect(() => {
+    if (editTargetKey) {
+      focusPane("edit");
+    }
+  }, [editTargetKey, focusPane]);
 
   const unsavedPageIds = useMemo(
     () =>
@@ -1955,6 +1985,235 @@ export function BookEditorView() {
     );
   }
 
+  const editPane: EditorDockPane | null =
+    activePageId && (selectedLayer || arrangeLayers.length > 1)
+      ? {
+          id: "edit",
+          label: "Edit",
+          role: "dialog",
+          actions: (
+            <>
+              <Button
+                appearance="subtle"
+                size="small"
+                icon={<ArrowUndoRegular />}
+                aria-label="Undo"
+                title="Undo (Ctrl/Cmd+Z)"
+                disabled={!canUndo}
+                onClick={undoBookEdit}
+              />
+              <Button
+                appearance="subtle"
+                size="small"
+                icon={<ArrowRedoRegular />}
+                aria-label="Redo"
+                title="Redo (Ctrl/Cmd+Shift+Z)"
+                disabled={!canRedo}
+                onClick={redoBookEdit}
+              />
+              <Button
+                appearance="subtle"
+                size="small"
+                icon={<SaveRegular />}
+                aria-label={isSavingPages ? "Saving" : "Save"}
+                title={
+                  isSavingPages
+                    ? "Saving…"
+                    : unsavedPageIds.length > 0
+                      ? "Save now"
+                      : "All changes saved"
+                }
+                disabled={isSavingPages || unsavedPageIds.length === 0}
+                onClick={saveUnsavedPages}
+              />
+            </>
+          ),
+          title: selectedLayer
+            ? `Edit ${formatLayerKindLabel(selectedLayer.kind)}`
+            : `${arrangeLayers.length} layers selected`,
+          tabs: (
+            <InspectorTabs
+              activeTab={inspectorTab}
+              canArrange={canArrangeSelection}
+              layerCount={arrangeLayers.length}
+              onSelect={selectInspectorTab}
+            />
+          ),
+          content:
+            selectedLayer && inspectorTab === "properties" ? (
+              <LayerInspector
+                assetById={assetById}
+                layer={selectedLayer}
+                onChange={(update) => updateLayerTransform(activePageId, selectedLayer.id, update)}
+                onChooseWashiTapePhoto={(layerId) =>
+                  setPhotoPickerMode({
+                    kind: "washiTapePattern",
+                    pageId: activePageId,
+                    layerId,
+                  })
+                }
+                onChoosePhoto={(layerId) =>
+                  setPhotoPickerMode({
+                    kind: "photoPlaceholder",
+                    pageId: activePageId,
+                    layerId,
+                  })
+                }
+              />
+            ) : (
+              <ArrangePanel
+                canApply={canApplyArrange}
+                isPreviewEnabled={isArrangePreviewEnabled}
+                movableLayerCount={arrangeLayers.filter((layer) => !layer.locked).length}
+                settings={arrangeSettings}
+                singleLayer={isSingleLayerArrange}
+                onApply={applyArrange}
+                onPreviewChange={setIsArrangePreviewEnabled}
+                onSettingsChange={setArrangeSettings}
+              />
+            ),
+        }
+      : isBackgroundPanelOpen && activePage
+        ? {
+            id: "edit",
+            label: "Edit",
+            role: "dialog",
+            actions: (
+              <>
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  icon={<ArrowUndoRegular />}
+                  aria-label="Undo"
+                  title="Undo (Ctrl/Cmd+Z)"
+                  disabled={!canUndo}
+                  onClick={undoBookEdit}
+                />
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  icon={<ArrowRedoRegular />}
+                  aria-label="Redo"
+                  title="Redo (Ctrl/Cmd+Shift+Z)"
+                  disabled={!canRedo}
+                  onClick={redoBookEdit}
+                />
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  icon={<DismissRegular />}
+                  aria-label="Close backgrounds"
+                  title="Close"
+                  onClick={() => setIsBackgroundPanelOpen(false)}
+                />
+              </>
+            ),
+            title: "Backgrounds",
+            content: (
+              <PageBackgroundPanel
+                applyTarget={backgroundApplyTarget}
+                background={activePage.document.canvas.background ?? null}
+                backgroundColor={activePage.document.canvas.backgroundColor}
+                canApplyToSpread={canApplyBackgroundToSpread}
+                onApplyTargetChange={setBackgroundApplyTarget}
+                onBackgroundColorChange={changeTargetBackgroundColor}
+                onRemove={removePageBackground}
+                onRotationChange={changePageBackgroundRotation}
+                onScaleChange={changePageBackgroundScale}
+                onSelect={selectPageBackground}
+                selectionKey={getBackgroundTargetPages()
+                  .map((target) => target.pageId)
+                  .join(",")}
+              />
+            ),
+          }
+        : activePage
+          ? {
+              id: "edit",
+              label: "Edit",
+              content: (
+                <p className="editor-dock-empty">Select something on the page to edit it here.</p>
+              ),
+            }
+          : null;
+
+  const addPane: EditorDockPane = {
+    id: "add",
+    label: "Add",
+    fitsContent: true,
+    content: (
+      <AssetRailActions
+        isPhotoPickerDisabled={!activePage}
+        isStickerPickerDisabled={!activePage}
+        onAddMap={addMap}
+        onAddText={addText}
+        onOpenBackgroundPanel={openBackgroundPanel}
+        onOpenLayoutPicker={activePage ? () => setIsLayoutPickerOpen(true) : undefined}
+        onOpenStickerPicker={() => setIsStickerPickerOpen(true)}
+        onOpenWashiTapePicker={() => setIsWashiTapeGalleryOpen(true)}
+      />
+    ),
+  };
+
+  const photosPane: EditorDockPane = {
+    id: "photos",
+    label: "Photos",
+    badge: assets.length,
+    content: (
+      <AssetRailPhotoList
+        assets={assets}
+        hideUsed={hideUsedPhotos}
+        isDisabled={!activePage}
+        usedAssetIds={usedAssetIds}
+        onHideUsedChange={setHideUsedPhotos}
+        onOpenLibraryPicker={() => setIsLibraryPickerOpen(true)}
+      />
+    ),
+  };
+
+  const pagesPane: EditorDockPane | null = activePage
+    ? {
+        id: "pages",
+        label: "Pages",
+        fitsContent: true,
+        content: (
+          <BookFilmstrip
+            draggedPageIds={draggedPageIds}
+            editingPageId={editingPageId}
+            isWorking={isWorking}
+            markedPageIds={markedPageIds}
+            orderedPageIds={orderedPageIds}
+            pageDetails={pageDetails}
+            pageDropTarget={pageDropTarget}
+            visiblePageIds={visiblePageIds}
+            onAddPage={addPage}
+            onClearDragState={clearPageDragState}
+            onClearSelection={clearPageSelection}
+            onDragOver={handlePageDragOver}
+            onDragStart={handlePageDragStart}
+            onDrop={(event, pageId) => void handlePageDrop(event, pageId)}
+            onSelectPage={selectFilmstripPage}
+            onTogglePageSettings={(pageId) => {
+              selectFilmstripPage(pageId, "replace");
+              setEditingPageId((currentPageId) => (currentPageId === pageId ? null : pageId));
+            }}
+          />
+        ),
+      }
+    : null;
+
+  const renderDock = (location: DockLocation) => (
+    <EditorDock
+      activePaneId={dockLayout.activePanes[location]}
+      location={location}
+      panes={[addPane, pagesPane, photosPane, editPane].filter(
+        (pane): pane is EditorDockPane => pane !== null && dockLayout.layout[pane.id] === location,
+      )}
+      onMovePane={dockLayout.movePane}
+      onSelectPane={dockLayout.selectPane}
+    />
+  );
+
   return (
     <div className="book-editor-page">
       <BookEditorHeader
@@ -2000,7 +2259,10 @@ export function BookEditorView() {
         <BookLibraryPickerModal
           bookId={book.id}
           referencedAssetIds={new Set(assets.map((asset) => asset.id))}
-          onAdded={(referencedAssets) => setAssets(referencedAssets)}
+          onAdded={(referencedAssets) => {
+            setAssets(referencedAssets);
+            focusPane("photos");
+          }}
           onClose={() => setIsLibraryPickerOpen(false)}
         />
       ) : null}
@@ -2090,159 +2352,9 @@ export function BookEditorView() {
         ) : null}
       </div>
       <div className="book-editor-shell">
-        <AssetRail
-          mode="referenced"
-          referencedAssets={assets}
-          isPhotoPickerDisabled={!activePage}
-          isStickerPickerDisabled={!activePage}
-          inspector={
-            activePageId && (selectedLayer || arrangeLayers.length > 1)
-              ? {
-                  actions: (
-                    <div className="editor-edit-pane-actions">
-                      <Button
-                        appearance="subtle"
-                        size="small"
-                        icon={<ArrowUndoRegular />}
-                        aria-label="Undo"
-                        title="Undo (Ctrl/Cmd+Z)"
-                        disabled={!canUndo}
-                        onClick={undoBookEdit}
-                      />
-                      <Button
-                        appearance="subtle"
-                        size="small"
-                        icon={<ArrowRedoRegular />}
-                        aria-label="Redo"
-                        title="Redo (Ctrl/Cmd+Shift+Z)"
-                        disabled={!canRedo}
-                        onClick={redoBookEdit}
-                      />
-                      <Button
-                        appearance="subtle"
-                        size="small"
-                        icon={<SaveRegular />}
-                        aria-label={isSavingPages ? "Saving" : "Save"}
-                        title={
-                          isSavingPages
-                            ? "Saving…"
-                            : unsavedPageIds.length > 0
-                              ? "Save now"
-                              : "All changes saved"
-                        }
-                        disabled={isSavingPages || unsavedPageIds.length === 0}
-                        onClick={saveUnsavedPages}
-                      />
-                    </div>
-                  ),
-                  title: selectedLayer
-                    ? `Edit ${formatLayerKindLabel(selectedLayer.kind)}`
-                    : `${arrangeLayers.length} layers selected`,
-                  tabs: (
-                    <InspectorTabs
-                      activeTab={inspectorTab}
-                      canArrange={canArrangeSelection}
-                      layerCount={arrangeLayers.length}
-                      onSelect={selectInspectorTab}
-                    />
-                  ),
-                  content:
-                    selectedLayer && inspectorTab === "properties" ? (
-                      <LayerInspector
-                        assetById={assetById}
-                        layer={selectedLayer}
-                        onChange={(update) =>
-                          updateLayerTransform(activePageId, selectedLayer.id, update)
-                        }
-                        onChooseWashiTapePhoto={(layerId) =>
-                          setPhotoPickerMode({
-                            kind: "washiTapePattern",
-                            pageId: activePageId,
-                            layerId,
-                          })
-                        }
-                        onChoosePhoto={(layerId) =>
-                          setPhotoPickerMode({
-                            kind: "photoPlaceholder",
-                            pageId: activePageId,
-                            layerId,
-                          })
-                        }
-                      />
-                    ) : (
-                      <ArrangePanel
-                        canApply={canApplyArrange}
-                        isPreviewEnabled={isArrangePreviewEnabled}
-                        movableLayerCount={arrangeLayers.filter((layer) => !layer.locked).length}
-                        settings={arrangeSettings}
-                        singleLayer={isSingleLayerArrange}
-                        onApply={applyArrange}
-                        onPreviewChange={setIsArrangePreviewEnabled}
-                        onSettingsChange={setArrangeSettings}
-                      />
-                    ),
-                }
-              : isBackgroundPanelOpen && activePage
-                ? {
-                    actions: (
-                      <div className="editor-edit-pane-actions">
-                        <Button
-                          appearance="subtle"
-                          size="small"
-                          icon={<ArrowUndoRegular />}
-                          aria-label="Undo"
-                          title="Undo (Ctrl/Cmd+Z)"
-                          disabled={!canUndo}
-                          onClick={undoBookEdit}
-                        />
-                        <Button
-                          appearance="subtle"
-                          size="small"
-                          icon={<ArrowRedoRegular />}
-                          aria-label="Redo"
-                          title="Redo (Ctrl/Cmd+Shift+Z)"
-                          disabled={!canRedo}
-                          onClick={redoBookEdit}
-                        />
-                        <Button
-                          appearance="subtle"
-                          size="small"
-                          icon={<DismissRegular />}
-                          aria-label="Close backgrounds"
-                          title="Close"
-                          onClick={() => setIsBackgroundPanelOpen(false)}
-                        />
-                      </div>
-                    ),
-                    title: "Backgrounds",
-                    content: (
-                      <PageBackgroundPanel
-                        applyTarget={backgroundApplyTarget}
-                        background={activePage.document.canvas.background ?? null}
-                        backgroundColor={activePage.document.canvas.backgroundColor}
-                        canApplyToSpread={canApplyBackgroundToSpread}
-                        onApplyTargetChange={setBackgroundApplyTarget}
-                        onBackgroundColorChange={changeTargetBackgroundColor}
-                        onRemove={removePageBackground}
-                        onRotationChange={changePageBackgroundRotation}
-                        onScaleChange={changePageBackgroundScale}
-                        onSelect={selectPageBackground}
-                        selectionKey={getBackgroundTargetPages()
-                          .map((target) => target.pageId)
-                          .join(",")}
-                      />
-                    ),
-                  }
-                : null
-          }
-          onAddMap={addMap}
-          onAddText={addText}
-          onOpenBackgroundPanel={openBackgroundPanel}
-          onOpenLayoutPicker={activePage ? () => setIsLayoutPickerOpen(true) : undefined}
-          onOpenLibraryPicker={() => setIsLibraryPickerOpen(true)}
-          onOpenStickerPicker={() => setIsStickerPickerOpen(true)}
-          onOpenWashiTapePicker={() => setIsWashiTapeGalleryOpen(true)}
-        />
+        <aside className="editor-panel editor-asset-rail" aria-label="Editor sidebar">
+          {renderDock("side")}
+        </aside>
         <section
           className="book-editor-stage"
           aria-label="Book editor"
@@ -2308,27 +2420,6 @@ export function BookEditorView() {
                   onDuplicate={duplicateBookPage}
                 />
               ) : null}
-              <BookFilmstrip
-                draggedPageIds={draggedPageIds}
-                editingPageId={editingPageId}
-                isWorking={isWorking}
-                markedPageIds={markedPageIds}
-                orderedPageIds={orderedPageIds}
-                pageDetails={pageDetails}
-                pageDropTarget={pageDropTarget}
-                visiblePageIds={visiblePageIds}
-                onAddPage={addPage}
-                onClearDragState={clearPageDragState}
-                onClearSelection={clearPageSelection}
-                onDragOver={handlePageDragOver}
-                onDragStart={handlePageDragStart}
-                onDrop={(event, pageId) => void handlePageDrop(event, pageId)}
-                onSelectPage={selectFilmstripPage}
-                onTogglePageSettings={(pageId) => {
-                  selectFilmstripPage(pageId, "replace");
-                  setEditingPageId((currentPageId) => (currentPageId === pageId ? null : pageId));
-                }}
-              />
             </>
           ) : (
             <div className="empty-book-editor">
@@ -2345,6 +2436,7 @@ export function BookEditorView() {
               </Button>
             </div>
           )}
+          {renderDock("bottom")}
         </section>
       </div>
     </div>

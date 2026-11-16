@@ -1,4 +1,4 @@
-import { Button } from "@fluentui/react-components";
+import { Button, Switch } from "@fluentui/react-components";
 import {
   AddRegular,
   EmojiSparkleRegular,
@@ -20,16 +20,19 @@ export type AssetRailInspector = {
   content: ReactNode;
 };
 
-type AssetRailCommonProps = {
+type AssetRailActionCallbacks = {
   isPhotoPickerDisabled?: boolean;
   isStickerPickerDisabled?: boolean;
-  inspector?: AssetRailInspector | null;
   onAddMap: () => void;
   onAddText: () => void;
   onOpenLayoutPicker?: (() => void) | undefined;
   onOpenStickerPicker: () => void;
   onOpenWashiTapePicker: () => void;
   onOpenBackgroundPanel?: () => void;
+};
+
+type AssetRailCommonProps = AssetRailActionCallbacks & {
+  inspector?: AssetRailInspector | null;
 };
 
 type AssetRailModalProps = AssetRailCommonProps & {
@@ -48,103 +51,220 @@ export type AssetRailProps = AssetRailModalProps | AssetRailReferencedProps;
 
 export const assetDragMimeType = "application/x-scrapbook-asset-id";
 
+type AssetRailPhotoListProps = {
+  assets: Asset[];
+  isDisabled?: boolean;
+  /** Shows an "Add more photos" button above the thumbnails. */
+  onOpenLibraryPicker?: (() => void) | undefined;
+  /** IDs of photos already placed in the book; enables the "Hide used photos" toggle. */
+  usedAssetIds?: ReadonlySet<string> | undefined;
+  hideUsed?: boolean;
+  onHideUsedChange?: ((hideUsed: boolean) => void) | undefined;
+};
+
+/** Draggable thumbnails of the photos referenced by a book. */
+export function AssetRailPhotoList({
+  assets,
+  isDisabled = false,
+  onOpenLibraryPicker,
+  usedAssetIds,
+  hideUsed = false,
+  onHideUsedChange,
+}: AssetRailPhotoListProps) {
+  const canHideUsed = Boolean(usedAssetIds && onHideUsedChange);
+  const visibleAssets =
+    canHideUsed && hideUsed && usedAssetIds
+      ? assets.filter((asset) => !usedAssetIds.has(asset.id))
+      : assets;
+
+  return (
+    <>
+      {onOpenLibraryPicker || canHideUsed ? (
+        <div className="asset-rail-photos-toolbar">
+          {onOpenLibraryPicker ? (
+            <Button
+              appearance="primary"
+              type="button"
+              className="primary-button full-width-button"
+              icon={<ImageAddRegular />}
+              onClick={onOpenLibraryPicker}
+            >
+              Add more photos
+            </Button>
+          ) : null}
+          {canHideUsed ? (
+            <Switch
+              checked={hideUsed}
+              className="asset-rail-hide-used-switch"
+              label="Hide used photos"
+              title="Hide photos that are already placed on a page in this book"
+              onChange={(_, data) => onHideUsedChange?.(data.checked)}
+            />
+          ) : null}
+        </div>
+      ) : null}
+      <AssetRailPhotoGrid
+        assets={visibleAssets}
+        emptyMessage={
+          assets.length > 0 ? (
+            "Every photo in this book is already on a page."
+          ) : (
+            <>
+              No photos yet. Click <em>Add more photos</em> to add some from your library.
+            </>
+          )
+        }
+        isDisabled={isDisabled}
+      />
+    </>
+  );
+}
+
+function AssetRailPhotoGrid({
+  assets,
+  emptyMessage,
+  isDisabled,
+}: {
+  assets: Asset[];
+  emptyMessage: ReactNode;
+  isDisabled: boolean;
+}) {
+  return (
+    <ul className="asset-rail-photos" aria-label="Photos referenced by this book">
+      {assets.length === 0 ? (
+        <li className="asset-rail-photos-empty-item">
+          <p className="asset-rail-photos-empty">{emptyMessage}</p>
+        </li>
+      ) : (
+        assets.map((asset) => (
+          <li key={asset.id} className="asset-rail-photo-item">
+            <button
+              type="button"
+              className="asset-rail-photo"
+              title={`Drag ${asset.originalFilename} onto the page`}
+              aria-label={`Drag ${asset.originalFilename} onto the page`}
+              disabled={isDisabled}
+              draggable={!isDisabled}
+              onDragStart={(event) => {
+                if (isDisabled) {
+                  event.preventDefault();
+                  return;
+                }
+                event.dataTransfer.effectAllowed = "copy";
+                event.dataTransfer.setData(assetDragMimeType, asset.id);
+                event.dataTransfer.setData("text/plain", asset.id);
+              }}
+            >
+              <img src={asset.thumbnailUrl ?? asset.originalContentUrl} alt="" draggable={false} />
+            </button>
+          </li>
+        ))
+      )}
+    </ul>
+  );
+}
+
+type AssetRailActionsProps = AssetRailActionCallbacks & {
+  /** Shows an "Add photo" button first (single-page editor). */
+  onOpenPhotoPicker?: (() => void) | undefined;
+};
+
+/** Buttons that add content (photos, text, stickers, ...) to the current page. */
+export function AssetRailActions({
+  isPhotoPickerDisabled = false,
+  isStickerPickerDisabled = false,
+  onAddMap,
+  onAddText,
+  onOpenBackgroundPanel,
+  onOpenLayoutPicker,
+  onOpenPhotoPicker,
+  onOpenStickerPicker,
+  onOpenWashiTapePicker,
+}: AssetRailActionsProps) {
+  return (
+    <div className="asset-rail-actions">
+      {onOpenPhotoPicker ? (
+        <Button
+          appearance="primary"
+          type="button"
+          className="primary-button full-width-button"
+          disabled={isPhotoPickerDisabled}
+          icon={<AddRegular />}
+          onClick={onOpenPhotoPicker}
+        >
+          Add photo
+        </Button>
+      ) : null}
+      <Button
+        type="button"
+        className="secondary-button full-width-button"
+        disabled={isPhotoPickerDisabled}
+        icon={<AddRegular />}
+        onClick={onOpenWashiTapePicker}
+      >
+        Add washi tape
+      </Button>
+      <Button
+        type="button"
+        className="secondary-button full-width-button"
+        icon={<TextTRegular />}
+        onClick={onAddText}
+      >
+        Add text
+      </Button>
+      <Button
+        type="button"
+        className="secondary-button full-width-button"
+        disabled={isStickerPickerDisabled}
+        icon={<EmojiSparkleRegular />}
+        onClick={onOpenStickerPicker}
+      >
+        Add sticker
+      </Button>
+      <Button
+        type="button"
+        className="secondary-button full-width-button"
+        icon={<MapRegular />}
+        onClick={onAddMap}
+      >
+        Add map
+      </Button>
+      {onOpenBackgroundPanel ? (
+        <Button
+          type="button"
+          className="secondary-button full-width-button"
+          icon={<WallpaperRegular />}
+          onClick={onOpenBackgroundPanel}
+        >
+          Backgrounds
+        </Button>
+      ) : null}
+      {onOpenLayoutPicker ? (
+        <Button
+          type="button"
+          className="secondary-button full-width-button"
+          icon={<LayoutCellFourRegular />}
+          onClick={onOpenLayoutPicker}
+        >
+          Page layout
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 export function AssetRail(props: AssetRailProps) {
-  const {
-    isPhotoPickerDisabled = false,
-    isStickerPickerDisabled = false,
-    inspector,
-    onAddMap,
-    onAddText,
-    onOpenLayoutPicker,
-    onOpenStickerPicker,
-    onOpenWashiTapePicker,
-    onOpenBackgroundPanel,
-  } = props;
+  const { inspector, ...actionProps } = props;
   const isReferencedMode = props.mode === "referenced";
   const photoCount = isReferencedMode ? props.referencedAssets.length : props.assetCount;
   const showInspector = Boolean(inspector);
 
   return (
     <aside className="editor-panel editor-asset-rail" aria-label="Editor sidebar">
-      <div className="asset-rail-actions">
-        {isReferencedMode ? null : (
-          <Button
-            appearance="primary"
-            type="button"
-            className="primary-button full-width-button"
-            disabled={isPhotoPickerDisabled}
-            icon={<AddRegular />}
-            onClick={props.onOpenPhotoPicker}
-          >
-            Add photo
-          </Button>
-        )}
-        <Button
-          type="button"
-          className="secondary-button full-width-button"
-          disabled={isPhotoPickerDisabled}
-          icon={<AddRegular />}
-          onClick={onOpenWashiTapePicker}
-        >
-          Add washi tape
-        </Button>
-        <Button
-          type="button"
-          className="secondary-button full-width-button"
-          icon={<TextTRegular />}
-          onClick={onAddText}
-        >
-          Add text
-        </Button>
-        <Button
-          type="button"
-          className="secondary-button full-width-button"
-          disabled={isStickerPickerDisabled}
-          icon={<EmojiSparkleRegular />}
-          onClick={onOpenStickerPicker}
-        >
-          Add sticker
-        </Button>
-        <Button
-          type="button"
-          className="secondary-button full-width-button"
-          icon={<MapRegular />}
-          onClick={onAddMap}
-        >
-          Add map
-        </Button>
-        {onOpenBackgroundPanel ? (
-          <Button
-            type="button"
-            className="secondary-button full-width-button"
-            icon={<WallpaperRegular />}
-            onClick={onOpenBackgroundPanel}
-          >
-            Backgrounds
-          </Button>
-        ) : null}
-        {onOpenLayoutPicker ? (
-          <Button
-            type="button"
-            className="secondary-button full-width-button"
-            icon={<LayoutCellFourRegular />}
-            onClick={onOpenLayoutPicker}
-          >
-            Page layout
-          </Button>
-        ) : null}
-        {isReferencedMode ? (
-          <Button
-            appearance="primary"
-            type="button"
-            className="primary-button full-width-button"
-            icon={<ImageAddRegular />}
-            onClick={props.onOpenLibraryPicker}
-          >
-            Add more photos
-          </Button>
-        ) : null}
-      </div>
+      <AssetRailActions
+        {...actionProps}
+        onOpenPhotoPicker={isReferencedMode ? undefined : props.onOpenPhotoPicker}
+      />
       {showInspector && inspector ? (
         <section
           aria-label={inspector.title}
@@ -165,46 +285,11 @@ export function AssetRail(props: AssetRailProps) {
             <h3>Photos</h3>
             <span>{photoCount}</span>
           </div>
-          <ul className="asset-rail-photos" aria-label="Photos referenced by this book">
-            {props.referencedAssets.length === 0 ? (
-              <li className="asset-rail-photos-empty-item">
-                <p className="asset-rail-photos-empty">
-                  No photos yet. Click <em>Add more photos</em> to add some from your library.
-                </p>
-              </li>
-            ) : (
-              props.referencedAssets.map((asset) => {
-                const isDisabled = isPhotoPickerDisabled;
-                return (
-                  <li key={asset.id} className="asset-rail-photo-item">
-                    <button
-                      type="button"
-                      className="asset-rail-photo"
-                      title={`Drag ${asset.originalFilename} onto the page`}
-                      aria-label={`Drag ${asset.originalFilename} onto the page`}
-                      disabled={isDisabled}
-                      draggable={!isDisabled}
-                      onDragStart={(event) => {
-                        if (isDisabled) {
-                          event.preventDefault();
-                          return;
-                        }
-                        event.dataTransfer.effectAllowed = "copy";
-                        event.dataTransfer.setData(assetDragMimeType, asset.id);
-                        event.dataTransfer.setData("text/plain", asset.id);
-                      }}
-                    >
-                      <img
-                        src={asset.thumbnailUrl ?? asset.originalContentUrl}
-                        alt=""
-                        draggable={false}
-                      />
-                    </button>
-                  </li>
-                );
-              })
-            )}
-          </ul>
+          <AssetRailPhotoList
+            assets={props.referencedAssets}
+            isDisabled={props.isPhotoPickerDisabled ?? false}
+            onOpenLibraryPicker={props.onOpenLibraryPicker}
+          />
         </section>
       ) : null}
     </aside>

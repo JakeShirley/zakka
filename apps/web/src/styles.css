@@ -6555,7 +6555,7 @@ body {
 
 .book-editor-page .editor-asset-rail {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
 }
@@ -6581,6 +6581,156 @@ body {
 
 .book-editor-page .asset-rail-inspector[data-has-tabs] {
   grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+/*
+ * Editor docks: the side panel and the bottom tray (below the canvas). Panes
+ * such as Add, Photos, Pages, and Edit can move between them; a dock holding
+ * several panes shows them as tabs.
+ */
+.editor-dock {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor-dock > * {
+  flex: 0 0 auto;
+}
+
+.editor-dock-subheader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  border-bottom: 1px solid var(--sb-neutral-stroke-3);
+  padding: 4px 8px 4px 14px;
+  background: var(--sb-neutral-background);
+}
+
+.editor-dock-subheader h3 {
+  overflow: hidden;
+  min-width: 0;
+  margin: 0;
+  color: var(--sb-neutral-foreground);
+  font-size: 0.9rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.editor-dock-empty {
+  margin: 0;
+  padding: 24px 16px;
+  color: var(--sb-neutral-foreground-3);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.editor-dock-header {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.editor-dock-header h3 {
+  min-width: 0;
+}
+
+.editor-dock-badge {
+  color: var(--sb-neutral-foreground-3);
+  font-size: 0.8rem;
+}
+
+.editor-dock-tabs .editor-dock-badge {
+  margin-left: 6px;
+}
+
+.editor-dock-actions {
+  margin-left: auto;
+}
+
+.editor-dock-tabs {
+  min-width: 0;
+  margin-block: -6px;
+}
+
+.editor-dock > .editor-dock-body {
+  flex: 1 1 auto;
+  background: var(--sb-neutral-background);
+}
+
+.editor-dock[data-pane="edit"] .editor-dock-body {
+  background: var(--sb-neutral-background-2);
+}
+
+.editor-dock .asset-rail-photos {
+  padding-top: 12px;
+}
+
+/* Stays above the thumbnails while they scroll in the dock body. */
+.asset-rail-photos-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 12px 0;
+  background: var(--sb-neutral-background);
+}
+
+.asset-rail-hide-used-switch {
+  margin-left: -8px;
+}
+
+.editor-dock[data-location="bottom"] .asset-rail-photos-toolbar {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
+
+.editor-dock[data-location="bottom"] .asset-rail-photos-toolbar .full-width-button {
+  width: auto;
+}
+
+.editor-dock .book-filmstrip-region {
+  border-top: 0;
+}
+
+.editor-dock[data-location="side"] .book-filmstrip {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow-x: hidden;
+}
+
+.editor-dock[data-location="bottom"] {
+  height: min(280px, 36vh);
+  border-top: 1px solid var(--sb-neutral-stroke-2);
+}
+
+.editor-dock[data-location="bottom"][data-fits-content="true"] {
+  height: auto;
+}
+
+.editor-dock[data-location="bottom"] .editor-dock-header {
+  min-height: 40px;
+  padding-block: 4px;
+}
+
+.editor-dock[data-location="bottom"] .asset-rail-actions {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.editor-dock[data-location="bottom"] .asset-rail-photos {
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+}
+
+.editor-dock[data-location="bottom"] .book-filmstrip {
+  padding-top: 8px;
 }
 
 .book-editor-page .book-editor-stage {
@@ -6707,7 +6857,7 @@ body {
 }
 
 .book-editor-page .empty-book-editor {
-  grid-row: 2 / -1;
+  grid-row: 2;
   min-height: 0;
 }
 
