@@ -784,6 +784,33 @@ describe("toolbar and drop actions", () => {
 
     await expect.poll(() => layerElement("photo").dataset.photoDrop).toBe("fill");
   });
+
+  test("holding Alt over a photo that covers a placeholder adds a new photo instead of filling it", async () => {
+    const { probe } = await renderCanvas({
+      layers: [
+        photoLayer({
+          assetId: undefined,
+          id: "placeholder",
+          x: 500,
+          y: 500,
+          width: 1000,
+          height: 1000,
+        }),
+        photoLayer({ x: 600, y: 600, width: 800, height: 800 }),
+      ],
+    });
+    const fire = dispatchAssetDragAtCanvasCenter();
+    fire("dragenter", true);
+    fire("dragover", true);
+
+    await expect.element(page.getByRole("status")).toHaveTextContent(/Drop to add a new photo/);
+    expect(layerElement("placeholder").dataset.photoDrop).toBeUndefined();
+    expect(layerElement("photo").dataset.photoDrop).toBeUndefined();
+
+    fire("drop", true);
+    expect(probe.droppedAssets).toHaveLength(1);
+    expect(probe.droppedAssets[0]?.photoTarget).toBeUndefined();
+  });
 });
 
 describe("photo placeholders", () => {

@@ -17,7 +17,6 @@ import {
 } from "@fluentui/react-icons";
 import {
   findPhotoLayerAtPoint,
-  findPhotoPlaceholderAtPoint,
   getMapLayerGeographyDetail,
   getMapZoomRange,
   getTextLayerContentOffsetY,
@@ -1293,7 +1292,8 @@ export function PageCanvas({
     const hitDocument = { ...document, layers: interactiveLayers.map((entry) => entry.layer) };
     const topPhoto = findPhotoLayerAtPoint(hitDocument, point);
     const replaceSkipped = Boolean(topPhoto && !isPhotoPlaceholder(topPhoto) && addAsNew);
-    const hit = replaceSkipped ? findPhotoPlaceholderAtPoint(hitDocument, point) : topPhoto;
+    // Alt over a filled photo always adds; never fall through to a placeholder hidden beneath it.
+    const hit = replaceSkipped ? null : topPhoto;
     const entry = hit ? interactiveLayers.find((item) => item.layer.id === hit.id) : undefined;
     if (!hit || !entry) return { mode: "add", replaceSkipped, target: null, targetKey: null };
     return {
