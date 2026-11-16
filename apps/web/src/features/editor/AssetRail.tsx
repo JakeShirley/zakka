@@ -1,4 +1,4 @@
-import { Button } from "@fluentui/react-components";
+import { Button, Switch } from "@fluentui/react-components";
 import {
   AddRegular,
   EmojiSparkleRegular,
@@ -56,6 +56,10 @@ type AssetRailPhotoListProps = {
   isDisabled?: boolean;
   /** Shows an "Add more photos" button above the thumbnails. */
   onOpenLibraryPicker?: (() => void) | undefined;
+  /** IDs of photos already placed in the book; enables the "Hide used photos" toggle. */
+  usedAssetIds?: ReadonlySet<string> | undefined;
+  hideUsed?: boolean;
+  onHideUsedChange?: ((hideUsed: boolean) => void) | undefined;
 };
 
 /** Draggable thumbnails of the photos referenced by a book. */
@@ -63,35 +67,73 @@ export function AssetRailPhotoList({
   assets,
   isDisabled = false,
   onOpenLibraryPicker,
+  usedAssetIds,
+  hideUsed = false,
+  onHideUsedChange,
 }: AssetRailPhotoListProps) {
+  const canHideUsed = Boolean(usedAssetIds && onHideUsedChange);
+  const visibleAssets =
+    canHideUsed && hideUsed && usedAssetIds
+      ? assets.filter((asset) => !usedAssetIds.has(asset.id))
+      : assets;
+
   return (
     <>
-      {onOpenLibraryPicker ? (
+      {onOpenLibraryPicker || canHideUsed ? (
         <div className="asset-rail-photos-toolbar">
-          <Button
-            appearance="primary"
-            type="button"
-            className="primary-button full-width-button"
-            icon={<ImageAddRegular />}
-            onClick={onOpenLibraryPicker}
-          >
-            Add more photos
-          </Button>
+          {onOpenLibraryPicker ? (
+            <Button
+              appearance="primary"
+              type="button"
+              className="primary-button full-width-button"
+              icon={<ImageAddRegular />}
+              onClick={onOpenLibraryPicker}
+            >
+              Add more photos
+            </Button>
+          ) : null}
+          {canHideUsed ? (
+            <Switch
+              checked={hideUsed}
+              className="asset-rail-hide-used-switch"
+              label="Hide used photos"
+              title="Hide photos that are already placed on a page in this book"
+              onChange={(_, data) => onHideUsedChange?.(data.checked)}
+            />
+          ) : null}
         </div>
       ) : null}
-      <AssetRailPhotoGrid assets={assets} isDisabled={isDisabled} />
+      <AssetRailPhotoGrid
+        assets={visibleAssets}
+        emptyMessage={
+          assets.length > 0 ? (
+            "Every photo in this book is already on a page."
+          ) : (
+            <>
+              No photos yet. Click <em>Add more photos</em> to add some from your library.
+            </>
+          )
+        }
+        isDisabled={isDisabled}
+      />
     </>
   );
 }
 
-function AssetRailPhotoGrid({ assets, isDisabled }: { assets: Asset[]; isDisabled: boolean }) {
+function AssetRailPhotoGrid({
+  assets,
+  emptyMessage,
+  isDisabled,
+}: {
+  assets: Asset[];
+  emptyMessage: ReactNode;
+  isDisabled: boolean;
+}) {
   return (
     <ul className="asset-rail-photos" aria-label="Photos referenced by this book">
       {assets.length === 0 ? (
         <li className="asset-rail-photos-empty-item">
-          <p className="asset-rail-photos-empty">
-            No photos yet. Click <em>Add more photos</em> to add some from your library.
-          </p>
+          <p className="asset-rail-photos-empty">{emptyMessage}</p>
         </li>
       ) : (
         assets.map((asset) => (

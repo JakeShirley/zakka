@@ -6608,8 +6608,22 @@ body {
   position: sticky;
   top: 0;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   padding: 12px 12px 0;
   background: var(--sb-neutral-background);
+}
+
+.asset-rail-hide-used-switch {
+  margin-left: -8px;
+}
+
+.editor-dock[data-location="bottom"] .asset-rail-photos-toolbar {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
 }
 
 .editor-dock[data-location="bottom"] .asset-rail-photos-toolbar .full-width-button {

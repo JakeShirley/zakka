@@ -246,6 +246,7 @@ export function BookEditorView() {
   const [pageDetails, setPageDetails] = useState<Map<string, PageDetail>>(new Map());
   const [pageStatuses, setPageStatuses] = useState<Record<string, EditorSaveStatus>>({});
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [hideUsedPhotos, setHideUsedPhotos] = useState(false);
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [activeSelectionPanel, setActiveSelectionPanel] = useState<SelectionPanel | null>(null);
@@ -417,6 +418,17 @@ export function BookEditorView() {
   const editingPage = editingPageId ? (pageDetails.get(editingPageId) ?? null) : null;
   const editingPageIndex = editingPageId ? orderedPageIds.indexOf(editingPageId) : -1;
   const assetById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
+  const usedAssetIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const pageId of orderedPageIds) {
+      for (const layer of pageDetails.get(pageId)?.document.layers ?? []) {
+        if (layer.kind === "photo" && layer.assetId) {
+          ids.add(layer.assetId);
+        }
+      }
+    }
+    return ids;
+  }, [orderedPageIds, pageDetails]);
   const printWarnings = useMemo(
     () => getBookPrintWarnings(book?.spreads ?? [], orderedPageIds, pageDetails, assetById),
     [assetById, book, orderedPageIds, pageDetails],
@@ -2147,7 +2159,10 @@ export function BookEditorView() {
     content: (
       <AssetRailPhotoList
         assets={assets}
+        hideUsed={hideUsedPhotos}
         isDisabled={!activePage}
+        usedAssetIds={usedAssetIds}
+        onHideUsedChange={setHideUsedPhotos}
         onOpenLibraryPicker={() => setIsLibraryPickerOpen(true)}
       />
     ),

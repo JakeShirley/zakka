@@ -307,6 +307,14 @@ test.describe("photos", () => {
         (await getSavedPage(page.request, coverId)).document.layers.map((layer) => layer.kind),
       )
       .toEqual(["photo"]);
+
+    await sidePanelTabs.getByRole("tab", { name: "Photos" }).click();
+    const hideUsedSwitch = page.getByRole("switch", { name: "Hide used photos" });
+    await hideUsedSwitch.check();
+    await expect(railPhoto).toHaveCount(0);
+    await expect(page.getByText("Every photo in this book is already on a page.")).toBeVisible();
+    await hideUsedSwitch.uncheck();
+    await expect(railPhoto).toBeVisible();
   });
 });
 
