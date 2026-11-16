@@ -21,6 +21,8 @@ export type AssetRailInspector = {
 };
 
 type AssetRailCommonProps = {
+  /** Replaces the built-in inspector and photo list below the action buttons. */
+  children?: ReactNode;
   isPhotoPickerDisabled?: boolean;
   isStickerPickerDisabled?: boolean;
   inspector?: AssetRailInspector | null;
@@ -48,8 +50,53 @@ export type AssetRailProps = AssetRailModalProps | AssetRailReferencedProps;
 
 export const assetDragMimeType = "application/x-scrapbook-asset-id";
 
+type AssetRailPhotoListProps = {
+  assets: Asset[];
+  isDisabled?: boolean;
+};
+
+/** Draggable thumbnails of the photos referenced by a book. */
+export function AssetRailPhotoList({ assets, isDisabled = false }: AssetRailPhotoListProps) {
+  return (
+    <ul className="asset-rail-photos" aria-label="Photos referenced by this book">
+      {assets.length === 0 ? (
+        <li className="asset-rail-photos-empty-item">
+          <p className="asset-rail-photos-empty">
+            No photos yet. Click <em>Add more photos</em> to add some from your library.
+          </p>
+        </li>
+      ) : (
+        assets.map((asset) => (
+          <li key={asset.id} className="asset-rail-photo-item">
+            <button
+              type="button"
+              className="asset-rail-photo"
+              title={`Drag ${asset.originalFilename} onto the page`}
+              aria-label={`Drag ${asset.originalFilename} onto the page`}
+              disabled={isDisabled}
+              draggable={!isDisabled}
+              onDragStart={(event) => {
+                if (isDisabled) {
+                  event.preventDefault();
+                  return;
+                }
+                event.dataTransfer.effectAllowed = "copy";
+                event.dataTransfer.setData(assetDragMimeType, asset.id);
+                event.dataTransfer.setData("text/plain", asset.id);
+              }}
+            >
+              <img src={asset.thumbnailUrl ?? asset.originalContentUrl} alt="" draggable={false} />
+            </button>
+          </li>
+        ))
+      )}
+    </ul>
+  );
+}
+
 export function AssetRail(props: AssetRailProps) {
   const {
+    children,
     isPhotoPickerDisabled = false,
     isStickerPickerDisabled = false,
     inspector,
@@ -145,7 +192,9 @@ export function AssetRail(props: AssetRailProps) {
           </Button>
         ) : null}
       </div>
-      {showInspector && inspector ? (
+      {children !== undefined ? (
+        children
+      ) : showInspector && inspector ? (
         <section
           aria-label={inspector.title}
           className="asset-rail-inspector"
@@ -165,46 +214,7 @@ export function AssetRail(props: AssetRailProps) {
             <h3>Photos</h3>
             <span>{photoCount}</span>
           </div>
-          <ul className="asset-rail-photos" aria-label="Photos referenced by this book">
-            {props.referencedAssets.length === 0 ? (
-              <li className="asset-rail-photos-empty-item">
-                <p className="asset-rail-photos-empty">
-                  No photos yet. Click <em>Add more photos</em> to add some from your library.
-                </p>
-              </li>
-            ) : (
-              props.referencedAssets.map((asset) => {
-                const isDisabled = isPhotoPickerDisabled;
-                return (
-                  <li key={asset.id} className="asset-rail-photo-item">
-                    <button
-                      type="button"
-                      className="asset-rail-photo"
-                      title={`Drag ${asset.originalFilename} onto the page`}
-                      aria-label={`Drag ${asset.originalFilename} onto the page`}
-                      disabled={isDisabled}
-                      draggable={!isDisabled}
-                      onDragStart={(event) => {
-                        if (isDisabled) {
-                          event.preventDefault();
-                          return;
-                        }
-                        event.dataTransfer.effectAllowed = "copy";
-                        event.dataTransfer.setData(assetDragMimeType, asset.id);
-                        event.dataTransfer.setData("text/plain", asset.id);
-                      }}
-                    >
-                      <img
-                        src={asset.thumbnailUrl ?? asset.originalContentUrl}
-                        alt=""
-                        draggable={false}
-                      />
-                    </button>
-                  </li>
-                );
-              })
-            )}
-          </ul>
+          <AssetRailPhotoList assets={props.referencedAssets} isDisabled={isPhotoPickerDisabled} />
         </section>
       ) : null}
     </aside>

@@ -6503,6 +6503,90 @@ body {
   grid-template-rows: auto auto minmax(0, 1fr);
 }
 
+/*
+ * Editor docks: the side panel (below the rail actions) and the bottom tray
+ * (below the canvas). Panes such as Photos, Pages, and the edit panel can move
+ * between them; a dock holding several panes shows them as tabs.
+ */
+.editor-dock {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor-dock[data-has-tabs] {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.editor-dock-header {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.editor-dock-header h3 {
+  min-width: 0;
+}
+
+.editor-dock-badge {
+  color: var(--sb-neutral-foreground-3);
+  font-size: 0.8rem;
+}
+
+.editor-dock-actions {
+  margin-left: auto;
+}
+
+.editor-dock-tabs {
+  min-width: 0;
+  margin-block: -6px;
+}
+
+.editor-dock-body {
+  background: var(--sb-neutral-background);
+}
+
+.editor-dock[data-pane="edit"] .editor-dock-body {
+  background: var(--sb-neutral-background-2);
+}
+
+.editor-dock .asset-rail-photos {
+  padding-top: 12px;
+}
+
+.editor-dock .book-filmstrip-region {
+  border-top: 0;
+}
+
+.editor-dock[data-location="side"] .book-filmstrip {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow-x: hidden;
+}
+
+.editor-dock[data-location="bottom"] {
+  height: min(280px, 36vh);
+  border-top: 1px solid var(--sb-neutral-stroke-2);
+}
+
+.editor-dock[data-location="bottom"][data-fits-content="true"] {
+  height: auto;
+}
+
+.editor-dock[data-location="bottom"] .editor-dock-header {
+  min-height: 40px;
+  padding-block: 4px;
+}
+
+.editor-dock[data-location="bottom"] .asset-rail-photos {
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+}
+
+.editor-dock[data-location="bottom"] .book-filmstrip {
+  padding-top: 8px;
+}
+
 .book-editor-page .book-editor-stage {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
