@@ -15,7 +15,7 @@ import type { CanvasPoint } from "../features/editor/editorTypes";
 import {
   type CanvasPreviewLayer,
   PageCanvas,
-  type PhotoPlaceholderDropTarget,
+  type PhotoDropTarget,
   type ReorderLayerCommand,
   type SelectionPanel,
 } from "../features/editor/PageCanvas";
@@ -63,7 +63,7 @@ export type CanvasProbe = {
   document: PageDocument;
   droppedAssets: Array<{
     assetId: string;
-    placeholder?: PhotoPlaceholderDropTarget;
+    photoTarget?: PhotoDropTarget;
     point: CanvasPoint;
   }>;
   reorders: Array<{ command: ReorderLayerCommand; layerId: string }>;
@@ -72,6 +72,7 @@ export type CanvasProbe = {
 
 type RenderCanvasOptions = {
   assets?: Asset[];
+  confineLayerHitAreasToPage?: boolean;
   layers: PageLayer[];
   previewLayers?: CanvasPreviewLayer[];
   selectedLayerIds?: string[];
@@ -83,6 +84,7 @@ type RenderCanvasOptions = {
  */
 export async function renderCanvas({
   assets = [createTestAsset()],
+  confineLayerHitAreasToPage = false,
   layers,
   previewLayers = [],
   selectedLayerIds = [],
@@ -124,6 +126,7 @@ export async function renderCanvas({
         <PageCanvas
           activeSelectionPanel={panel}
           assetById={assetById}
+          confineLayerHitAreasToPage={confineLayerHitAreasToPage}
           document={document}
           previewLayers={previewLayers}
           selectedLayerIds={selection}
@@ -134,11 +137,11 @@ export async function renderCanvas({
             setDocument((current) => deleteLayer(current, layerId));
             setSelection((current) => current.filter((id) => id !== layerId));
           }}
-          onDropAsset={(assetId, point, placeholder) =>
+          onDropAsset={(assetId, point, photoTarget) =>
             probe.droppedAssets.push({
               assetId,
               point,
-              ...(placeholder ? { placeholder } : {}),
+              ...(photoTarget ? { photoTarget } : {}),
             })
           }
           onReorderLayer={(layerId, command) => {

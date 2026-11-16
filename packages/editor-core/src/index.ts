@@ -2937,17 +2937,21 @@ const isPointInsideLayer = (layer: PageLayer, point: { x: number; y: number }): 
   );
 };
 
-/** Finds the topmost unlocked photo placeholder under a page point, accounting for rotation. */
-export const findPhotoPlaceholderAtPoint = (
+/**
+ * Finds the topmost unlocked photo frame under a page point, accounting for rotation. Filled
+ * photos are skipped when `includeFilled` is false, so only empty placeholders match.
+ */
+export const findPhotoLayerAtPoint = (
   document: PageDocument,
   point: { x: number; y: number },
+  { includeFilled = true }: { includeFilled?: boolean } = {},
 ): PhotoLayer | null => {
   for (let index = document.layers.length - 1; index >= 0; index -= 1) {
     const layer = document.layers[index];
 
     if (
       layer?.kind === "photo" &&
-      isPhotoPlaceholder(layer) &&
+      (includeFilled || isPhotoPlaceholder(layer)) &&
       !layer.locked &&
       isPointInsideLayer(layer, point)
     ) {
@@ -2957,6 +2961,12 @@ export const findPhotoPlaceholderAtPoint = (
 
   return null;
 };
+
+/** Finds the topmost unlocked photo placeholder under a page point, accounting for rotation. */
+export const findPhotoPlaceholderAtPoint = (
+  document: PageDocument,
+  point: { x: number; y: number },
+): PhotoLayer | null => findPhotoLayerAtPoint(document, point, { includeFilled: false });
 
 export const addLayer = (
   document: PageDocument,

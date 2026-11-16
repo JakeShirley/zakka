@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import type { PageDetail } from "../../types";
 import {
-  fillPhotoPlaceholderAcrossSpread,
+  fillPhotoAcrossSpread,
   reconcileSpreadPageEdit,
   syncLayerAcrossSpread,
 } from "./spreadLayers";
@@ -204,7 +204,7 @@ describe("spread layer syncing", () => {
       createPageDocument({ canvas: { width: 600, height: 400 }, layers: [placeholderRight] }),
     );
 
-    const result = fillPhotoPlaceholderAcrossSpread({
+    const result = fillPhotoAcrossSpread({
       assetId: "asset_1",
       details: new Map([
         [left.id, left],
@@ -222,6 +222,63 @@ describe("spread layer syncing", () => {
     expect(result.details.get(right.id)?.document.layers).toEqual([
       expect.objectContaining({ assetId: "asset_1", id: "frame", rotation: 45, x: -300 }),
     ]);
+  });
+
+  it("replaces a gutter-spanning photo on both pages while keeping its frame styling", () => {
+    const photoLeft = createPhotoLayer({
+      assetId: "old_asset",
+      border: { color: "#112233", framePreset: "none", radius: 12, style: "solid", width: 20 },
+      crop: { aspectRatioPreset: "free", height: 0.5, width: 0.5, x: 0.25, y: 0.25 },
+      filter: {
+        brightness: 1.1,
+        contrast: 1,
+        highlights: 0,
+        preset: "mono",
+        saturation: 1,
+        shadows: 0,
+      },
+      id: "photo",
+      opacity: 0.8,
+      rotation: 12,
+      x: 400,
+      y: 100,
+      width: 400,
+      height: 200,
+    });
+    const photoRight = createPhotoLayer({ ...photoLeft, x: -200 });
+    const left = pageDetail(
+      "left",
+      createPageDocument({ canvas: { width: 600, height: 400 }, layers: [photoLeft] }),
+    );
+    const right = pageDetail(
+      "right",
+      createPageDocument({ canvas: { width: 600, height: 400 }, layers: [photoRight] }),
+    );
+
+    const result = fillPhotoAcrossSpread({
+      assetId: "new_asset",
+      details: new Map([
+        [left.id, left],
+        [right.id, right],
+      ]),
+      layerId: "photo",
+      sourcePageId: right.id,
+      spreadPageIds: [left.id, right.id],
+    });
+
+    expect(result.changedPageIds).toEqual([left.id, right.id]);
+    for (const [pageId, original] of [
+      [left.id, photoLeft],
+      [right.id, photoRight],
+    ] as const) {
+      expect(result.details.get(pageId)?.document.layers).toEqual([
+        {
+          ...original,
+          assetId: "new_asset",
+          crop: { aspectRatioPreset: "free", height: 1, width: 1, x: 0, y: 0 },
+        },
+      ]);
+    }
   });
 
   it("moves or drops facing copies of shared layers after a whole-page edit", () => {

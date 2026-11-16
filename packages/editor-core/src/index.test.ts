@@ -16,6 +16,7 @@ import {
   editorFontDefinitions,
   editorFontFaceCss,
   fillPhotoLayerUpdate,
+  findPhotoLayerAtPoint,
   findPhotoPlaceholderAtPoint,
   getPhotoEffectiveDpi,
   getPhotoFrameLayout,
@@ -473,6 +474,9 @@ describe("page document helpers", () => {
     expect(findPhotoPlaceholderAtPoint(document, { x: 1200, y: 190 })?.id).toBe("rotated");
     expect(findPhotoPlaceholderAtPoint(document, { x: 1300, y: 20 })).toBeNull();
     expect(findPhotoPlaceholderAtPoint(document, { x: 700, y: 700 })).toBeNull();
+    expect(findPhotoLayerAtPoint(document, { x: 50, y: 50 })?.id).toBe("filled");
+    expect(findPhotoLayerAtPoint(document, { x: 300, y: 300 })?.id).toBe("top");
+    expect(findPhotoLayerAtPoint(document, { x: 700, y: 700 })).toBeNull();
   });
 
   it("creates package-backed sticker layers and normalizes legacy ids", () => {

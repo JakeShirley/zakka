@@ -6,7 +6,7 @@ import {
   type ArrangeCanvasPreview,
   type CanvasPreviewLayer,
   PageCanvas,
-  type PhotoPlaceholderDropTarget,
+  type PhotoDropTarget,
   type ReorderLayerCommand,
   type SelectionPanel,
   type SelectLayerOptions,
@@ -16,14 +16,14 @@ import type { LayerTransformUpdate } from "../editor/transforms";
 import type { EditHistoryMode } from "./bookEditorHistory";
 import type { ViewMode } from "./bookEditorTypes";
 
-/** An empty photo placeholder under a drop, with the page that owns it. */
-export type PlaceholderTarget = { layerId: string; pageId: string };
+/** The photo frame (placeholder or photo to replace) under a drop, with the page that owns it. */
+export type PhotoTarget = { layerId: string; pageId: string };
 
-const resolvePlaceholder = (
+const resolvePhotoTarget = (
   pageId: string,
-  placeholder: PhotoPlaceholderDropTarget | undefined,
-): PlaceholderTarget | undefined =>
-  placeholder ? { layerId: placeholder.layerId, pageId: placeholder.pageId ?? pageId } : undefined;
+  target: PhotoDropTarget | undefined,
+): PhotoTarget | undefined =>
+  target ? { layerId: target.layerId, pageId: target.pageId ?? pageId } : undefined;
 
 type BookCanvasDeckProps = {
   activePageId: string;
@@ -45,13 +45,13 @@ type BookCanvasDeckProps = {
     pageId: string,
     assetId: string,
     canvasPoint: CanvasPoint,
-    placeholder?: PlaceholderTarget,
+    photoTarget?: PhotoTarget,
   ) => void;
   onDropFiles?: (
     pageId: string,
     files: File[],
     canvasPoint: CanvasPoint,
-    placeholder?: PlaceholderTarget,
+    photoTarget?: PhotoTarget,
   ) => void;
   onReorderLayer: (pageId: string, layerId: string, command: ReorderLayerCommand) => void;
   onSelectLayer: (pageId: string, layerId: string | null, options?: SelectLayerOptions) => void;
@@ -121,6 +121,7 @@ export function BookCanvasDeck({
               activeSelectionPanel={isActivePage ? (activeSelectionPanel ?? null) : null}
               arrangePreview={isActivePage ? (arrangePreview ?? null) : null}
               assetById={assetById}
+              confineLayerHitAreasToPage={visiblePageIds.length > 1}
               document={page.document}
               previewLayers={getSpreadPreviewLayers(pageId)}
               selectedLayerIds={isActivePage ? selectedLayerIds : []}
@@ -133,14 +134,14 @@ export function BookCanvasDeck({
               onDeleteLayer={(layerId) => onDeleteLayer(pageId, layerId)}
               {...(onDropAsset
                 ? {
-                    onDropAsset: (assetId, point, placeholder) =>
-                      onDropAsset(pageId, assetId, point, resolvePlaceholder(pageId, placeholder)),
+                    onDropAsset: (assetId, point, photoTarget) =>
+                      onDropAsset(pageId, assetId, point, resolvePhotoTarget(pageId, photoTarget)),
                   }
                 : {})}
               {...(onDropFiles
                 ? {
-                    onDropFiles: (files, point, placeholder) =>
-                      onDropFiles(pageId, files, point, resolvePlaceholder(pageId, placeholder)),
+                    onDropFiles: (files, point, photoTarget) =>
+                      onDropFiles(pageId, files, point, resolvePhotoTarget(pageId, photoTarget)),
                   }
                 : {})}
               onReorderLayer={(layerId, command) => onReorderLayer(pageId, layerId, command)}

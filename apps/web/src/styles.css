@@ -2621,7 +2621,8 @@ textarea:focus-visible {
   padding: 0;
   color: inherit;
   background: transparent;
-  pointer-events: auto;
+  /* Only the hitbox and handles take pointer events, so a clipped hitbox lets them pass through. */
+  pointer-events: none;
   transform-origin: center;
   user-select: none;
 }
@@ -2637,6 +2638,7 @@ textarea:focus-visible {
   color: inherit;
   background: transparent;
   cursor: grab;
+  pointer-events: auto;
   touch-action: none;
 }
 
@@ -2681,6 +2683,71 @@ textarea:focus-visible {
 
 .canvas-photo-resolution-warning svg {
   display: block;
+}
+
+.canvas-photo-drop-indicator {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  border: 3px dashed var(--sb-accent);
+  border-radius: 6px;
+  background: rgb(from var(--sb-accent) r g b / 16%);
+  box-shadow: 0 0 0 3px rgb(from var(--sb-accent) r g b / 22%);
+  pointer-events: none;
+}
+
+.canvas-photo-drop-indicator[data-mode="replace"] {
+  border-style: solid;
+  background: rgb(from var(--sb-accent) r g b / 32%);
+}
+
+.canvas-photo-drop-label {
+  display: inline-flex;
+  max-width: calc(100% - 12px);
+  gap: 6px;
+  align-items: center;
+  overflow: hidden;
+  border-radius: 999px;
+  padding: 5px 12px;
+  color: var(--sb-on-brand);
+  background: var(--sb-accent);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 28%);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-photo-drop-label svg {
+  flex: none;
+  font-size: 16px;
+}
+
+.canvas-photo-drop-hint {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 3;
+  max-width: calc(100% - 24px);
+  border-radius: 999px;
+  padding: 6px 14px;
+  color: var(--sb-on-brand);
+  background: rgb(from var(--sb-accent-strong) r g b / 92%);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 24%);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: center;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.canvas-photo-drop-hint[data-mode="add"] {
+  color: var(--sb-text-strong);
+  background: rgb(from var(--sb-neutral-background) r g b / 94%);
+  outline: 1px solid var(--sb-border-warm);
 }
 
 .photo-resolution-notice {
