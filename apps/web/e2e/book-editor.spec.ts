@@ -57,6 +57,29 @@ test.describe("books", () => {
     await page.getByRole("link", { name: "Books" }).click();
     await expect(page.getByRole("button", { name: /Book 1\s*2 pages/ })).toBeVisible();
   });
+
+  test("Photos moved to the bottom panel stays available in a book with no pages", async ({
+    account: _,
+    page,
+  }) => {
+    const book = await createBook(page.request);
+    const response = await page.request.put(`/api/v1/books/${book.id}/pages`, {
+      data: { pageIds: [] },
+    });
+    expect(response.ok(), await response.text()).toBe(true);
+    await openBook(page, book.id);
+    await expect(page.getByRole("button", { name: "Add first page" })).toBeVisible();
+
+    await page.getByRole("tab", { name: "Photos" }).click();
+    await page.getByRole("button", { name: "Move Photos tab to bottom" }).click();
+
+    const bookEditor = page.getByRole("region", { name: "Book editor" });
+    await expect(bookEditor.getByRole("region", { name: "Photos" })).toBeVisible();
+    await expect(
+      bookEditor.getByRole("button", { name: "Move Photos tab to side panel" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add first page" })).toBeVisible();
+  });
 });
 
 test.describe("editing a page", () => {
@@ -269,10 +292,9 @@ test.describe("photos", () => {
     await page.getByRole("button", { name: "Select orange-test.png" }).click();
     await page.getByRole("button", { name: "Add 1 to book" }).click();
 
-    await expect(page.getByRole("tab", { name: "Photos" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    await expect(
+      page.getByRole("tablist", { name: "Side panel" }).getByRole("tab", { name: "Photos" }),
+    ).toHaveAttribute("aria-selected", "true");
     const railPhoto = page.getByRole("button", { name: "Drag orange-test.png onto the page" });
     await railPhoto.dragTo(pageFrame(page, 1).getByRole("group", { name: "Editable page canvas" }));
 

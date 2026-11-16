@@ -2397,7 +2397,6 @@ export function BookEditorView() {
                   onDuplicate={duplicateBookPage}
                 />
               ) : null}
-              {renderDock("bottom")}
             </>
           ) : (
             <div className="empty-book-editor">
@@ -2414,6 +2413,7 @@ export function BookEditorView() {
               </Button>
             </div>
           )}
+          {renderDock("bottom")}
         </section>
       </div>
     </div>
