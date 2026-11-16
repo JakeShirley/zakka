@@ -20,18 +20,19 @@ export type AssetRailInspector = {
   content: ReactNode;
 };
 
-type AssetRailCommonProps = {
-  /** Replaces the built-in inspector and photo list below the action buttons. */
-  children?: ReactNode;
+type AssetRailActionCallbacks = {
   isPhotoPickerDisabled?: boolean;
   isStickerPickerDisabled?: boolean;
-  inspector?: AssetRailInspector | null;
   onAddMap: () => void;
   onAddText: () => void;
   onOpenLayoutPicker?: (() => void) | undefined;
   onOpenStickerPicker: () => void;
   onOpenWashiTapePicker: () => void;
   onOpenBackgroundPanel?: () => void;
+};
+
+type AssetRailCommonProps = AssetRailActionCallbacks & {
+  inspector?: AssetRailInspector | null;
 };
 
 type AssetRailModalProps = AssetRailCommonProps & {
@@ -94,107 +95,123 @@ export function AssetRailPhotoList({ assets, isDisabled = false }: AssetRailPhot
   );
 }
 
+type AssetRailActionsProps = AssetRailActionCallbacks & {
+  /** Shows an "Add photo" button first (single-page editor). */
+  onOpenPhotoPicker?: (() => void) | undefined;
+  /** Shows an "Add more photos" button last (book editor). */
+  onOpenLibraryPicker?: (() => void) | undefined;
+};
+
+/** Buttons that add content (photos, text, stickers, ...) to the current page. */
+export function AssetRailActions({
+  isPhotoPickerDisabled = false,
+  isStickerPickerDisabled = false,
+  onAddMap,
+  onAddText,
+  onOpenBackgroundPanel,
+  onOpenLayoutPicker,
+  onOpenLibraryPicker,
+  onOpenPhotoPicker,
+  onOpenStickerPicker,
+  onOpenWashiTapePicker,
+}: AssetRailActionsProps) {
+  return (
+    <div className="asset-rail-actions">
+      {onOpenPhotoPicker ? (
+        <Button
+          appearance="primary"
+          type="button"
+          className="primary-button full-width-button"
+          disabled={isPhotoPickerDisabled}
+          icon={<AddRegular />}
+          onClick={onOpenPhotoPicker}
+        >
+          Add photo
+        </Button>
+      ) : null}
+      <Button
+        type="button"
+        className="secondary-button full-width-button"
+        disabled={isPhotoPickerDisabled}
+        icon={<AddRegular />}
+        onClick={onOpenWashiTapePicker}
+      >
+        Add washi tape
+      </Button>
+      <Button
+        type="button"
+        className="secondary-button full-width-button"
+        icon={<TextTRegular />}
+        onClick={onAddText}
+      >
+        Add text
+      </Button>
+      <Button
+        type="button"
+        className="secondary-button full-width-button"
+        disabled={isStickerPickerDisabled}
+        icon={<EmojiSparkleRegular />}
+        onClick={onOpenStickerPicker}
+      >
+        Add sticker
+      </Button>
+      <Button
+        type="button"
+        className="secondary-button full-width-button"
+        icon={<MapRegular />}
+        onClick={onAddMap}
+      >
+        Add map
+      </Button>
+      {onOpenBackgroundPanel ? (
+        <Button
+          type="button"
+          className="secondary-button full-width-button"
+          icon={<WallpaperRegular />}
+          onClick={onOpenBackgroundPanel}
+        >
+          Backgrounds
+        </Button>
+      ) : null}
+      {onOpenLayoutPicker ? (
+        <Button
+          type="button"
+          className="secondary-button full-width-button"
+          icon={<LayoutCellFourRegular />}
+          onClick={onOpenLayoutPicker}
+        >
+          Page layout
+        </Button>
+      ) : null}
+      {onOpenLibraryPicker ? (
+        <Button
+          appearance="primary"
+          type="button"
+          className="primary-button full-width-button"
+          icon={<ImageAddRegular />}
+          onClick={onOpenLibraryPicker}
+        >
+          Add more photos
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 export function AssetRail(props: AssetRailProps) {
-  const {
-    children,
-    isPhotoPickerDisabled = false,
-    isStickerPickerDisabled = false,
-    inspector,
-    onAddMap,
-    onAddText,
-    onOpenLayoutPicker,
-    onOpenStickerPicker,
-    onOpenWashiTapePicker,
-    onOpenBackgroundPanel,
-  } = props;
+  const { inspector, ...actionProps } = props;
   const isReferencedMode = props.mode === "referenced";
   const photoCount = isReferencedMode ? props.referencedAssets.length : props.assetCount;
   const showInspector = Boolean(inspector);
 
   return (
     <aside className="editor-panel editor-asset-rail" aria-label="Editor sidebar">
-      <div className="asset-rail-actions">
-        {isReferencedMode ? null : (
-          <Button
-            appearance="primary"
-            type="button"
-            className="primary-button full-width-button"
-            disabled={isPhotoPickerDisabled}
-            icon={<AddRegular />}
-            onClick={props.onOpenPhotoPicker}
-          >
-            Add photo
-          </Button>
-        )}
-        <Button
-          type="button"
-          className="secondary-button full-width-button"
-          disabled={isPhotoPickerDisabled}
-          icon={<AddRegular />}
-          onClick={onOpenWashiTapePicker}
-        >
-          Add washi tape
-        </Button>
-        <Button
-          type="button"
-          className="secondary-button full-width-button"
-          icon={<TextTRegular />}
-          onClick={onAddText}
-        >
-          Add text
-        </Button>
-        <Button
-          type="button"
-          className="secondary-button full-width-button"
-          disabled={isStickerPickerDisabled}
-          icon={<EmojiSparkleRegular />}
-          onClick={onOpenStickerPicker}
-        >
-          Add sticker
-        </Button>
-        <Button
-          type="button"
-          className="secondary-button full-width-button"
-          icon={<MapRegular />}
-          onClick={onAddMap}
-        >
-          Add map
-        </Button>
-        {onOpenBackgroundPanel ? (
-          <Button
-            type="button"
-            className="secondary-button full-width-button"
-            icon={<WallpaperRegular />}
-            onClick={onOpenBackgroundPanel}
-          >
-            Backgrounds
-          </Button>
-        ) : null}
-        {onOpenLayoutPicker ? (
-          <Button
-            type="button"
-            className="secondary-button full-width-button"
-            icon={<LayoutCellFourRegular />}
-            onClick={onOpenLayoutPicker}
-          >
-            Page layout
-          </Button>
-        ) : null}
-        {isReferencedMode ? (
-          <Button
-            appearance="primary"
-            type="button"
-            className="primary-button full-width-button"
-            icon={<ImageAddRegular />}
-            onClick={props.onOpenLibraryPicker}
-          >
-            Add more photos
-          </Button>
-        ) : null}
-      </div>
-      {children !== undefined ? (
-        children
-      ) : showInspector && inspector ? (
+      <AssetRailActions
+        {...actionProps}
+        onOpenLibraryPicker={isReferencedMode ? props.onOpenLibraryPicker : undefined}
+        onOpenPhotoPicker={isReferencedMode ? undefined : props.onOpenPhotoPicker}
+      />
+      {showInspector && inspector ? (
         <section
           aria-label={inspector.title}
           className="asset-rail-inspector"
@@ -214,7 +231,10 @@ export function AssetRail(props: AssetRailProps) {
             <h3>Photos</h3>
             <span>{photoCount}</span>
           </div>
-          <AssetRailPhotoList assets={props.referencedAssets} isDisabled={isPhotoPickerDisabled} />
+          <AssetRailPhotoList
+            assets={props.referencedAssets}
+            isDisabled={props.isPhotoPickerDisabled ?? false}
+          />
         </section>
       ) : null}
     </aside>

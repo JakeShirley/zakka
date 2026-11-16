@@ -899,9 +899,12 @@ const scenarios: ScreenshotScenario[] = [
     path: "/books/book_summer",
     prepare: async (page) => {
       // Movable editor docks are absent on merge-base; stage them only when offered.
-      const moveButton = page.getByRole("button", { name: "Move photos to bottom" });
-      if (!(await isVisible(moveButton))) return;
-      await moveButton.click();
+      const photosTab = page
+        .getByRole("tablist", { name: "Side panel" })
+        .getByRole("tab", { name: "Photos" });
+      if (!(await isVisible(photosTab))) return;
+      await photosTab.click();
+      await page.getByRole("button", { name: "Move Photos tab to bottom" }).click();
       await expect(
         page.getByRole("tablist", { name: "Bottom panel" }).getByRole("tab", { name: "Photos" }),
       ).toHaveAttribute("aria-selected", "true");

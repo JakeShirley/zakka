@@ -56,7 +56,7 @@ import {
   useArrangePreviewPreference,
   useInspectorTab,
 } from "../editor/ArrangePanel";
-import { AssetRail, AssetRailPhotoList } from "../editor/AssetRail";
+import { AssetRailActions, AssetRailPhotoList } from "../editor/AssetRail";
 import {
   type DockLocation,
   EditorDock,
@@ -885,6 +885,15 @@ export function BookEditorView() {
       setIsBackgroundPanelOpen(false);
     }
   }, [selectedLayerIds]);
+
+  // Selecting something new brings the Edit tab forward; switching tabs afterwards is up to the user.
+  const editTargetKey = isBackgroundPanelOpen ? "backgrounds" : selectedLayerIds.join("|");
+  const { focusPane } = dockLayout;
+  useEffect(() => {
+    if (editTargetKey) {
+      focusPane("edit");
+    }
+  }, [editTargetKey, focusPane]);
 
   const unsavedPageIds = useMemo(
     () =>
@@ -1962,8 +1971,7 @@ export function BookEditorView() {
     activePageId && (selectedLayer || arrangeLayers.length > 1)
       ? {
           id: "edit",
-          label: "Edit panel",
-          isContextual: true,
+          label: "Edit",
           role: "dialog",
           actions: (
             <>
@@ -2050,8 +2058,7 @@ export function BookEditorView() {
       : isBackgroundPanelOpen && activePage
         ? {
             id: "edit",
-            label: "Edit panel",
-            isContextual: true,
+            label: "Edit",
             role: "dialog",
             actions: (
               <>
@@ -2102,7 +2109,34 @@ export function BookEditorView() {
               />
             ),
           }
-        : null;
+        : activePage
+          ? {
+              id: "edit",
+              label: "Edit",
+              content: (
+                <p className="editor-dock-empty">Select something on the page to edit it here.</p>
+              ),
+            }
+          : null;
+
+  const addPane: EditorDockPane = {
+    id: "add",
+    label: "Add",
+    fitsContent: true,
+    content: (
+      <AssetRailActions
+        isPhotoPickerDisabled={!activePage}
+        isStickerPickerDisabled={!activePage}
+        onAddMap={addMap}
+        onAddText={addText}
+        onOpenBackgroundPanel={openBackgroundPanel}
+        onOpenLayoutPicker={activePage ? () => setIsLayoutPickerOpen(true) : undefined}
+        onOpenLibraryPicker={() => setIsLibraryPickerOpen(true)}
+        onOpenStickerPicker={() => setIsStickerPickerOpen(true)}
+        onOpenWashiTapePicker={() => setIsWashiTapeGalleryOpen(true)}
+      />
+    ),
+  };
 
   const photosPane: EditorDockPane = {
     id: "photos",
@@ -2146,7 +2180,7 @@ export function BookEditorView() {
     <EditorDock
       activePaneId={dockLayout.activePanes[location]}
       location={location}
-      panes={[pagesPane, photosPane, editPane].filter(
+      panes={[addPane, pagesPane, photosPane, editPane].filter(
         (pane): pane is EditorDockPane => pane !== null && dockLayout.layout[pane.id] === location,
       )}
       onMovePane={dockLayout.movePane}
@@ -2199,7 +2233,10 @@ export function BookEditorView() {
         <BookLibraryPickerModal
           bookId={book.id}
           referencedAssetIds={new Set(assets.map((asset) => asset.id))}
-          onAdded={(referencedAssets) => setAssets(referencedAssets)}
+          onAdded={(referencedAssets) => {
+            setAssets(referencedAssets);
+            focusPane("photos");
+          }}
           onClose={() => setIsLibraryPickerOpen(false)}
         />
       ) : null}
@@ -2289,21 +2326,9 @@ export function BookEditorView() {
         ) : null}
       </div>
       <div className="book-editor-shell">
-        <AssetRail
-          mode="referenced"
-          referencedAssets={assets}
-          isPhotoPickerDisabled={!activePage}
-          isStickerPickerDisabled={!activePage}
-          onAddMap={addMap}
-          onAddText={addText}
-          onOpenBackgroundPanel={openBackgroundPanel}
-          onOpenLayoutPicker={activePage ? () => setIsLayoutPickerOpen(true) : undefined}
-          onOpenLibraryPicker={() => setIsLibraryPickerOpen(true)}
-          onOpenStickerPicker={() => setIsStickerPickerOpen(true)}
-          onOpenWashiTapePicker={() => setIsWashiTapeGalleryOpen(true)}
-        >
+        <aside className="editor-panel editor-asset-rail" aria-label="Editor sidebar">
           {renderDock("side")}
-        </AssetRail>
+        </aside>
         <section className="book-editor-stage" aria-label="Book editor">
           <BookModeBar
             canNavigateNext={canNavigateNext}

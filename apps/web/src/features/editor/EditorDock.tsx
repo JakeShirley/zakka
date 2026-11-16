@@ -4,12 +4,17 @@ import type { ReactNode } from "react";
 import { useCallback, useState } from "react";
 
 export type DockLocation = "side" | "bottom";
-export type DockPaneId = "pages" | "photos" | "edit";
+export type DockPaneId = "add" | "pages" | "photos" | "edit";
 export type DockLayout = Record<DockPaneId, DockLocation>;
 
-export const defaultDockLayout: DockLayout = { pages: "bottom", photos: "side", edit: "side" };
+export const defaultDockLayout: DockLayout = {
+  add: "side",
+  pages: "bottom",
+  photos: "side",
+  edit: "side",
+};
 
-const dockPaneIds: DockPaneId[] = ["pages", "photos", "edit"];
+const dockPaneIds: DockPaneId[] = ["add", "pages", "photos", "edit"];
 const dockLocations: DockLocation[] = ["side", "bottom"];
 const dockStorageKey = "scrapbook:editor-dock";
 
@@ -65,10 +70,14 @@ export function useDockLayout() {
   }, []);
   const movePane = useCallback(
     (paneId: DockPaneId, location: DockLocation) =>
-      updateState((current) => ({
-        layout: { ...current.layout, [paneId]: location },
-        activePanes: { ...current.activePanes, [location]: paneId },
-      })),
+      updateState((current) => {
+        const source = current.layout[paneId];
+        const activePanes = { ...current.activePanes, [location]: paneId };
+        if (source !== location && activePanes[source] === paneId) {
+          delete activePanes[source];
+        }
+        return { layout: { ...current.layout, [paneId]: location }, activePanes };
+      }),
     [updateState],
   );
   const selectPane = useCallback(
@@ -79,26 +88,34 @@ export function useDockLayout() {
       })),
     [updateState],
   );
-  return { activePanes: state.activePanes, layout: state.layout, movePane, selectPane };
+  /** Brings a pane's tab to the front in whichever dock holds it. */
+  const focusPane = useCallback(
+    (paneId: DockPaneId) =>
+      updateState((current) =>
+        current.activePanes[current.layout[paneId]] === paneId
+          ? current
+          : {
+              ...current,
+              activePanes: { ...current.activePanes, [current.layout[paneId]]: paneId },
+            },
+      ),
+    [updateState],
+  );
+  return { activePanes: state.activePanes, focusPane, layout: state.layout, movePane, selectPane };
 }
 
 export type EditorDockPane = {
   id: DockPaneId;
-  /** Short name used for tabs and the move button, e.g. "Photos". */
+  /** Short name used for the tab and the move button, e.g. "Photos". */
   label: string;
-  /** Header title; defaults to the label. */
+  /** Heading shown above the content when it says more than the label, e.g. "Edit Text". */
   title?: string;
-  /** Muted text after the title, such as a count. */
+  /** Muted text after the label, such as a count. */
   badge?: ReactNode;
   actions?: ReactNode;
   /** Optional tab strip shown between the header and the content. */
   tabs?: ReactNode;
   content: ReactNode;
-  /**
-   * Contextual panes (the selection inspector) take over their dock while
-   * present and are never listed as a tab.
-   */
-  isContextual?: boolean;
   /** Bottom dock sizes to this pane's content instead of a fixed tray height. */
   fitsContent?: boolean;
   role?: "dialog";
@@ -107,7 +124,7 @@ export type EditorDockPane = {
 type EditorDockProps = {
   activePaneId?: DockPaneId | undefined;
   location: DockLocation;
-  /** Panes docked here; unavailable panes should be left out. */
+  /** Panes docked here, in tab order; unavailable panes should be left out. */
   panes: EditorDockPane[];
   onMovePane: (paneId: DockPaneId, location: DockLocation) => void;
   onSelectPane: (location: DockLocation, paneId: DockPaneId) => void;
@@ -120,26 +137,28 @@ export function EditorDock({
   onMovePane,
   onSelectPane,
 }: EditorDockProps) {
-  const tabPanes = panes.filter((pane) => !pane.isContextual);
-  const pane =
-    panes.find((candidate) => candidate.isContextual) ??
-    tabPanes.find((candidate) => candidate.id === activePaneId) ??
-    tabPanes[0];
+  const pane = panes.find((candidate) => candidate.id === activePaneId) ?? panes[0];
 
   if (!pane) {
     return null;
   }
 
   const title = pane.title ?? pane.label;
-  const showTabs = !pane.isContextual && tabPanes.length > 1;
+  const showTabs = panes.length > 1;
+  const showSubheader = showTabs && (pane.title !== undefined || pane.actions !== undefined);
   const targetLocation: DockLocation = location === "side" ? "bottom" : "side";
-  const moveLabel = `Move ${pane.label.toLowerCase()} to ${targetLocation === "side" ? "side panel" : "bottom"}`;
+  const moveLabel = `Move ${pane.label} tab to ${targetLocation === "side" ? "side panel" : "bottom"}`;
+  const badge = (badgePane: EditorDockPane) =>
+    badgePane.badge !== undefined ? (
+      <span className="editor-dock-badge">{badgePane.badge}</span>
+    ) : null;
 
   return (
     <section
       aria-label={title}
       className="editor-dock"
       data-fits-content={location === "bottom" && panes.every((candidate) => candidate.fitsContent)}
+      data-has-subheader={showSubheader ? true : undefined}
       data-has-tabs={pane.tabs ? true : undefined}
       data-location={location}
       data-pane={pane.id}
@@ -154,18 +173,21 @@ export function EditorDock({
             size="small"
             onTabSelect={(_, data) => onSelectPane(location, data.value as DockPaneId)}
           >
-            {tabPanes.map((tabPane) => (
+            {panes.map((tabPane) => (
               <Tab key={tabPane.id} value={tabPane.id}>
                 {tabPane.label}
+                {badge(tabPane)}
               </Tab>
             ))}
           </TabList>
         ) : (
-          <h3>{title}</h3>
+          <>
+            <h3>{title}</h3>
+            {badge(pane)}
+          </>
         )}
-        {pane.badge !== undefined ? <span className="editor-dock-badge">{pane.badge}</span> : null}
         <div className="editor-edit-pane-actions editor-dock-actions">
-          {pane.actions ?? null}
+          {showSubheader ? null : (pane.actions ?? null)}
           <Button
             appearance="subtle"
             size="small"
@@ -176,6 +198,12 @@ export function EditorDock({
           />
         </div>
       </header>
+      {showSubheader ? (
+        <div className="editor-dock-subheader">
+          <h3>{title}</h3>
+          <div className="editor-edit-pane-actions editor-dock-actions">{pane.actions ?? null}</div>
+        </div>
+      ) : null}
       {pane.tabs ?? null}
       <div className="editor-edit-pane-body editor-dock-body">{pane.content}</div>
     </section>

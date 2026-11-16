@@ -18,6 +18,8 @@ const undoShortcut = "ControlOrMeta+z";
 const redoShortcut = "ControlOrMeta+Shift+z";
 
 async function addTextToActivePage(page: Page) {
+  // Selecting a layer brings the Edit tab forward, so return to the Add tab first.
+  await page.getByRole("tab", { name: "Add", exact: true }).click();
   await page.getByRole("button", { name: "Add text" }).click();
 }
 
@@ -267,6 +269,10 @@ test.describe("photos", () => {
     await page.getByRole("button", { name: "Select orange-test.png" }).click();
     await page.getByRole("button", { name: "Add 1 to book" }).click();
 
+    await expect(page.getByRole("tab", { name: "Photos" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     const railPhoto = page.getByRole("button", { name: "Drag orange-test.png onto the page" });
     await railPhoto.dragTo(pageFrame(page, 1).getByRole("group", { name: "Editable page canvas" }));
 

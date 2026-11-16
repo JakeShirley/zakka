@@ -6475,7 +6475,7 @@ body {
 
 .book-editor-page .editor-asset-rail {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
 }
@@ -6504,20 +6504,50 @@ body {
 }
 
 /*
- * Editor docks: the side panel (below the rail actions) and the bottom tray
- * (below the canvas). Panes such as Photos, Pages, and the edit panel can move
- * between them; a dock holding several panes shows them as tabs.
+ * Editor docks: the side panel and the bottom tray (below the canvas). Panes
+ * such as Add, Photos, Pages, and Edit can move between them; a dock holding
+ * several panes shows them as tabs.
  */
 .editor-dock {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
 
-.editor-dock[data-has-tabs] {
-  grid-template-rows: auto auto minmax(0, 1fr);
+.editor-dock > * {
+  flex: 0 0 auto;
+}
+
+.editor-dock-subheader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  border-bottom: 1px solid var(--sb-neutral-stroke-3);
+  padding: 4px 8px 4px 14px;
+  background: var(--sb-neutral-background);
+}
+
+.editor-dock-subheader h3 {
+  overflow: hidden;
+  min-width: 0;
+  margin: 0;
+  color: var(--sb-neutral-foreground);
+  font-size: 0.9rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.editor-dock-empty {
+  margin: 0;
+  padding: 24px 16px;
+  color: var(--sb-neutral-foreground-3);
+  font-size: 0.85rem;
+  text-align: center;
 }
 
 .editor-dock-header {
@@ -6534,6 +6564,10 @@ body {
   font-size: 0.8rem;
 }
 
+.editor-dock-tabs .editor-dock-badge {
+  margin-left: 6px;
+}
+
 .editor-dock-actions {
   margin-left: auto;
 }
@@ -6543,7 +6577,8 @@ body {
   margin-block: -6px;
 }
 
-.editor-dock-body {
+.editor-dock > .editor-dock-body {
+  flex: 1 1 auto;
   background: var(--sb-neutral-background);
 }
 
@@ -6577,6 +6612,10 @@ body {
 .editor-dock[data-location="bottom"] .editor-dock-header {
   min-height: 40px;
   padding-block: 4px;
+}
+
+.editor-dock[data-location="bottom"] .asset-rail-actions {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 }
 
 .editor-dock[data-location="bottom"] .asset-rail-photos {
