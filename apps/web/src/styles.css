@@ -6603,6 +6603,19 @@ body {
   padding-top: 12px;
 }
 
+/* Stays above the thumbnails while they scroll in the dock body. */
+.asset-rail-photos-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 12px 12px 0;
+  background: var(--sb-neutral-background);
+}
+
+.editor-dock[data-location="bottom"] .asset-rail-photos-toolbar .full-width-button {
+  width: auto;
+}
+
 .editor-dock .book-filmstrip-region {
   border-top: 0;
 }

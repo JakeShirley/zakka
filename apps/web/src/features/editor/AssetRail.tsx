@@ -54,10 +54,37 @@ export const assetDragMimeType = "application/x-scrapbook-asset-id";
 type AssetRailPhotoListProps = {
   assets: Asset[];
   isDisabled?: boolean;
+  /** Shows an "Add more photos" button above the thumbnails. */
+  onOpenLibraryPicker?: (() => void) | undefined;
 };
 
 /** Draggable thumbnails of the photos referenced by a book. */
-export function AssetRailPhotoList({ assets, isDisabled = false }: AssetRailPhotoListProps) {
+export function AssetRailPhotoList({
+  assets,
+  isDisabled = false,
+  onOpenLibraryPicker,
+}: AssetRailPhotoListProps) {
+  return (
+    <>
+      {onOpenLibraryPicker ? (
+        <div className="asset-rail-photos-toolbar">
+          <Button
+            appearance="primary"
+            type="button"
+            className="primary-button full-width-button"
+            icon={<ImageAddRegular />}
+            onClick={onOpenLibraryPicker}
+          >
+            Add more photos
+          </Button>
+        </div>
+      ) : null}
+      <AssetRailPhotoGrid assets={assets} isDisabled={isDisabled} />
+    </>
+  );
+}
+
+function AssetRailPhotoGrid({ assets, isDisabled }: { assets: Asset[]; isDisabled: boolean }) {
   return (
     <ul className="asset-rail-photos" aria-label="Photos referenced by this book">
       {assets.length === 0 ? (
@@ -98,8 +125,6 @@ export function AssetRailPhotoList({ assets, isDisabled = false }: AssetRailPhot
 type AssetRailActionsProps = AssetRailActionCallbacks & {
   /** Shows an "Add photo" button first (single-page editor). */
   onOpenPhotoPicker?: (() => void) | undefined;
-  /** Shows an "Add more photos" button last (book editor). */
-  onOpenLibraryPicker?: (() => void) | undefined;
 };
 
 /** Buttons that add content (photos, text, stickers, ...) to the current page. */
@@ -110,7 +135,6 @@ export function AssetRailActions({
   onAddText,
   onOpenBackgroundPanel,
   onOpenLayoutPicker,
-  onOpenLibraryPicker,
   onOpenPhotoPicker,
   onOpenStickerPicker,
   onOpenWashiTapePicker,
@@ -183,17 +207,6 @@ export function AssetRailActions({
           Page layout
         </Button>
       ) : null}
-      {onOpenLibraryPicker ? (
-        <Button
-          appearance="primary"
-          type="button"
-          className="primary-button full-width-button"
-          icon={<ImageAddRegular />}
-          onClick={onOpenLibraryPicker}
-        >
-          Add more photos
-        </Button>
-      ) : null}
     </div>
   );
 }
@@ -208,7 +221,6 @@ export function AssetRail(props: AssetRailProps) {
     <aside className="editor-panel editor-asset-rail" aria-label="Editor sidebar">
       <AssetRailActions
         {...actionProps}
-        onOpenLibraryPicker={isReferencedMode ? props.onOpenLibraryPicker : undefined}
         onOpenPhotoPicker={isReferencedMode ? undefined : props.onOpenPhotoPicker}
       />
       {showInspector && inspector ? (
@@ -234,6 +246,7 @@ export function AssetRail(props: AssetRailProps) {
           <AssetRailPhotoList
             assets={props.referencedAssets}
             isDisabled={props.isPhotoPickerDisabled ?? false}
+            onOpenLibraryPicker={props.onOpenLibraryPicker}
           />
         </section>
       ) : null}

@@ -288,13 +288,16 @@ test.describe("photos", () => {
     await expect(page.getByText("orange-test.png")).toBeVisible();
 
     await openBook(page, book.id);
+    const sidePanelTabs = page.getByRole("tablist", { name: "Side panel" });
+    await sidePanelTabs.getByRole("tab", { name: "Photos" }).click();
     await page.getByRole("button", { name: "Add more photos" }).click();
     await page.getByRole("button", { name: "Select orange-test.png" }).click();
     await page.getByRole("button", { name: "Add 1 to book" }).click();
 
-    await expect(
-      page.getByRole("tablist", { name: "Side panel" }).getByRole("tab", { name: "Photos" }),
-    ).toHaveAttribute("aria-selected", "true");
+    await expect(sidePanelTabs.getByRole("tab", { name: "Photos" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     const railPhoto = page.getByRole("button", { name: "Drag orange-test.png onto the page" });
     await railPhoto.dragTo(pageFrame(page, 1).getByRole("group", { name: "Editable page canvas" }));
 

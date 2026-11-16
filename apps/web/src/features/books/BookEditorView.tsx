@@ -2134,7 +2134,6 @@ export function BookEditorView() {
         onAddText={addText}
         onOpenBackgroundPanel={openBackgroundPanel}
         onOpenLayoutPicker={activePage ? () => setIsLayoutPickerOpen(true) : undefined}
-        onOpenLibraryPicker={() => setIsLibraryPickerOpen(true)}
         onOpenStickerPicker={() => setIsStickerPickerOpen(true)}
         onOpenWashiTapePicker={() => setIsWashiTapeGalleryOpen(true)}
       />
@@ -2145,7 +2144,13 @@ export function BookEditorView() {
     id: "photos",
     label: "Photos",
     badge: assets.length,
-    content: <AssetRailPhotoList assets={assets} isDisabled={!activePage} />,
+    content: (
+      <AssetRailPhotoList
+        assets={assets}
+        isDisabled={!activePage}
+        onOpenLibraryPicker={() => setIsLibraryPickerOpen(true)}
+      />
+    ),
   };
 
   const pagesPane: EditorDockPane | null = activePage
