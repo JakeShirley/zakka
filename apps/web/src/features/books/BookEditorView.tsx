@@ -893,6 +893,8 @@ export function BookEditorView() {
   const openBackgroundPanel = () => {
     setSelectedLayerIds([]);
     setIsBackgroundPanelOpen(true);
+    // The effect below only fires when the edit target changes, so reopening needs an explicit focus.
+    dockLayout.focusPane("edit");
   };
 
   useEffect(() => {
