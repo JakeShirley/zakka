@@ -10,6 +10,7 @@ import {
   HandLeftRegular,
   ImageAddRegular,
   ImageBorderRegular,
+  ImageEditRegular,
   SubtractRegular,
   TextTRegular,
   WarningFilled,
@@ -46,6 +47,7 @@ import { resolveBrowserBackgroundHref } from "../backgrounds/backgroundHrefs";
 import { assetDragMimeType } from "./AssetRail";
 import type { ActiveTransform, CanvasPoint, ResizeHandle, TransformMode } from "./editorTypes";
 import { FontFamilySelect } from "./FontFamilySelect";
+import { PhotoEditorModal } from "./PhotoEditorModal";
 import { getPhotoResolutionWarning } from "./photoResolution";
 import { RichTextEditor, type RichTextEditorHandle } from "./RichTextEditor";
 import { TextAlignmentControl, TextVerticalAlignmentControl } from "./TextAlignmentControl";
@@ -466,6 +468,7 @@ export function PageCanvas({
   );
   const [editingTextLayerId, setEditingTextLayerId] = useState<string | null>(null);
   const [panPreviewLayerId, setPanPreviewLayerId] = useState<string | null>(null);
+  const [photoEditorLayerId, setPhotoEditorLayerId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ layerId: string; x: number; y: number } | null>(
     null,
   );
@@ -679,6 +682,20 @@ export function PageCanvas({
       }
     : undefined;
   const closeContextMenu = () => setContextMenu(null);
+  const photoEditorLayer = useMemo(() => {
+    if (!photoEditorLayerId) return null;
+    const layer = document.layers.find((candidate) => candidate.id === photoEditorLayerId);
+    return layer?.kind === "photo" && !isPhotoPlaceholder(layer) ? layer : null;
+  }, [document.layers, photoEditorLayerId]);
+  const photoEditorHref = photoEditorLayer?.assetId
+    ? resolveBrowserPhotoHref(assetById.get(photoEditorLayer.assetId))
+    : undefined;
+  const closePhotoEditor = useCallback(() => setPhotoEditorLayerId(null), []);
+  useEffect(() => {
+    if (photoEditorLayerId && !(photoEditorLayer && photoEditorHref)) {
+      setPhotoEditorLayerId(null);
+    }
+  }, [photoEditorHref, photoEditorLayer, photoEditorLayerId]);
   const changeLayer = (layerId: string, update: Partial<PageLayer>) =>
     (onChangeLayer ?? onTransformLayer)(layerId, update);
   const restoreTextTransformPreview = useCallback(() => {
@@ -1118,7 +1135,7 @@ export function PageCanvas({
     onSelectLayer(layer.id);
 
     const menuWidth = 204;
-    const menuHeight = 226;
+    const menuHeight = canOpenPhotoEditor(layer) ? 262 : 226;
     const margin = 8;
     setContextMenu({
       layerId: layer.id,
@@ -1158,6 +1175,16 @@ export function PageCanvas({
     closeContextMenu();
     onSelectLayer(layer.id);
     setActiveSelectionPanel("edit");
+  };
+  const canOpenPhotoEditor = (layer: PageLayer): layer is PhotoLayer =>
+    layer.kind === "photo" && !layer.locked && !isPhotoPlaceholder(layer);
+  const openPhotoEditor = (layer: PhotoLayer) => {
+    setActiveTransform(null);
+    setPanPreviewLayerId(null);
+    closeContextMenu();
+    setEditingTextLayerId(null);
+    onSelectLayer(layer.id);
+    setPhotoEditorLayerId(layer.id);
   };
   const beginInlineTextEdit = (layer: PageLayer) => {
     if (layer.kind !== "text" || layer.locked) return false;
@@ -1393,6 +1420,12 @@ export function PageCanvas({
                     beginInlineTextEdit(layer);
                     return;
                   }
+                  if (canOpenPhotoEditor(layer)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openPhotoEditor(layer);
+                    return;
+                  }
                   openLayerEditor(event, layer);
                 }}
                 onPointerDown={(event) => {
@@ -1470,6 +1503,12 @@ export function PageCanvas({
                         onPointerDown={(event) => {
                           setPanPreviewLayerId(null);
                           startTransform(event, layer, "pan");
+                        }}
+                        onDoubleClick={(event) => {
+                          if (!canOpenPhotoEditor(layer)) return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          openPhotoEditor(layer);
                         }}
                         onPointerEnter={() => setPanPreviewLayerId(layer.id)}
                         onPointerLeave={() => {
@@ -1869,6 +1908,12 @@ export function PageCanvas({
             <EditRegular />
             <span>Edit</span>
           </button>
+          {canOpenPhotoEditor(contextLayer) ? (
+            <button type="button" role="menuitem" onClick={() => openPhotoEditor(contextLayer)}>
+              <ImageEditRegular />
+              <span>Edit photo</span>
+            </button>
+          ) : null}
           <button
             type="button"
             disabled={!canMoveContextUp}
@@ -1915,6 +1960,18 @@ export function PageCanvas({
             <span>Delete</span>
           </button>
         </div>
+      ) : null}
+      {photoEditorLayer && photoEditorHref ? (
+        <PhotoEditorModal
+          key={photoEditorLayer.id}
+          href={photoEditorHref}
+          layer={photoEditorLayer}
+          onCancel={closePhotoEditor}
+          onApply={(update) => {
+            changeLayer(photoEditorLayer.id, update);
+            closePhotoEditor();
+          }}
+        />
       ) : null}
     </fieldset>
   );

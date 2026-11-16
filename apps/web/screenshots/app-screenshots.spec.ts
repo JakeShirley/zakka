@@ -714,6 +714,25 @@ const scenarios: ScreenshotScenario[] = [
     waitFor: waitForBookEditor,
   },
   {
+    name: "book-editor-photo-editor",
+    path: "/books/book_summer",
+    prepare: async (page) => {
+      const photoHitbox = page
+        .locator('.book-page-frame[aria-label="Page 1"] .canvas-layer[data-kind="photo"]')
+        .first()
+        .locator(".canvas-layer-hitbox");
+      await photoHitbox.dblclick({ force: true, position: { x: 40, y: 50 } });
+      const editor = page.locator(".photo-editor-modal");
+      await editor.waitFor({ state: "visible", timeout: 2000 }).catch(() => undefined);
+      if (!(await isVisible(editor))) return;
+
+      // Only stage the full-screen editor; its behavior is covered in PageCanvas.browser.test.tsx.
+      await expect(editor.getByRole("button", { name: "Done" })).toBeVisible();
+    },
+    viewports: ["desktop"],
+    waitFor: waitForBookEditor,
+  },
+  {
     name: "book-editor-washi-tape-edit",
     path: "/books/book_summer",
     prepare: async (page) => {

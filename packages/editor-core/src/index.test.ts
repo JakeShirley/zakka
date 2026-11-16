@@ -1362,6 +1362,43 @@ describe("page document helpers", () => {
     ).toBe(true);
   });
 
+  it("renders exposure as a linear-light gain before brightness", () => {
+    const brighter = createPhotoLayer({
+      assetId: "asset_bright",
+      id: "photo_bright",
+      filter: { preset: "none", brightness: 1.2, contrast: 1, saturation: 1, exposure: 1 },
+    });
+    const darker = createPhotoLayer({
+      assetId: "asset_dark",
+      id: "photo_dark",
+      filter: { preset: "none", brightness: 1, contrast: 1, saturation: 1, exposure: -1 },
+    });
+    const svg = renderPageDocumentSvg(createPageDocument({ layers: [brighter, darker] }), {
+      resolvePhotoHref: (layer) => `/assets/${layer.assetId}/content`,
+    });
+    const filters = [...svg.matchAll(/<filter id="photo_color_\d"[^>]*>(.*?)<\/filter>/g)].map(
+      (match) => match[1] ?? "",
+    );
+    const curveOf = (filter: string) =>
+      (filter.match(/<feFuncR type="table" tableValues="([^"]+)"/)?.[1] ?? "")
+        .split(" ")
+        .map(Number);
+
+    expect(filters[0]?.replace(/ (?:values|tableValues)="[^"]+"/g, "")).toBe(
+      '<feComponentTransfer data-photo-exposure="true"><feFuncR type="table" /><feFuncG type="table" /><feFuncB type="table" /></feComponentTransfer><feColorMatrix type="matrix" />',
+    );
+
+    const up = curveOf(filters[0] ?? "");
+    const down = curveOf(filters[1] ?? "");
+    expect(up[0]).toBe(0);
+    expect(up[32]).toBe(1);
+    // One stop doubles linear light: sRGB mid-grey (0.5) lands near 0.686, and bright tones clip.
+    expect(up[16]).toBeCloseTo(0.686, 2);
+    expect(up[28]).toBe(1);
+    expect(down[16]).toBeCloseTo(0.361, 2);
+    expect(down[32]).toBeCloseTo(0.735, 2);
+  });
+
   it("defaults missing shadows and highlights for documents saved before tone adjustments", () => {
     const document = pageDocumentSchema.parse({
       version: 1,
@@ -1376,6 +1413,7 @@ describe("page document helpers", () => {
     const [layer] = document.layers;
 
     expect(layer?.kind === "photo" ? layer.filter : null).toMatchObject({
+      exposure: 0,
       shadows: 0,
       highlights: 0,
     });
