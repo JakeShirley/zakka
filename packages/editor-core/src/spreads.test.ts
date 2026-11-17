@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { createPageDocument, createPhotoLayer } from "./index.js";
-import { applySharedBackground, getSpreadPages, syncLayerAcrossSpread } from "./spreads.js";
+import {
+  applySharedBackground,
+  getSpreadPages,
+  reconcileSpreadPageEdit,
+  syncLayerAcrossSpread,
+} from "./spreads.js";
 
 const blankPage = (width = 600, height = 400) => createPageDocument({ canvas: { width, height } });
 
@@ -26,6 +31,36 @@ describe("spreads", () => {
     expect(result.documents.get("left")?.layers[0]).toMatchObject({ id: "photo", x: 500 });
     expect(result.documents.get("right")?.layers).toEqual([{ ...photo, x: -100 }]);
     expect(documents.get("right")?.layers).toEqual([]);
+  });
+
+  it("leaves an unrelated same-id layer on a facing page alone", () => {
+    const previous = createPhotoLayer({ assetId: "asset", id: "photo", x: 100, y: 50 });
+    const moved = { ...previous, x: 520 };
+    const unrelated = { ...previous };
+    const documents = new Map([
+      ["left", createPageDocument({ canvas: { width: 600, height: 400 }, layers: [moved] })],
+      ["right", createPageDocument({ canvas: { width: 600, height: 400 }, layers: [unrelated] })],
+    ]);
+    const spread = { sourcePageId: "left", spreadPageIds: ["left", "right"] };
+
+    const synced = syncLayerAcrossSpread({
+      ...spread,
+      documents,
+      previousSourceLayer: previous,
+      removeNonOverlappingSource: false,
+      sourceLayer: moved,
+    });
+    const reconciled = reconcileSpreadPageEdit({
+      ...spread,
+      documents: new Map([
+        ...documents,
+        ["left", createPageDocument({ canvas: { width: 600, height: 400 }, layers: [previous] })],
+      ]),
+      nextDocument: documents.get("left") ?? blankPage(),
+    });
+
+    expect(synced.documents.get("right")?.layers).toEqual([unrelated]);
+    expect(reconciled.has("right")).toBe(false);
   });
 
   it("spans a shared background frame across the spread pages", () => {

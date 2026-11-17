@@ -97,12 +97,17 @@ export const registerEditorTools = (ctx: McpToolContext) => {
       documents.set(changedPageId, changedDocument);
     }
 
+    const previousLayers = new Map(
+      previous.get(pageId)?.layers.map((layer) => [layer.id, layer]) ?? [],
+    );
+
     for (const layerId of syncLayerIds) {
       const sourceLayer = documents.get(pageId)?.layers.find((layer) => layer.id === layerId);
 
       if (sourceLayer) {
         documents = syncLayerAcrossSpread({
           documents,
+          previousSourceLayer: previousLayers.get(layerId),
           removeNonOverlappingSource: true,
           sourceLayer,
           sourcePageId: pageId,

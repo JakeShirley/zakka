@@ -231,10 +231,16 @@ describe("mcp endpoint", () => {
     const oversizedImage = await callTool(app, secret, "upload_image", {
       data: "A".repeat(Math.ceil((20 * 1024 * 1024) / 3) * 4 + 4),
     });
+    // Larger than an upload_image payload, but the request still reaches upload_background's own limit.
+    const oversizedBackground = await callTool(app, secret, "upload_background", {
+      data: "A".repeat(Math.ceil((25 * 1024 * 1024) / 3) * 4 + 4),
+    });
 
     expect(oversizedRequest.status).toBe(413);
     expect(oversizedImage.isError).toBe(true);
     expect(oversizedImage.content[0]?.text).toContain("20 MB");
+    expect(oversizedBackground.isError).toBe(true);
+    expect(oversizedBackground.content[0]?.text).toContain("25 MB");
   });
 
   it("initializes, lists tools and records token use", async () => {
@@ -586,13 +592,15 @@ describe("mcp endpoint", () => {
 describe("mcp library, editor and export tools", () => {
   const connect = async () => {
     const app = await createTestApp();
-    const { secret } = await createToken(app, await registerAccount(app, "ada@example.com"));
+    const cookie = await registerAccount(app, "ada@example.com");
+    const { secret } = await createToken(app, cookie);
     const json = <T>(name: string, args: Record<string, unknown> = {}) =>
       callToolJson<T>(app, secret, name, args);
 
     return {
       app,
       call: (name: string, args?: Record<string, unknown>) => callTool(app, secret, name, args),
+      cookie,
       json,
     };
   };
@@ -699,6 +707,94 @@ describe("mcp library, editor and export tools", () => {
     expect(resized.pages.map(({ height, width }) => ({ height, width }))).toEqual([
       { height: 500, width: 400 },
       { height: 500, width: 400 },
+    ]);
+  });
+
+  it("leaves same-id layers on a duplicated facing page alone", async () => {
+    const { json } = await connect();
+    const book = await json<BookDetail>("create_book", {
+      pageHeight: 1000,
+      pageWidth: 1000,
+      title: "Trip",
+    });
+    const page = await json<{ id: string }>("create_page", { bookId: book.id });
+    const { layer } = await json<{ layer: { id: string } }>("add_layer", {
+      kind: "text",
+      pageId: page.id,
+      properties: { height: 100, text: "Hi", width: 200, x: 100, y: 100 },
+    });
+    const copy = await json<{ id: string }>("duplicate_page", {
+      bookId: book.id,
+      pageId: page.id,
+    });
+    const copyLayers = async () =>
+      (
+        await json<{ document: { layers: { id: string; x: number }[] } }>("get_page", {
+          pageId: copy.id,
+        })
+      ).document.layers;
+
+    expect((await json<BookDetail>("get_book", { bookId: book.id })).spreads).toContainEqual({
+      pageIds: [page.id, copy.id],
+    });
+
+    await json("update_layer", { changes: { x: 150 }, layerId: layer.id, pageId: page.id });
+    await json("update_layer", { changes: { text: "Hello" }, layerId: layer.id, pageId: page.id });
+    await json("arrange_layers", {
+      align: { horizontal: "left", relativeTo: "page" },
+      layerIds: [layer.id],
+      mode: "align",
+      pageId: page.id,
+    });
+
+    expect(await copyLayers()).toEqual([
+      expect.objectContaining({ id: layer.id, text: "Hi", x: 100 }),
+    ]);
+  });
+
+  it("restyles a rotated layer's facing-page copy in place", async () => {
+    const { app, cookie, json } = await connect();
+    const book = await json<BookDetail>("create_book", {
+      pageHeight: 1000,
+      pageWidth: 1000,
+      title: "Covers",
+    });
+    const [front, back] = book.pages.map((page) => page.id);
+    const { layer } = await json<{ layer: Record<string, unknown> & { id: string } }>("add_layer", {
+      kind: "text",
+      pageId: front,
+      properties: { height: 400, rotation: 90, text: "Turned", width: 100, x: 850, y: 100 },
+    });
+    const backPage = await json<{ document: Record<string, unknown> }>("get_page", {
+      pageId: back,
+    });
+
+    // Imported copies are placed from rotated bounds, so this one sits across the fold while its
+    // unrotated frame does not overlap the back page.
+    const response = await app.request(`/api/v1/pages/${back}`, {
+      body: JSON.stringify({
+        document: { ...backPage.document, layers: [{ ...layer, x: -150 }] },
+      }),
+      headers: { cookie, "content-type": "application/json" },
+      method: "PATCH",
+    });
+
+    expect(response.status).toBe(200);
+
+    const updated = await json<{ changedPageIds: string[] }>("update_layer", {
+      changes: { color: "#aa3355" },
+      layerId: layer.id,
+      pageId: front,
+    });
+    const backLayers = (
+      await json<{ document: { layers: { color: string; id: string; x: number }[] } }>("get_page", {
+        pageId: back,
+      })
+    ).document.layers;
+
+    expect(updated.changedPageIds).toEqual([front, back]);
+    expect(backLayers).toEqual([
+      expect.objectContaining({ color: "#aa3355", id: layer.id, x: -150 }),
     ]);
   });
 

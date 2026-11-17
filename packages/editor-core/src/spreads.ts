@@ -42,6 +42,18 @@ export const getSpreadPages = (
   return pages;
 };
 
+/**
+ * Whether a facing page's layer is a copy of a spread layer rather than an unrelated layer that
+ * happens to share its id (as on a duplicated page): copies sit at the same spread position.
+ */
+export const isSpreadLayerCopy = (
+  source: { layer: PageLayer; offsetX: number },
+  facing: { layer: PageLayer; offsetX: number },
+): boolean =>
+  facing.layer.kind === source.layer.kind &&
+  Math.abs(facing.offsetX + facing.layer.x - (source.offsetX + source.layer.x)) < 1 &&
+  Math.abs(facing.layer.y - source.layer.y) < 1;
+
 export const layerOverlapsPageCanvas = (layer: PageLayer, document: PageDocument): boolean =>
   layer.x < document.canvas.width &&
   layer.x + layer.width > 0 &&
@@ -96,8 +108,9 @@ export const fillPhotoAcrossSpread = ({
 /**
  * After a whole-page edit (such as applying a page layout) on one spread page, updates the facing
  * pages' copies of any shared layer the edit moved or removed. Moved layers keep a facing copy
- * only while they still overlap that page; unchanged shared layers are left alone. Returns the
- * documents to write, including the edited page.
+ * only while they still overlap that page; unchanged shared layers are left alone, as are
+ * same-id facing layers that are not at the shared spread position (as on a duplicated page).
+ * Returns the documents to write, including the edited page.
  */
 export const reconcileSpreadPageEdit = ({
   documents,
@@ -131,7 +144,13 @@ export const reconcileSpreadPageEdit = ({
     for (const facingLayer of spreadPage.document.layers) {
       const previousLayer = previousLayers.get(facingLayer.id);
 
-      if (!previousLayer || previousLayer.kind !== facingLayer.kind) {
+      if (
+        !previousLayer ||
+        !isSpreadLayerCopy(
+          { layer: previousLayer, offsetX: sourcePage.offsetX },
+          { layer: facingLayer, offsetX: spreadPage.offsetX },
+        )
+      ) {
         continue;
       }
 
@@ -198,16 +217,20 @@ const getLayerStackIndex = (
 
 /**
  * Writes an edited layer back to its spread: every page the layer overlaps gets a copy shifted
- * into that page's coordinates, and copies on pages it no longer overlaps are removed.
+ * into that page's coordinates, and copies on pages it no longer overlaps are removed. With
+ * `previousSourceLayer` (the layer before the edit), a facing page whose same-id layer is not at
+ * the previous spread position holds an unrelated layer and is left alone.
  */
 export const syncLayerAcrossSpread = ({
   documents,
+  previousSourceLayer,
   removeNonOverlappingSource,
   sourceLayer,
   sourcePageId,
   spreadPageIds,
 }: {
   documents: ReadonlyMap<string, PageDocument>;
+  previousSourceLayer?: PageLayer | undefined;
   removeNonOverlappingSource: boolean;
   sourceLayer: PageLayer;
   sourcePageId: string;
@@ -279,6 +302,18 @@ export const syncLayerAcrossSpread = ({
     const existingLayer = currentDocument.layers.find((layer) => layer.id === sourceLayer.id);
 
     if (existingLayer && existingLayer.kind !== sourceLayer.kind) {
+      continue;
+    }
+
+    if (
+      existingLayer &&
+      previousSourceLayer &&
+      spreadPage.pageId !== sourcePageId &&
+      !isSpreadLayerCopy(
+        { layer: previousSourceLayer, offsetX: sourcePage.offsetX },
+        { layer: existingLayer, offsetX: spreadPage.offsetX },
+      )
+    ) {
       continue;
     }
 

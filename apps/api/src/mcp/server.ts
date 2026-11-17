@@ -49,7 +49,7 @@ import type { MapTileSource } from "../map-tiles.js";
 import type { Repositories } from "../persistence/repositories.js";
 import type { AssetRecord, BookRecord, PageRecord } from "../persistence/schema.js";
 import { type McpAccountToolOptions, registerAccountTools } from "./account-tools.js";
-import { registerContentTools } from "./content-tools.js";
+import { maxBackgroundByteSize, registerContentTools } from "./content-tools.js";
 import { registerEditorTools } from "./editor-tools.js";
 import { registerExportTools } from "./export-tools.js";
 import { type McpShutterflyAccess, registerIntegrationTools } from "./integration-tools.js";
@@ -67,10 +67,15 @@ export type ZakkaMcpServerOptions = McpAccountToolOptions & {
 
 const layerKinds = ["photo", "text", "sticker", "washiTape", "map"] as const;
 
+const layerGeometryKeys = new Set(["x", "y", "width", "height", "rotation"]);
+
 const maxUploadBase64Length = Math.ceil(maxUploadByteSize / 3) * 4;
 
-// Room for one base64 upload_image payload plus JSON-RPC framing and line-wrapped base64.
-export const maxMcpRequestByteSize = Math.ceil(maxUploadBase64Length * 1.1) + 64 * 1024;
+// Room for the largest base64 upload (an upload_background image; each tool keeps its own
+// limit) plus JSON-RPC framing and line-wrapped base64.
+export const maxMcpRequestByteSize =
+  Math.ceil(Math.ceil(Math.max(maxUploadByteSize, maxBackgroundByteSize) / 3) * 4 * 1.1) +
+  64 * 1024;
 type LayerKind = (typeof layerKinds)[number];
 
 const hexColorSchema = z
@@ -1053,8 +1058,15 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
   /**
    * Saves a page whose layer was added or edited. In a book spread the layer is copied onto
    * every facing page it overlaps and removed from pages it no longer reaches, as the editor does.
+   * `previousLayer` is the layer before an edit, so same-id layers on a facing page that are not
+   * copies of it (as on a duplicated page) are left alone.
    */
-  const saveLayerEdit = (pageId: string, document: PageDocument, layerId: string) => {
+  const saveLayerEdit = (
+    pageId: string,
+    document: PageDocument,
+    layerId: string,
+    previousLayer?: PageLayer,
+  ) => {
     const spreadPageIds = getSpreadPageIds(pageId);
     const layer = document.layers.find((candidate) => candidate.id === layerId);
 
@@ -1065,6 +1077,7 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
 
     const synced = syncLayerAcrossSpread({
       documents: loadPageDocuments(spreadPageIds).set(pageId, document),
+      previousSourceLayer: previousLayer,
       removeNonOverlappingSource: true,
       sourceLayer: layer,
       sourcePageId: pageId,
@@ -1151,6 +1164,50 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
           throw new Error(`Layer ${layerId} was not found on page ${pageId}`);
         }
 
+        if (
+          changes &&
+          index === undefined &&
+          !Object.keys(changes).some((key) => layerGeometryKeys.has(key))
+        ) {
+          // Content and style changes are applied to the layer and its spread copies in place,
+          // keeping each copy's own geometry and stack position. Reprojecting would drop copies
+          // placed from rotated bounds that do not overlap their page unrotated.
+          const spreadPageIds = getSpreadPageIds(pageId);
+          const spreadDocuments =
+            spreadPageIds.length > 1
+              ? loadPageDocuments(spreadPageIds)
+              : new Map([[pageId, document]]);
+          const changedPageIds = [
+            pageId,
+            ...findSpreadLayerCopyPageIds(spreadDocuments, spreadPageIds, pageId, layer),
+          ];
+
+          savePageDocuments(
+            new Map(
+              changedPageIds.flatMap((changedPageId) => {
+                const changed = spreadDocuments.get(changedPageId);
+                return changed
+                  ? [
+                      [
+                        changedPageId,
+                        {
+                          ...changed,
+                          layers: changed.layers.map((candidate) =>
+                            candidate.id === layerId
+                              ? pageLayerSchema.parse(mergeLayerChanges(candidate, changes))
+                              : candidate,
+                          ),
+                        },
+                      ] as const,
+                    ]
+                  : [];
+              }),
+            ),
+          );
+
+          return toLayerResult(pageId, layerId, changedPageIds);
+        }
+
         if (changes) {
           const updatedLayer = pageLayerSchema.parse(mergeLayerChanges(layer, changes));
           document = {
@@ -1165,7 +1222,12 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
           document = reorderLayer(document, layerId, index);
         }
 
-        const { changedPageIds, containingPageId } = saveLayerEdit(pageId, document, layerId);
+        const { changedPageIds, containingPageId } = saveLayerEdit(
+          pageId,
+          document,
+          layerId,
+          layer,
+        );
 
         return toLayerResult(containingPageId, layerId, changedPageIds);
       }),

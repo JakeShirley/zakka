@@ -13,7 +13,7 @@ import { validateWashiTapeDesign, washiTapeDesignErrorMessages } from "../washi-
 import { decodeBase64Upload, jsonResult, type McpToolContext, runTool } from "./shared.js";
 
 const maxStickerByteSize = 5 * 1024 * 1024;
-const maxBackgroundByteSize = 25 * 1024 * 1024;
+export const maxBackgroundByteSize = 25 * 1024 * 1024;
 const nameSchema = z.string().trim().min(1).max(120);
 const optionalTextSchema = (maxLength: number) =>
   z

@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { PageDocument, PageLayer } from "@zakka/editor-core";
-import { getSpreadPages } from "@zakka/editor-core/spreads";
+import { getSpreadPages, isSpreadLayerCopy } from "@zakka/editor-core/spreads";
 
 import { type AssetStorage, AssetUploadError } from "../assets.js";
 import { CustomBackgroundUploadError } from "../custom-backgrounds.js";
@@ -62,17 +62,17 @@ export const findSpreadLayerCopyPageIds = (
     return [];
   }
 
-  const spreadX = source.offsetX + layer.x;
-
   return pages
     .filter((page) => {
       if (page.pageId === sourcePageId) return false;
       const copy = page.document.layers.find((candidate) => candidate.id === layer.id);
 
       return (
-        copy?.kind === layer.kind &&
-        Math.abs(page.offsetX + copy.x - spreadX) < 1 &&
-        Math.abs(copy.y - layer.y) < 1
+        copy !== undefined &&
+        isSpreadLayerCopy(
+          { layer, offsetX: source.offsetX },
+          { layer: copy, offsetX: page.offsetX },
+        )
       );
     })
     .map((page) => page.pageId);
