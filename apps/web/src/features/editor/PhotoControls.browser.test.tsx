@@ -78,6 +78,20 @@ describe("PhotoControls", () => {
     await expect.element(page.getByRole("button", { name: "Reset shadows" })).toBeDisabled();
   });
 
+  test("adjusts exposure in stops and resets it", async () => {
+    const { lastFilter } = await renderControls();
+
+    await pressOnSlider("Exposure", "{End}");
+
+    expect(lastFilter()).toMatchObject({ exposure: 2, brightness: 1 });
+    await expect.element(page.getByText("+2.00 EV")).toBeVisible();
+
+    await page.getByRole("button", { name: "Reset exposure" }).click();
+
+    expect(lastFilter()).toMatchObject({ exposure: 0 });
+    await expect.element(page.getByText("0.00 EV")).toBeVisible();
+  });
+
   test("shows saved values at the schema maximum without clamping", async () => {
     const layer = createPhotoLayer({ assetId: "asset_1", id: "photo" });
     const { lastFilter } = await renderControls({

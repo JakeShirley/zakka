@@ -6,8 +6,8 @@ import {
   type PageLayer,
   resolveMapLayerView,
 } from "@zakka/editor-core";
-import { describe, expect, test } from "vitest";
-import { page, userEvent } from "vitest/browser";
+import { describe, expect, test, vi } from "vitest";
+import { commands, page, userEvent } from "vitest/browser";
 
 import { renderCanvas } from "../../test/canvasHarness";
 import {
@@ -18,6 +18,16 @@ import {
   layerHitbox,
 } from "../../test/gestures";
 import { assetDragMimeType } from "./AssetRail";
+
+// Auto enhance analysis is held until a test releases it, so slow-analysis races are deterministic.
+const toneAnalysis = vi.hoisted(() => ({ release: () => {} }));
+vi.mock("./photoAutoEnhance", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./photoAutoEnhance")>()),
+  analyzePhotoTones: () =>
+    new Promise<null>((resolve) => {
+      toneAnalysis.release = () => resolve(null);
+    }),
+}));
 
 // The harness canvas is 2000x2000 page units, so a drag of 0.1 canvas widths is 200 units.
 const textLayer = (overrides: Partial<Parameters<typeof createTextLayer>[0]> = {}) =>
@@ -377,27 +387,36 @@ describe("photo handles", () => {
     const fillers = Array.from({ length: 30 }, (_, index) =>
       createStickerLayer({ id: `filler-${index}`, x: 1700, y: 1700, width: 100, height: 100 }),
     );
-    const { probe } = await renderCanvas({
+    await renderCanvas({
       layers: [photoLayer({ id: "small", x: 200, y: 1500, width: 240, height: 180 }), ...fillers],
       selectedLayerIds: ["small"],
     });
     const slider = document.querySelector<HTMLElement>(".transform-scale-slider");
     await expect.poll(() => slider?.dataset.placement).toBe("below");
 
-    // Open the menu just above the slider so its first item lands over it.
+    // Open the menu just above the slider so one of its items lands over it.
     await layerHitbox("small").click({ button: "right", position: { x: 12, y: 56 } });
-    const edit = page
-      .getByRole("menu", { name: "Photo layer actions" })
-      .getByRole("menuitem", { name: "Edit" });
+    const menu = page.getByRole("menu", { name: "Photo layer actions" });
+    await expect.element(menu).toBeVisible();
     const sliderRect = slider?.getBoundingClientRect();
-    const itemRect = edit.element().getBoundingClientRect();
     if (!sliderRect) throw new Error("Expected the zoom slider");
-    const itemCenterY = (itemRect.top + itemRect.bottom) / 2;
-    expect(itemCenterY).toBeGreaterThan(sliderRect.top);
-    expect(itemCenterY).toBeLessThan(sliderRect.bottom);
-    await edit.click();
+    const covered = Array.from(
+      menu.element().querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => {
+      const itemRect = item.getBoundingClientRect();
+      const itemCenterY = (itemRect.top + itemRect.bottom) / 2;
+      return itemCenterY > sliderRect.top && itemCenterY < sliderRect.bottom;
+    });
+    if (!covered) throw new Error("Expected a menu item over the zoom slider");
+    const coveredRect = covered.getBoundingClientRect();
+    const topmost = document.elementFromPoint(
+      Math.max(coveredRect.left, sliderRect.left) + 4,
+      (coveredRect.top + coveredRect.bottom) / 2,
+    );
+    expect(covered.contains(topmost)).toBe(true);
+    await page.elementLocator(covered).click();
 
-    expect(probe.activeSelectionPanel).toBe("edit");
+    await expect.element(menu).not.toBeInTheDocument();
   });
 
   test("Width fills the page width, centered, preserving the photo aspect ratio", async () => {
@@ -430,14 +449,153 @@ describe("photo handles", () => {
     await expect.element(popover).not.toBeInTheDocument();
   });
 
-  test("double-clicking a photo opens its edit panel instead of inline editing", async () => {
+  test("double-clicking a photo opens the full-screen photo editor instead of inline editing", async () => {
     const { probe } = await renderCanvas({ layers: [photoLayer()] });
 
     // Off-center: once selected, the pan handle covers the photo's center.
     await layerHitbox("photo").dblClick({ position: { x: 24, y: 24 } });
 
     expect(probe.selectedLayerIds).toEqual(["photo"]);
+    await expect.element(page.getByRole("dialog", { name: "Photo editor" })).toBeVisible();
+    expect(probe.activeSelectionPanel).toBeNull();
+  });
+
+  test("double-clicking a locked photo opens its edit panel instead of the photo editor", async () => {
+    const { probe } = await renderCanvas({ layers: [photoLayer({ locked: true })] });
+
+    await layerHitbox("photo").dblClick({ position: { x: 24, y: 24 } });
+
     expect(probe.activeSelectionPanel).toBe("edit");
+    await expect
+      .element(page.getByRole("dialog", { name: "Photo editor" }))
+      .not.toBeInTheDocument();
+  });
+});
+
+describe("photo editor", () => {
+  const editor = () => page.getByRole("dialog", { name: "Photo editor" });
+  const stage = () => editor().getByRole("application", { name: /Photo position/ });
+  const openEditor = async () => {
+    await layerHitbox("photo").dblClick({ position: { x: 24, y: 24 } });
+    await expect.element(editor()).toBeVisible();
+  };
+
+  test("Done applies the filter, exposure, zoom, and pan edits made in the editor", async () => {
+    const { layer } = await renderCanvas({ layers: [photoLayer()] });
+    await openEditor();
+
+    await editor().getByRole("button", { name: "Mono" }).click();
+    await editor().getByRole("button", { name: "Zoom in", exact: true }).click();
+    (editor().getByRole("slider", { name: "Exposure" }).element() as HTMLInputElement).focus();
+    await userEvent.keyboard("{End}");
+    await expect.element(editor().getByText("+2.00 EV")).toBeVisible();
+    await expect
+      .element(editor().getByRole("button", { name: "Mono" }))
+      .toHaveAttribute("aria-pressed", "true");
+    // The document is untouched until Done.
+    expect(layer("photo", "photo").filter.preset).toBe("none");
+
+    await commands.pointerDrag({
+      by: { x: 0.05, y: 0 },
+      relativeTo: stage().selector,
+      selector: stage().selector,
+    });
+    await editor().getByRole("button", { name: "Done" }).click();
+
+    await expect.element(editor()).not.toBeInTheDocument();
+    const photo = layer("photo", "photo");
+    expect(photo.filter.preset).toBe("mono");
+    expect(photo.filter.exposure).toBe(2);
+    expect(photo.photoTransform.scale).toBe(1.1);
+    expect(photo.photoTransform.offsetX).toBeGreaterThan(0);
+    expect(photo.photoTransform.offsetY).toBe(0);
+  });
+
+  test("Rotate photo turns the photo a quarter and zooms in so it still covers the frame", async () => {
+    const { layer } = await renderCanvas({ layers: [photoLayer()] });
+    await openEditor();
+
+    await editor().getByRole("button", { name: "Rotate photo" }).click();
+    await editor().getByRole("button", { name: "Done" }).click();
+
+    const { rotation, scale } = layer("photo", "photo").photoTransform;
+    expect(rotation).toBe(90);
+    // An 800x600 frame needs the rotated 4:3 photo zoomed to 800/600 to stay covered.
+    expect(scale).toBeCloseTo(4 / 3, 2);
+  });
+
+  test("Rotate photo skips quarter turns a panorama cannot fill and turns it halfway instead", async () => {
+    const { layer } = await renderCanvas({ layers: [photoLayer({ width: 1200, height: 200 })] });
+    await openEditor();
+
+    await editor().getByRole("button", { name: "Rotate photo" }).click();
+    await editor().getByRole("button", { name: "Done" }).click();
+
+    // Upright, a 6:1 photo would need 6x zoom to fill its 6:1 frame, beyond the 5x limit.
+    const { rotation, scale } = layer("photo", "photo").photoTransform;
+    expect(rotation).toBe(180);
+    expect(scale).toBeCloseTo(1, 2);
+  });
+
+  test("Tab and Shift+Tab keep focus inside the editor", async () => {
+    await renderCanvas({ layers: [photoLayer()] });
+    await openEditor();
+    const done = editor().getByRole("button", { name: "Done" }).element() as HTMLElement;
+    const dialog = editor().element();
+
+    done.focus();
+    await userEvent.keyboard("{Tab}");
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(stage().element());
+
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(document.activeElement).toBe(done);
+  });
+
+  test("a slow auto enhance result does not overwrite adjustments made while it was pending", async () => {
+    const { layer } = await renderCanvas({ layers: [photoLayer()] });
+    await openEditor();
+
+    await editor().getByRole("switch", { name: "Auto enhance" }).click();
+    (editor().getByRole("slider", { name: "Exposure" }).element() as HTMLInputElement).focus();
+    await userEvent.keyboard("{End}");
+    toneAnalysis.release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    await expect.element(editor().getByText("+2.00 EV")).toBeVisible();
+    await expect.element(editor().getByRole("switch", { name: "Auto enhance" })).not.toBeChecked();
+    await editor().getByRole("button", { name: "Done" }).click();
+    expect(layer("photo", "photo").filter.exposure).toBe(2);
+    expect(layer("photo", "photo").filter.brightness).toBe(1);
+  });
+
+  test("Escape and Cancel discard the edits", async () => {
+    const { layer } = await renderCanvas({ layers: [photoLayer()] });
+    const original = layer("photo", "photo");
+
+    await openEditor();
+    await editor().getByRole("button", { name: "Sepia" }).click();
+    await userEvent.keyboard("{Escape}");
+    await expect.element(editor()).not.toBeInTheDocument();
+    expect(layer("photo", "photo")).toEqual(original);
+
+    await openEditor();
+    await editor().getByRole("button", { name: "Rotate photo" }).click();
+    await editor().getByRole("button", { name: "Cancel" }).click();
+    await expect.element(editor()).not.toBeInTheDocument();
+    expect(layer("photo", "photo")).toEqual(original);
+  });
+
+  test("Edit photo in the layer menu opens the editor", async () => {
+    await renderCanvas({ layers: [photoLayer()] });
+
+    await layerHitbox("photo").click({ button: "right" });
+    await page
+      .getByRole("menu", { name: "Photo layer actions" })
+      .getByRole("menuitem", { name: "Edit photo" })
+      .click();
+
+    await expect.element(editor()).toBeVisible();
   });
 });
 

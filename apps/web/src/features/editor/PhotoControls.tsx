@@ -7,19 +7,34 @@ import { NumericInput } from "../../components/NumericInput";
 import type { Asset } from "../../types";
 import { getPhotoResolutionWarning } from "./photoResolution";
 
-type PhotoAdjustmentKey = "brightness" | "contrast" | "saturation" | "shadows" | "highlights";
+type PhotoAdjustmentKey =
+  | "exposure"
+  | "brightness"
+  | "contrast"
+  | "saturation"
+  | "shadows"
+  | "highlights";
 
-type PhotoAdjustment = {
+export type PhotoAdjustment = {
   key: PhotoAdjustmentKey;
   label: string;
   min: number;
   max: number;
   neutral: number;
+  format?: (value: number) => string;
 };
 
 // Ranges match the editor-core filter schema so any saved value is editable; values are shown
-// as -100..+100 on each side of neutral.
-const photoAdjustments: PhotoAdjustment[] = [
+// as -100..+100 on each side of neutral unless the adjustment has its own format.
+export const photoAdjustments: PhotoAdjustment[] = [
+  {
+    key: "exposure",
+    label: "Exposure",
+    min: -2,
+    max: 2,
+    neutral: 0,
+    format: (value) => `${value > 0 ? "+" : ""}${value.toFixed(2)} EV`,
+  },
   { key: "brightness", label: "Brightness", min: 0.2, max: 2, neutral: 1 },
   { key: "contrast", label: "Contrast", min: 0.2, max: 2, neutral: 1 },
   { key: "highlights", label: "Highlights", min: -1, max: 1, neutral: 0 },
@@ -28,6 +43,7 @@ const photoAdjustments: PhotoAdjustment[] = [
 ];
 
 const formatAdjustment = (adjustment: PhotoAdjustment, value: number): string => {
+  if (adjustment.format) return adjustment.format(value);
   const span =
     value >= adjustment.neutral
       ? adjustment.max - adjustment.neutral
@@ -36,7 +52,7 @@ const formatAdjustment = (adjustment: PhotoAdjustment, value: number): string =>
   return amount > 0 ? `+${amount}` : String(amount);
 };
 
-function PhotoAdjustmentSlider({
+export function PhotoAdjustmentSlider({
   adjustment,
   value,
   onChange,

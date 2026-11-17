@@ -185,6 +185,7 @@ const defaultPhotoFilter = {
   brightness: 1,
   contrast: 1,
   saturation: 1,
+  exposure: 0,
   shadows: 0,
   highlights: 0,
 };
@@ -380,6 +381,8 @@ export const photoLayerSchema = pageLayerBaseSchema.extend({
       brightness: z.number().finite().min(0.2).max(2),
       contrast: z.number().finite().min(0.2).max(2),
       saturation: z.number().finite().min(0).max(3),
+      // Exposure in photographic stops, applied as a gain in linear light.
+      exposure: z.number().finite().min(-2).max(2).default(0),
       // Tone adjustments in [-1, 1]: positive lifts, negative deepens that tonal range.
       shadows: z.number().finite().min(-1).max(1).default(0),
       highlights: z.number().finite().min(-1).max(1).default(0),
@@ -1428,6 +1431,7 @@ const isIdentityPhotoFilter = (filter: PhotoLayer["filter"]): boolean =>
   filter.brightness === 1 &&
   filter.contrast === 1 &&
   filter.saturation === 1 &&
+  filter.exposure === 0 &&
   filter.shadows === 0 &&
   filter.highlights === 0;
 
@@ -1471,12 +1475,28 @@ const photoToneCurve = (shadows: number, highlights: number): number[] => {
   });
 };
 
-const photoToneCurvePrimitiveSvg = (shadows: number, highlights: number): string => {
-  const tableValues = photoToneCurve(shadows, highlights).map(formatMatrixValue).join(" ");
+const photoTableTransferSvg = (values: number[], attribute: string): string => {
+  const tableValues = values.map(formatMatrixValue).join(" ");
   const channels = ["R", "G", "B"]
     .map((channel) => `<feFunc${channel} type="table" tableValues="${tableValues}" />`)
     .join("");
-  return `<feComponentTransfer data-photo-tone="true">${channels}</feComponentTransfer>`;
+  return `<feComponentTransfer ${attribute}="true">${channels}</feComponentTransfer>`;
+};
+
+const photoToneCurvePrimitiveSvg = (shadows: number, highlights: number): string =>
+  photoTableTransferSvg(photoToneCurve(shadows, highlights), "data-photo-tone");
+
+const srgbToLinear = (value: number) =>
+  value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+const linearToSrgb = (value: number) =>
+  value <= 0.0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055;
+
+/** Exposure curve: scales linear light by 2^stops, so it behaves like a camera exposure change. */
+const photoExposureCurve = (stops: number): number[] => {
+  const gain = 2 ** stops;
+  return Array.from({ length: photoToneCurveSamples + 1 }, (_, index) =>
+    Math.min(linearToSrgb(srgbToLinear(index / photoToneCurveSamples) * gain), 1),
+  );
 };
 
 const renderPhotoColorFilterSvg = (layer: PhotoLayer, filterId: string): string => {
@@ -1484,10 +1504,13 @@ const renderPhotoColorFilterSvg = (layer: PhotoLayer, filterId: string): string 
     return "";
   }
 
-  const { brightness, contrast, saturation, shadows, highlights } = layer.filter;
+  const { brightness, contrast, saturation, exposure, shadows, highlights } = layer.filter;
   // One primitive per step so each result is clamped to [0, 1], matching chained CSS filters.
   const primitives = [
     ...photoFilterPresetTransforms[layer.filter.preset].map(colorTransformPrimitiveSvg),
+    exposure === 0
+      ? null
+      : photoTableTransferSvg(photoExposureCurve(exposure), "data-photo-exposure"),
     brightness === 1 ? null : colorTransformPrimitiveSvg(colorTransformFns.brightness(brightness)),
     contrast === 1 ? null : colorTransformPrimitiveSvg(colorTransformFns.contrast(contrast)),
     shadows === 0 && highlights === 0 ? null : photoToneCurvePrimitiveSvg(shadows, highlights),
