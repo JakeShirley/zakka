@@ -5,14 +5,17 @@ import { join } from "node:path";
 import { collectZipEntries, type ZipEntry, zipLength } from "../../zip-stream.js";
 import {
   emptyShutterflyArchiveProgress,
+  type ShutterflyArchivePart,
   type ShutterflyArchiveProgress,
   type ShutterflyArchiveRunOptions,
+  shutterflyArchiveParts,
 } from "./archive.js";
 
 export type ShutterflyArchiveStatus = "running" | "completed" | "failed" | "interrupted";
 
 export type ShutterflyArchive = {
   id: string;
+  parts: ShutterflyArchivePart[];
   status: ShutterflyArchiveStatus;
   progress: ShutterflyArchiveProgress;
   error: { code: string; message: string } | null;
@@ -100,9 +103,13 @@ export const createShutterflyArchives = (options: {
     }
 
     try {
-      const archive = JSON.parse(
+      const stored = JSON.parse(
         await readFile(join(archiveDir(accountId, archiveId), "archive.json"), "utf8"),
-      ) as ShutterflyArchive;
+      ) as Omit<ShutterflyArchive, "parts"> & { parts?: ShutterflyArchivePart[] };
+      const archive: ShutterflyArchive = {
+        ...stored,
+        parts: stored.parts ?? [...shutterflyArchiveParts],
+      };
 
       // A running archive with no job in this process was cut off by a restart.
       return archive.status === "running" ? { ...archive, status: "interrupted" } : archive;
@@ -145,6 +152,7 @@ export const createShutterflyArchives = (options: {
         archive.progress = await options.run(accountId, {
           filesDir: join(directory, "files"),
           stateDir: join(directory, "state"),
+          parts: archive.parts,
           signal: controller.signal,
           onProgress: (progress) => {
             archive.progress = progress;
@@ -194,8 +202,11 @@ export const createShutterflyArchives = (options: {
 
     get: load,
 
-    /** Starts a new archive, or returns the one already running for this account. */
-    start: async (accountId: string): Promise<ShutterflyArchive> => {
+    /** Starts a new archive of the given parts, or returns the one already running for this account. */
+    start: async (
+      accountId: string,
+      parts: readonly ShutterflyArchivePart[] = shutterflyArchiveParts,
+    ): Promise<ShutterflyArchive> => {
       const active = findRunning(accountId);
 
       if (active) {
@@ -206,6 +217,7 @@ export const createShutterflyArchives = (options: {
 
       return launch(accountId, {
         id: `shutterfly_archive_${randomUUID()}`,
+        parts: shutterflyArchiveParts.filter((part) => parts.includes(part)),
         status: "running",
         progress: emptyShutterflyArchiveProgress(),
         error: null,

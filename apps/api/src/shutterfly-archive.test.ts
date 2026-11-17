@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createApp } from "./app.js";
 import { createCredentialCipher } from "./integrations/credential-cipher.js";
+import { shutterflyProjectKind } from "./integrations/shutterfly/archive.js";
 import {
   parseShutterflyAlbumMomentIds,
   readContentDispositionFileName,
@@ -387,6 +388,23 @@ describe("Shutterfly archive helpers", () => {
     expect(readContentDispositionFileName(null)).toBeNull();
   });
 
+  it("sorts projects into archive parts by their Shutterfly category", () => {
+    const kind = (productCategory: string | undefined, group?: string) =>
+      shutterflyProjectKind({
+        _id: "1",
+        ...(productCategory ? { productCategory } : {}),
+        ...(group ? { projectType: { group } } : {}),
+      });
+
+    expect(kind("Books")).toBe("books");
+    expect(kind(undefined, "photobooks")).toBe("books");
+    expect(kind("Calendars")).toBe("calendars");
+    expect(kind("Cards & Stationery")).toBe("cards");
+    expect(kind("Prints")).toBe("prints");
+    expect(kind("Notebooks")).toBe("otherProjects");
+    expect(kind(undefined)).toBe("otherProjects");
+  });
+
   it("streams a ZIP whose length matches the precomputed size", async () => {
     const dir = await createTempDir();
 
@@ -534,6 +552,63 @@ describe("Shutterfly archive routes", () => {
         })
       ).status,
     ).toBe(404);
+  });
+
+  it("archives only the chosen parts", async () => {
+    const testApp = await createTestApp();
+    const { app, cookie, fake } = testApp;
+
+    await connect(testApp);
+
+    const started = await app.request("/api/v1/integrations/shutterfly/archives", {
+      body: JSON.stringify({ parts: ["cards", "albums"] }),
+      headers: { "content-type": "application/json", cookie },
+      method: "POST",
+    });
+
+    expect(started.status).toBe(202);
+
+    const { id, parts } = shutterflyArchiveResponseSchema.parse(await started.json());
+
+    expect(parts).toEqual(["albums", "cards"]);
+    expect(await waitForArchive(testApp, id)).toMatchObject({
+      status: "completed",
+      parts: ["albums", "cards"],
+      progress: {
+        photos: { completed: 2, failed: 0, total: 2 },
+        projects: { completed: 1, failed: 0, total: 1 },
+        albums: { completed: 2, failed: 0, total: 2 },
+        orders: 0,
+      },
+    });
+    // Only album photos are downloaded when the photo library is left out.
+    expect([...fake.downloads].sort()).toEqual(["102", "104"]);
+
+    const files = await download(testApp, id);
+    const names = [...files.keys()];
+
+    expect(names.some((name) => name.startsWith("orders/"))).toBe(false);
+    expect(names.some((name) => name.startsWith("projects/Books/"))).toBe(false);
+    expect(readJson(files, "projects/projects.json")).toEqual([
+      expect.objectContaining({ _id: "2000000000002" }),
+    ]);
+    expect(names).toContain("projects/Cards/Holiday card (2000000000002)/project.json");
+    expect(names).toContain("albums/albums.json");
+    expect(readJson(files, "account.json")).toMatchObject({ parts: ["albums", "cards"] });
+  });
+
+  it("rejects an empty list of parts", async () => {
+    const testApp = await createTestApp();
+
+    await connect(testApp);
+
+    const response = await testApp.app.request("/api/v1/integrations/shutterfly/archives", {
+      body: JSON.stringify({ parts: [] }),
+      headers: { "content-type": "application/json", cookie: testApp.cookie },
+      method: "POST",
+    });
+
+    expect(response.status).toBe(400);
   });
 
   it("stops with a reconnect error when Shutterfly rejects the sign-in", async () => {

@@ -62,6 +62,7 @@ import {
   type ServerLogLevel,
   type ServerLogListResponse,
   type ShutterflyArchiveListResponse,
+  type ShutterflyArchivePart,
   type ShutterflyArchiveResponse,
   type ShutterflyConnectionResponse,
   type ShutterflyImportJobResponse,
@@ -506,12 +507,12 @@ export const createApiClient = (baseUrl = defaultBaseUrl) => ({
       "/api/v1/integrations/shutterfly/archives",
     ),
 
-  startShutterflyArchive: (): Promise<ShutterflyArchiveResponse> =>
+  startShutterflyArchive: (parts: ShutterflyArchivePart[]): Promise<ShutterflyArchiveResponse> =>
     requestJson(
       baseUrl,
       shutterflyArchiveResponseSchema,
       "/api/v1/integrations/shutterfly/archives",
-      { method: "POST" },
+      { body: JSON.stringify({ parts }), method: "POST" },
     ),
 
   getShutterflyArchive: (archiveId: string): Promise<ShutterflyArchiveResponse> =>

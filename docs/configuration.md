@@ -43,6 +43,8 @@ A connected user can also archive everything in their Shutterfly account from **
 - every saved project of any type (books, cards, calendars, and so on), as Shutterfly's raw project JSON plus the photos, design assets, and thumbnail it uses
 - order history, including legacy orders, as raw JSON
 
+Under **What to archive**, the user can pick only some of these parts, for example just their cards to try it out first: the photo library, albums (with their photos), photo books, calendars, cards and stationery, prints, other projects, and order history. Projects are sorted into those groups by the product category Shutterfly reports; anything that doesn't match a known group counts as an other project. Everything is selected by default. **Resume** and **Update** keep the parts the archive was started with. `POST /api/v1/integrations/shutterfly/archives` takes an optional `{ "parts": [...] }` body; without one, it archives everything.
+
 The archive is built on the server under `ZAKKA_DATA_DIR/shutterfly-archives` and kept until the user deletes it. It needs about as much free disk space as the user's photo library, and a large library can take hours. The archive keeps running if the user leaves the page. If the server restarts, the archive is marked interrupted, and **Resume** continues where it left off without downloading saved files again. Items that fail are listed in the archive's `errors.json` and retried on resume. **Update** on a finished archive downloads anything added since. When an archive is not running, **Download ZIP** streams it as an uncompressed ZIP (ZIP64, so archives over 4 GB work), with a `README.txt` describing the layout.
 
 ## AI assistants (MCP)

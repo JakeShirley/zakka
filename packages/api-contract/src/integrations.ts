@@ -248,9 +248,44 @@ export const shutterflyArchiveStepSchema = z
       "The step an archive is on: signing in, saving order history, saving projects, reading albums, downloading original photos, or writing the archive's index files.",
   });
 
+export const shutterflyArchiveParts = [
+  "photos",
+  "albums",
+  "books",
+  "calendars",
+  "cards",
+  "prints",
+  "otherProjects",
+  "orders",
+] as const;
+
+export const shutterflyArchivePartSchema = z
+  .enum(shutterflyArchiveParts)
+  .openapi("ShutterflyArchivePart", {
+    description:
+      "A part of the Shutterfly account to archive: the photo library, albums (with their photos), photo books, calendars, cards and stationery, prints, every other project type, or order history.",
+  });
+
+export const shutterflyArchiveStartRequestSchema = z
+  .object({
+    parts: z
+      .array(shutterflyArchivePartSchema)
+      .min(1)
+      .optional()
+      .openapi({
+        description: "What to archive. Defaults to everything.",
+        example: ["books", "calendars"],
+      }),
+  })
+  .openapi("ShutterflyArchiveStartRequest");
+
 export const shutterflyArchiveResponseSchema = z
   .object({
     id: z.string().openapi({ example: "shutterfly_archive_6f1c2d9e-5b1a-4c55-9a9f-2f1d4b7e8c01" }),
+    parts: z.array(shutterflyArchivePartSchema).openapi({
+      description: "What this archive includes. Resuming or updating it keeps the same parts.",
+      example: [...shutterflyArchiveParts],
+    }),
     status: z.enum(["running", "completed", "failed", "interrupted"]).openapi({
       description:
         "`interrupted` archives were stopped by a server restart or shutdown; resume them to continue where they left off.",
@@ -286,6 +321,8 @@ export const shutterflyArchiveListResponseSchema = z
   .openapi("ShutterflyArchiveListResponse");
 
 export type ShutterflyArchiveStep = z.infer<typeof shutterflyArchiveStepSchema>;
+export type ShutterflyArchivePart = z.infer<typeof shutterflyArchivePartSchema>;
+export type ShutterflyArchiveStartRequest = z.infer<typeof shutterflyArchiveStartRequestSchema>;
 export type ShutterflyArchiveResponse = z.infer<typeof shutterflyArchiveResponseSchema>;
 export type ShutterflyArchiveListResponse = z.infer<typeof shutterflyArchiveListResponseSchema>;
 
@@ -323,10 +360,16 @@ export const shutterflyArchiveStartRoute = createRoute({
   method: "post",
   path: "/api/v1/integrations/shutterfly/archives",
   tags: ["Integrations"],
+  request: {
+    body: {
+      content: { "application/json": { schema: shutterflyArchiveStartRequestSchema } },
+      required: false,
+    },
+  },
   responses: {
     202: {
       description:
-        "Starts archiving everything in the connected Shutterfly account in the background: original photos and videos, albums, every project with its photos and artwork, and order history. Starting while an archive is already running returns the running archive.",
+        "Starts archiving the connected Shutterfly account in the background: original photos and videos, albums, projects with their photos and artwork, and order history, or only the chosen `parts`. Starting while an archive is already running returns the running archive.",
       content: { "application/json": { schema: shutterflyArchiveResponseSchema } },
     },
     ...shutterflyArchiveErrorResponses,

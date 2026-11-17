@@ -3616,7 +3616,9 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     }
 
     return context.json(
-      shutterflyArchiveResponseSchema.parse(await required.archives.start(required.accountId)),
+      shutterflyArchiveResponseSchema.parse(
+        await required.archives.start(required.accountId, context.req.valid("json")?.parts),
+      ),
       202,
     );
   });

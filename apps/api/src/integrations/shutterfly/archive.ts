@@ -24,6 +24,24 @@ export type ShutterflyArchiveStep =
 
 export type ShutterflyArchiveSection = "orders" | "projects" | "albums" | "photos";
 
+export const shutterflyArchiveParts = [
+  "photos",
+  "albums",
+  "books",
+  "calendars",
+  "cards",
+  "prints",
+  "otherProjects",
+  "orders",
+] as const;
+
+export type ShutterflyArchivePart = (typeof shutterflyArchiveParts)[number];
+
+type ShutterflyProjectKind = Extract<
+  ShutterflyArchivePart,
+  "books" | "calendars" | "cards" | "prints" | "otherProjects"
+>;
+
 export type ShutterflyArchiveCount = { completed: number; failed: number; total: number };
 
 export type ShutterflyArchiveProgress = {
@@ -54,6 +72,8 @@ export type ShutterflyArchiveRunOptions = {
   filesDir: string;
   /** Private bookkeeping that lets an interrupted archive resume where it stopped. */
   stateDir: string;
+  /** What to archive. */
+  parts: readonly ShutterflyArchivePart[];
   signal: AbortSignal;
   clock: () => Date;
   onProgress: (progress: ShutterflyArchiveProgress) => void;
@@ -127,13 +147,36 @@ const readString = (value: unknown, key: string): string | null => {
   return typeof field === "string" && field.trim() ? field.trim() : null;
 };
 
-const projectCategory = (project: ShutterflyRawProject): string => {
+const projectCategoryLabel = (project: ShutterflyRawProject): string | null => {
   const projectType = project.projectType as Record<string, unknown> | undefined;
 
-  return safeFileName(
-    readString(project, "productCategory") ?? readString(projectType, "group"),
-    "Other",
-  );
+  return readString(project, "productCategory") ?? readString(projectType, "group");
+};
+
+const projectCategory = (project: ShutterflyRawProject): string =>
+  safeFileName(projectCategoryLabel(project), "Other");
+
+/** Sorts a project into one of the archive's project parts by its Shutterfly category. */
+export const shutterflyProjectKind = (project: ShutterflyRawProject): ShutterflyProjectKind => {
+  const category = projectCategoryLabel(project)?.toLowerCase() ?? "";
+
+  if (/\bbooks?\b|photo ?books?/.test(category)) {
+    return "books";
+  }
+
+  if (category.includes("calendar")) {
+    return "calendars";
+  }
+
+  if (/card|stationery|invitation|announcement/.test(category)) {
+    return "cards";
+  }
+
+  if (category.includes("print")) {
+    return "prints";
+  }
+
+  return "otherProjects";
 };
 
 const urlExtension = (url: string, fallback: string): string => {
@@ -167,8 +210,26 @@ const createNameReserver = (taken: Iterable<string> = []) => {
   };
 };
 
-const readme = (archivedAt: string) => `Shutterfly account archive
+const partLabels: Record<ShutterflyArchivePart, string> = {
+  photos: "photo library",
+  albums: "albums",
+  books: "photo books",
+  calendars: "calendars",
+  cards: "cards and stationery",
+  prints: "prints",
+  otherProjects: "other projects",
+  orders: "order history",
+};
+
+const readme = (
+  archivedAt: string,
+  parts: ReadonlySet<ShutterflyArchivePart>,
+) => `Shutterfly account archive
 Created by Zakka on ${archivedAt}
+Includes: ${shutterflyArchiveParts
+  .filter((part) => parts.has(part))
+  .map((part) => partLabels[part])
+  .join(", ")}
 
 account.json            Shutterfly account details and totals for this archive.
 photos/                 Original photos and videos from your Shutterfly photo library and albums.
@@ -176,7 +237,7 @@ photos/index.json       Maps each Shutterfly moment id to its file in photos/.
 albums/albums.json      Every album, including albums shared with you.
 albums/<album>/album.json
                         The album's details and the files in photos/ that belong to it.
-projects/projects.json  Every saved and purchased project (books, cards, calendars, gifts, ...).
+projects/projects.json  Every archived saved and purchased project (books, cards, calendars, ...).
 projects/<type>/<project>/
   project.json          The complete project exactly as Shutterfly stores it.
   thumbnail.*           Shutterfly's preview of the project, when available.
@@ -188,11 +249,14 @@ orders/orders.json      Order history.
 orders/legacy-orders.json
                         Orders from Shutterfly's previous order system.
 errors.json             Anything that could not be archived. Resume the archive in Zakka to retry.
+
+Folders for parts that were not included are left out.
 `;
 
 /**
- * Archives everything in a Shutterfly account into `filesDir`. Completed photos and projects are
- * recorded in `stateDir`, so running again on the same directories resumes instead of starting over.
+ * Archives the chosen parts of a Shutterfly account into `filesDir`. Completed photos and projects
+ * are recorded in `stateDir`, so running again on the same directories resumes instead of starting
+ * over.
  */
 export const runShutterflyArchive = async (
   dependencies: ShutterflyArchiveDependencies,
@@ -200,6 +264,11 @@ export const runShutterflyArchive = async (
 ): Promise<ShutterflyArchiveProgress> => {
   const { client, withSession } = dependencies;
   const { filesDir, stateDir, signal } = options;
+  const parts = new Set(options.parts);
+  const projectKinds = new Set<ShutterflyArchivePart>(
+    options.parts.filter((part) => part !== "photos" && part !== "albums" && part !== "orders"),
+  );
+  const includePhotos = parts.has("photos") || parts.has("albums");
   const progress = emptyShutterflyArchiveProgress();
   const errors: ShutterflyArchiveItemError[] = [];
   const tempDir = join(stateDir, "tmp");
@@ -251,12 +320,18 @@ export const runShutterflyArchive = async (
   const session = await withSession(async (current) => current);
 
   // Orders -----------------------------------------------------------------------------------------
-  setStep("orders");
+  const orderLists = parts.has("orders")
+    ? ([
+        ["orders/orders.json", client.listOrders],
+        ["orders/legacy-orders.json", client.listLegacyOrders],
+      ] as const)
+    : [];
 
-  for (const [file, list] of [
-    ["orders/orders.json", client.listOrders],
-    ["orders/legacy-orders.json", client.listLegacyOrders],
-  ] as const) {
+  if (orderLists.length > 0) {
+    setStep("orders");
+  }
+
+  for (const [file, list] of orderLists) {
     try {
       const orders = await withSession((current) => list(current));
 
@@ -269,7 +344,9 @@ export const runShutterflyArchive = async (
   }
 
   // Projects ---------------------------------------------------------------------------------------
-  setStep("projects");
+  if (projectKinds.size > 0) {
+    setStep("projects");
+  }
 
   const completedProjects = new Map(
     (await readJsonLines<CompletedProject>(completedProjectsPath)).map((entry) => [
@@ -279,11 +356,15 @@ export const runShutterflyArchive = async (
   );
   let projects: ShutterflyRawProject[] = [];
 
-  try {
-    projects = await withSession((current) => client.listAllProjects(current));
-    await writeArchiveJson("projects/projects.json", projects);
-  } catch (error) {
-    recordError("projects", null, error);
+  if (projectKinds.size > 0) {
+    try {
+      projects = (await withSession((current) => client.listAllProjects(current))).filter(
+        (project) => projectKinds.has(shutterflyProjectKind(project)),
+      );
+      await writeArchiveJson("projects/projects.json", projects);
+    } catch (error) {
+      recordError("projects", null, error);
+    }
   }
 
   progress.projects.total = projects.length;
@@ -487,15 +568,17 @@ export const runShutterflyArchive = async (
   );
 
   // Albums -----------------------------------------------------------------------------------------
-  setStep("albums");
-
   let albums: ShutterflyAlbumSummary[] = [];
   const albumContents = new Map<string, ShutterflyAlbumContents>();
 
-  try {
-    albums = await withSession((current) => client.listAlbums(current));
-  } catch (error) {
-    recordError("albums", null, error);
+  if (parts.has("albums")) {
+    setStep("albums");
+
+    try {
+      albums = await withSession((current) => client.listAlbums(current));
+    } catch (error) {
+      recordError("albums", null, error);
+    }
   }
 
   progress.albums.total = albums.length;
@@ -519,7 +602,9 @@ export const runShutterflyArchive = async (
   });
 
   // Photos -----------------------------------------------------------------------------------------
-  setStep("photos");
+  if (includePhotos) {
+    setStep("photos");
+  }
 
   const completedPhotos = new Map(
     (await readJsonLines<CompletedPhoto>(completedPhotosPath)).map((entry) => [
@@ -529,12 +614,14 @@ export const runShutterflyArchive = async (
   );
   const momentIds = new Set<string>();
 
-  try {
-    for (const id of await withSession((current) => client.listLibraryMomentIds(current))) {
-      momentIds.add(id);
+  if (parts.has("photos")) {
+    try {
+      for (const id of await withSession((current) => client.listLibraryMomentIds(current))) {
+        momentIds.add(id);
+      }
+    } catch (error) {
+      recordError("photos", null, error);
     }
-  } catch (error) {
-    recordError("photos", null, error);
   }
 
   for (const contents of albumContents.values()) {
@@ -557,7 +644,10 @@ export const runShutterflyArchive = async (
     [...completedPhotos.values()].map((entry) => entry.file.replace(/^photos\//, "")),
   );
 
-  await mkdir(join(filesDir, "photos"), { recursive: true });
+  if (includePhotos) {
+    await mkdir(join(filesDir, "photos"), { recursive: true });
+  }
+
   await mapWithConcurrency(
     [...momentIds].filter((id) => !completedPhotos.has(id)),
     photoConcurrency,
@@ -599,12 +689,14 @@ export const runShutterflyArchive = async (
 
   const photoFile = (momentId: string) => completedPhotos.get(momentId)?.file ?? null;
 
-  await writeArchiveJson(
-    "photos/index.json",
-    [...completedPhotos.values()]
-      .filter((entry) => momentIds.has(entry.momentId))
-      .sort((left, right) => left.file.localeCompare(right.file)),
-  );
+  if (includePhotos) {
+    await writeArchiveJson(
+      "photos/index.json",
+      [...completedPhotos.values()]
+        .filter((entry) => momentIds.has(entry.momentId))
+        .sort((left, right) => left.file.localeCompare(right.file)),
+    );
+  }
 
   const reserveAlbumFolder = createNameReserver();
   const albumIndex = [];
@@ -633,7 +725,9 @@ export const runShutterflyArchive = async (
     });
   }
 
-  await writeArchiveJson("albums/albums.json", albumIndex);
+  if (parts.has("albums")) {
+    await writeArchiveJson("albums/albums.json", albumIndex);
+  }
 
   const archivedAt = options.clock().toISOString();
 
@@ -643,12 +737,13 @@ export const runShutterflyArchive = async (
     photoLibraryId: session.libraryId,
     email: session.email,
     archivedAt,
+    parts: shutterflyArchiveParts.filter((part) => parts.has(part)),
     photos: progress.photos,
     projects: progress.projects,
     albums: progress.albums,
     orders: progress.orders,
   });
-  await writeArchiveFile("README.txt", readme(archivedAt));
+  await writeArchiveFile("README.txt", readme(archivedAt, parts));
   await rm(tempDir, { force: true, recursive: true });
   report();
 

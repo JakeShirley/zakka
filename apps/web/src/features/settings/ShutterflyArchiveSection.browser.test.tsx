@@ -1,4 +1,4 @@
-import type { ShutterflyArchiveResponse } from "@zakka/api-contract";
+import { type ShutterflyArchiveResponse, shutterflyArchiveParts } from "@zakka/api-contract";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
@@ -18,6 +18,7 @@ const progress: ShutterflyArchiveResponse["progress"] = {
 
 const archive = (overrides: Partial<ShutterflyArchiveResponse>): ShutterflyArchiveResponse => ({
   id: "shutterfly_archive_1",
+  parts: [...shutterflyArchiveParts],
   status: "completed",
   progress,
   error: null,
@@ -30,6 +31,18 @@ const archive = (overrides: Partial<ShutterflyArchiveResponse>): ShutterflyArchi
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+const partName = (part: (typeof shutterflyArchiveParts)[number]) =>
+  ({
+    photos: "Photo library",
+    albums: "Albums",
+    books: "Photo books",
+    calendars: "Calendars",
+    cards: "Cards & stationery",
+    prints: "Prints",
+    otherProjects: "Other projects",
+    orders: "Order history",
+  })[part];
 
 describe("ShutterflyArchiveSection", () => {
   test("starts an archive and shows its progress", async () => {
@@ -50,13 +63,41 @@ describe("ShutterflyArchiveSection", () => {
     await render(<ShutterflyArchiveSection connected />);
     await page.getByRole("button", { name: "Archive my Shutterfly account" }).click();
 
-    expect(startShutterflyArchive).toHaveBeenCalledOnce();
+    expect(startShutterflyArchive).toHaveBeenCalledWith(shutterflyArchiveParts);
     await expect.element(page.getByText("Downloading original photos")).toBeVisible();
     await expect.element(page.getByText(/300 of 1,202 photos/)).toBeVisible();
     await expect
       .element(page.getByRole("button", { name: "Archive my Shutterfly account" }))
       .not.toBeInTheDocument();
     await expect.element(page.getByRole("link", { name: "Download ZIP" })).not.toBeInTheDocument();
+  });
+
+  test("archives only the chosen parts", async () => {
+    vi.spyOn(apiClient, "listShutterflyArchives").mockResolvedValue({ archives: [] });
+    const startShutterflyArchive = vi
+      .spyOn(apiClient, "startShutterflyArchive")
+      .mockResolvedValue(archive({ parts: ["cards", "orders"], progress }));
+
+    await render(<ShutterflyArchiveSection connected />);
+
+    for (const part of shutterflyArchiveParts) {
+      await page.getByRole("checkbox", { name: partName(part) }).click();
+    }
+
+    await expect
+      .element(page.getByRole("button", { name: "Archive selected parts" }))
+      .toBeDisabled();
+
+    await page.getByRole("checkbox", { name: "Cards & stationery" }).click();
+    await page.getByRole("checkbox", { name: "Order history" }).click();
+    await page.getByRole("button", { name: "Archive selected parts" }).click();
+
+    expect(startShutterflyArchive).toHaveBeenCalledWith(["cards", "orders"]);
+    await expect
+      .element(page.getByText("Includes: Cards & stationery, Order history"))
+      .toBeVisible();
+    await expect.element(page.getByText(/14 of 14 projects · 37 orders/)).toBeVisible();
+    await expect.element(page.getByText(/\d photos/)).not.toBeInTheDocument();
   });
 
   test("downloads, resumes, and deletes finished archives", async () => {

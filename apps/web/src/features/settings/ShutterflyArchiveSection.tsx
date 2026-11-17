@@ -5,7 +5,12 @@ import {
   ArrowClockwiseRegular,
   DeleteRegular,
 } from "@fluentui/react-icons";
-import type { ShutterflyArchiveResponse, ShutterflyArchiveStep } from "@zakka/api-contract";
+import {
+  type ShutterflyArchivePart,
+  type ShutterflyArchiveResponse,
+  type ShutterflyArchiveStep,
+  shutterflyArchiveParts,
+} from "@zakka/api-contract";
 import { useCallback, useEffect, useState } from "react";
 
 import { apiClient } from "../../apiClient";
@@ -29,6 +34,28 @@ const statusLabels: Record<ShutterflyArchiveResponse["status"], string> = {
   failed: "Stopped",
   interrupted: "Interrupted",
 };
+
+const partLabels: Record<ShutterflyArchivePart, string> = {
+  photos: "Photo library",
+  albums: "Albums",
+  books: "Photo books",
+  calendars: "Calendars",
+  cards: "Cards & stationery",
+  prints: "Prints",
+  otherProjects: "Other projects",
+  orders: "Order history",
+};
+
+const projectParts: readonly ShutterflyArchivePart[] = [
+  "books",
+  "calendars",
+  "cards",
+  "prints",
+  "otherProjects",
+];
+
+const includesAllParts = (parts: readonly ShutterflyArchivePart[]) =>
+  shutterflyArchiveParts.every((part) => parts.includes(part));
 
 const countLabel = (
   { completed, total }: { completed: number; total: number },
@@ -58,6 +85,16 @@ export function ShutterflyArchiveSection({ connected }: ShutterflyArchiveSection
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [selectedParts, setSelectedParts] = useState<ShutterflyArchivePart[]>([
+    ...shutterflyArchiveParts,
+  ]);
+
+  const togglePart = (part: ShutterflyArchivePart, checked: boolean) =>
+    setSelectedParts((current) =>
+      shutterflyArchiveParts.filter((candidate) =>
+        candidate === part ? checked : current.includes(candidate),
+      ),
+    );
 
   const replaceArchive = useCallback((archive: ShutterflyArchiveResponse) => {
     setArchives((current) => [
@@ -105,7 +142,7 @@ export function ShutterflyArchiveSection({ connected }: ShutterflyArchiveSection
 
   const start = () =>
     run("new", async () => {
-      replaceArchive(await apiClient.startShutterflyArchive());
+      replaceArchive(await apiClient.startShutterflyArchive(selectedParts));
     });
 
   const resume = (archiveId: string) =>
@@ -127,7 +164,7 @@ export function ShutterflyArchiveSection({ connected }: ShutterflyArchiveSection
         Save a copy of everything in your Shutterfly account: original photos and videos, albums,
         every project, and order history. The archive is built on this server, so it can take hours
         and needs as much free disk space as your photo library. You can leave this page while it
-        runs.
+        runs. To try it out first, archive just one part, such as your cards.
       </p>
 
       {archives === null && !error ? (
@@ -142,6 +179,16 @@ export function ShutterflyArchiveSection({ connected }: ShutterflyArchiveSection
         const busy = busyId === archive.id;
         const label = new Date(archive.createdAt).toLocaleDateString();
         const progressValue = stepProgress(archive);
+        const has = (part: ShutterflyArchivePart) => archive.parts.includes(part);
+        const counts = [
+          ...(has("photos") || has("albums")
+            ? [countLabel(archive.progress.photos, "photos")]
+            : []),
+          ...(projectParts.some(has) ? [countLabel(archive.progress.projects, "projects")] : []),
+          ...(has("albums") ? [countLabel(archive.progress.albums, "albums")] : []),
+          ...(has("orders") ? [`${archive.progress.orders.toLocaleString()} orders`] : []),
+          formatBytes(archive.progress.bytes),
+        ];
 
         return (
           <article key={archive.id} className="shutterfly-archive-item">
@@ -162,13 +209,13 @@ export function ShutterflyArchiveSection({ connected }: ShutterflyArchiveSection
               </div>
             ) : null}
 
-            <p className="shutterfly-archive-counts">
-              {countLabel(archive.progress.photos, "photos")} ·{" "}
-              {countLabel(archive.progress.projects, "projects")} ·{" "}
-              {countLabel(archive.progress.albums, "albums")} ·{" "}
-              {archive.progress.orders.toLocaleString()} orders ·{" "}
-              {formatBytes(archive.progress.bytes)}
-            </p>
+            {includesAllParts(archive.parts) ? null : (
+              <p className="shutterfly-archive-counts">
+                Includes: {archive.parts.map((part) => partLabels[part]).join(", ")}
+              </p>
+            )}
+
+            <p className="shutterfly-archive-counts">{counts.join(" · ")}</p>
 
             {archive.progress.errorCount > 0 && !running ? (
               <p className="integration-hint">
@@ -256,18 +303,38 @@ export function ShutterflyArchiveSection({ connected }: ShutterflyArchiveSection
       })}
 
       {connected && archives !== null && !isRunning ? (
-        <div className="integration-actions">
-          <Button
-            type="button"
-            appearance={archives.length === 0 ? "primary" : "secondary"}
-            className={archives.length === 0 ? "primary-button" : "secondary-button"}
-            disabled={busyId !== null}
-            icon={<ArchiveRegular />}
-            onClick={() => void start()}
-          >
-            {busyId === "new" ? "Starting" : "Archive my Shutterfly account"}
-          </Button>
-        </div>
+        <>
+          <fieldset className="shutterfly-archive-parts">
+            <legend>What to archive</legend>
+            {shutterflyArchiveParts.map((part) => (
+              <label key={part} className="checkbox-label compact-checkbox">
+                <input
+                  type="checkbox"
+                  checked={selectedParts.includes(part)}
+                  disabled={busyId !== null}
+                  onChange={(event) => togglePart(part, event.target.checked)}
+                />
+                <span>{partLabels[part]}</span>
+              </label>
+            ))}
+          </fieldset>
+          <div className="integration-actions">
+            <Button
+              type="button"
+              appearance={archives.length === 0 ? "primary" : "secondary"}
+              className={archives.length === 0 ? "primary-button" : "secondary-button"}
+              disabled={busyId !== null || selectedParts.length === 0}
+              icon={<ArchiveRegular />}
+              onClick={() => void start()}
+            >
+              {busyId === "new"
+                ? "Starting"
+                : includesAllParts(selectedParts)
+                  ? "Archive my Shutterfly account"
+                  : "Archive selected parts"}
+            </Button>
+          </div>
+        </>
       ) : null}
 
       {error ? (

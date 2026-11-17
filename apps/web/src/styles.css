@@ -887,6 +887,28 @@ textarea:focus-visible {
   margin-right: auto;
 }
 
+.shutterfly-archive-parts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.shutterfly-archive-parts legend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.shutterfly-archive-parts > label {
+  display: grid;
+  font-size: 0.9rem;
+}
+
 .mcp-copy-row,
 .mcp-token-form {
   display: grid;

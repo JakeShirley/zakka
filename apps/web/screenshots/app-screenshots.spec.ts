@@ -659,33 +659,35 @@ const shutterflyProjects = [
 
 const shutterflyArchives = [
   {
-    id: "shutterfly_archive_running",
-    status: "running",
-    progress: {
-      step: "photos",
-      photos: { completed: 3120, failed: 0, total: 8412 },
-      projects: { completed: 27, failed: 0, total: 27 },
-      albums: { completed: 46, failed: 0, total: 46 },
-      orders: 37,
-      bytes: 9_663_676_416,
-      errorCount: 0,
-    },
-    error: null,
-    createdAt: "2026-05-21T18:00:00.000Z",
-    updatedAt: "2026-05-21T19:42:00.000Z",
-    finishedAt: null,
-  },
-  {
-    id: "shutterfly_archive_completed",
+    id: "shutterfly_archive_recent",
+    parts: ["photos", "albums", "books", "calendars", "cards", "prints", "otherProjects", "orders"],
     status: "completed",
     progress: {
       step: "finishing",
-      photos: { completed: 8104, failed: 2, total: 8106 },
-      projects: { completed: 26, failed: 0, total: 26 },
-      albums: { completed: 44, failed: 0, total: 44 },
-      orders: 36,
+      photos: { completed: 8410, failed: 2, total: 8412 },
+      projects: { completed: 27, failed: 0, total: 27 },
+      albums: { completed: 46, failed: 0, total: 46 },
+      orders: 37,
       bytes: 24_910_163_968,
       errorCount: 2,
+    },
+    error: null,
+    createdAt: "2026-05-21T18:00:00.000Z",
+    updatedAt: "2026-05-22T02:42:00.000Z",
+    finishedAt: "2026-05-22T02:42:00.000Z",
+  },
+  {
+    id: "shutterfly_archive_completed",
+    parts: ["books", "cards"],
+    status: "completed",
+    progress: {
+      step: "finishing",
+      photos: { completed: 0, failed: 0, total: 0 },
+      projects: { completed: 26, failed: 0, total: 26 },
+      albums: { completed: 0, failed: 0, total: 0 },
+      orders: 0,
+      bytes: 1_288_490_189,
+      errorCount: 0,
     },
     error: null,
     createdAt: "2026-04-02T18:30:00.000Z",
@@ -1137,7 +1139,9 @@ const scenarios: ScreenshotScenario[] = [
         return;
       }
 
-      await expect(archiveSection.getByText("Downloading original photos")).toBeVisible();
+      await expect(
+        archiveSection.getByRole("link", { name: "Download ZIP" }).first(),
+      ).toBeVisible();
       await archiveSection.scrollIntoViewIfNeeded();
     },
     waitFor: async (page) => {
