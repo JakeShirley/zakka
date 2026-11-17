@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { getAutoEnhanceAdjustments, measurePhotoTones } from "./photoAutoEnhance";
+import { getAutoEnhanceAdjustments, measurePhotoTones } from "./photo-quality.js";
 
 const greyPixels = (levels: number[]) =>
   new Uint8ClampedArray(levels.flatMap((level) => [level, level, level, 255]));
@@ -44,5 +44,12 @@ describe("auto enhance", () => {
 
   test("ignores transparent pixels and reports nothing for a fully transparent image", () => {
     expect(measurePhotoTones(new Uint8ClampedArray([255, 255, 255, 0]))).toBeNull();
+  });
+
+  test("measures raw RGBA bytes from a plain Uint8Array", () => {
+    const levels = [0, 64, 128, 192, 255];
+    const bytes = greyPixels(levels);
+
+    expect(measurePhotoTones(new Uint8Array(bytes.buffer))).toEqual(measurePhotoTones(bytes));
   });
 });

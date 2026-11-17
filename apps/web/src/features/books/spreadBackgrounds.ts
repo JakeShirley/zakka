@@ -1,6 +1,18 @@
-import { type PageBackground, type PageDocument, setPageBackground } from "@zakka/editor-core";
+import type { PageBackground, PageDocument } from "@zakka/editor-core";
+import {
+  adjustBackgrounds as adjustSpreadBackgrounds,
+  applySharedBackground as applySpreadBackground,
+  getLinkedBackgroundPages as getLinkedSpreadBackgroundPages,
+  type SpreadPage,
+} from "@zakka/editor-core/spreads";
 
 import type { SpreadPageContext } from "./spreadLayers";
+
+const toSpreadPage = ({ offsetX, page, pageId }: SpreadPageContext): SpreadPage => ({
+  document: page.document,
+  offsetX,
+  pageId,
+});
 
 /**
  * Applies a background to each target page so the pages share one frame spanning all of them:
@@ -9,37 +21,7 @@ import type { SpreadPageContext } from "./spreadLayers";
 export const applySharedBackground = (
   targets: readonly SpreadPageContext[],
   backgroundId: string,
-): Map<string, PageDocument> => {
-  const firstOffset = targets[0]?.offsetX ?? 0;
-  const width = targets.reduce((total, target) => total + target.page.document.canvas.width, 0);
-  const height = Math.max(0, ...targets.map((target) => target.page.document.canvas.height));
-
-  return new Map(
-    targets.map((target) => [
-      target.pageId,
-      setPageBackground(target.page.document, {
-        backgroundId,
-        x: firstOffset - target.offsetX,
-        y: 0,
-        width,
-        height,
-        scale: 1,
-      }),
-    ]),
-  );
-};
-
-const sharesFrame = (
-  a: PageBackground,
-  aOffsetX: number,
-  b: PageBackground,
-  bOffsetX: number,
-): boolean =>
-  a.backgroundId === b.backgroundId &&
-  a.width === b.width &&
-  a.height === b.height &&
-  a.y === b.y &&
-  Math.abs(aOffsetX + a.x - (bOffsetX + b.x)) < 1;
+): Map<string, PageDocument> => applySpreadBackground(targets.map(toSpreadPage), backgroundId);
 
 /**
  * Returns the pages whose background is the same frame as the active page's, so edits such as
@@ -49,34 +31,20 @@ export const getLinkedBackgroundPages = (
   contexts: readonly SpreadPageContext[],
   activePageId: string,
 ): SpreadPageContext[] => {
-  const active = contexts.find((context) => context.pageId === activePageId);
-  const activeBackground = active?.page.document.canvas.background;
+  const contextBySpreadPage = new Map(
+    contexts.map((context) => [toSpreadPage(context), context] as const),
+  );
 
-  if (!active || !activeBackground) {
-    return [];
-  }
-
-  return contexts.filter((context) => {
-    const background = context.page.document.canvas.background;
-
-    return (
-      background !== undefined &&
-      sharesFrame(background, context.offsetX, activeBackground, active.offsetX)
-    );
-  });
+  return getLinkedSpreadBackgroundPages([...contextBySpreadPage.keys()], activePageId).flatMap(
+    (spreadPage) => {
+      const context = contextBySpreadPage.get(spreadPage);
+      return context ? [context] : [];
+    },
+  );
 };
 
 /** Applies new tile scale or rotation to each page's existing background. */
 export const adjustBackgrounds = (
   targets: readonly SpreadPageContext[],
   changes: Partial<Pick<PageBackground, "rotation" | "scale">>,
-): Map<string, PageDocument> =>
-  new Map(
-    targets.flatMap((target): [string, PageDocument][] => {
-      const background = target.page.document.canvas.background;
-
-      return background
-        ? [[target.pageId, setPageBackground(target.page.document, { ...background, ...changes })]]
-        : [];
-    }),
-  );
+): Map<string, PageDocument> => adjustSpreadBackgrounds(targets.map(toSpreadPage), changes);

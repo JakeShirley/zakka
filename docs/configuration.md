@@ -58,16 +58,25 @@ A token can do everything its user can do through these tools, so treat it like 
 
 | Tools | Purpose |
 | --- | --- |
-| `list_books`, `get_book`, `list_pages`, `get_page` | Read books, pages, and full page documents. |
-| `list_photos`, `view_photo`, `list_albums` | Browse the photo library and view photos as images. |
+| `list_books`, `get_book`, `list_pages`, `get_page` | Read books, pages, spreads, and full page documents. |
+| `list_photos`, `get_photo`, `view_photo` | Browse the photo library, read photo details, and view photos as images. |
+| `list_albums`, `create_album`, `update_album`, `delete_album`, `add_photos_to_album`, `remove_photos_from_album` | Organize photos into albums. |
 | `upload_image` | Add a base64-encoded image to the library, optionally to an album or book. |
 | `add_photos_to_book`, `remove_photos_from_book` | Collect library photos for a book, or remove them from it. |
-| `search_stickers`, `list_fonts`, `list_backgrounds` | Find decorations to use on pages. |
+| `search_stickers`, `list_fonts`, `list_backgrounds`, `list_washi_tapes` | Find decorations to use on pages. |
+| `list_sticker_packs`, `create_sticker_pack`, `update_sticker_pack`, `delete_sticker_pack`, `upload_sticker`, `view_sticker`, `remove_sticker`, `set_sticker_favorite` | Manage custom sticker packs and favorite stickers. |
+| `create_washi_tape`, `update_washi_tape`, `delete_washi_tape` | Manage custom washi tape designs. |
+| `upload_background`, `rename_background`, `delete_background` | Manage custom page backgrounds. |
 | `render_page` | Render a page to a JPEG so the assistant can check its work. |
-| `create_book`, `update_book`, `set_book_pages` | Create, rename, and reorder books. |
-| `create_page`, `update_page` | Create pages and change their title, background, or whole document. |
-| `add_layer`, `update_layer`, `delete_layer` | Add, edit, reorder, and remove photos, text, stickers, washi tape, and maps. |
+| `get_print_warnings` | List photos that will print blurry at their placed size. |
+| `export_page`, `export_book`, `get_export` | Export a page or book as PDF, JPEG, or PNG and return the file. |
+| `create_book`, `update_book`, `set_book_pages`, `delete_book` | Create, rename, resize, reorder, and delete books, and turn the cover spread on or off. |
+| `create_page`, `update_page`, `duplicate_page`, `delete_page` | Create, copy, and delete pages and change their title, background, or whole document. |
+| `add_layer`, `update_layer`, `delete_layer` | Add, edit, reorder, and remove photos, text, stickers, washi tape, and maps. Layers that cross the fold of a spread are kept on both pages. |
+| `list_page_layouts`, `apply_page_layout`, `arrange_layers`, `auto_enhance_photo` | Apply layouts, align and distribute layers, and auto-enhance photos like the editor does. |
+| `get_shutterfly_status`, `list_shutterfly_projects`, `import_shutterfly_project`, `get_shutterfly_import` | Import Shutterfly projects once the account is connected in **Settings > Integrations**. Only available when Shutterfly import is configured. |
+| `get_preferences`, `update_preferences`, `get_server_logs`, `get_system_info` | Read and change the UI theme, and read server logs and version details. |
 
-The tools never delete photos, pages, or books. If a page is open in the browser editor while an assistant edits it, the editor's next autosave may overwrite the assistant's changes. Reload the page to pick them up.
+Connecting accounts and managing access tokens are only available in the web app. Deleting pages, books, albums, and custom decorations cannot be undone, and the tools never delete library photos. If a page is open in the browser editor while an assistant edits it, the editor's next autosave may overwrite the assistant's changes. Reload the page to pick them up.
 
 Future production-only secrets for CSRF, password reset tokens, and native refresh tokens should be added here in the same change that introduces the behavior.

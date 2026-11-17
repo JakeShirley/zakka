@@ -21,7 +21,13 @@ import { createRepositories } from "./persistence/repositories.js";
 import { createDiskStorage } from "./storage/disk.js";
 
 type TestApp = ReturnType<typeof createApp>;
-type ToolContent = { type: string; text?: string; data?: string; mimeType?: string };
+type ToolContent = {
+  type: string;
+  text?: string;
+  data?: string;
+  mimeType?: string;
+  resource?: { blob?: string; mimeType?: string; uri: string };
+};
 type ToolResult = { content: ToolContent[]; isError?: boolean };
 
 const connections: DatabaseConnection[] = [];
@@ -574,5 +580,222 @@ describe("mcp endpoint", () => {
     expect(pages.pages).toEqual([]);
     expect(lookup.isError).toBe(true);
     expect(lookup.content[0]?.text).toContain("was not found");
+  });
+});
+
+describe("mcp library, editor and export tools", () => {
+  const connect = async () => {
+    const app = await createTestApp();
+    const { secret } = await createToken(app, await registerAccount(app, "ada@example.com"));
+    const json = <T>(name: string, args: Record<string, unknown> = {}) =>
+      callToolJson<T>(app, secret, name, args);
+
+    return {
+      app,
+      call: (name: string, args?: Record<string, unknown>) => callTool(app, secret, name, args),
+      json,
+    };
+  };
+
+  const createPng = (width = 120, height = 80) =>
+    sharp({ create: { background: { b: 90, g: 160, r: 210 }, channels: 3, height, width } })
+      .png()
+      .toBuffer();
+
+  type BookDetail = {
+    coverSpreadEnabled: boolean;
+    id: string;
+    pages: { id: string; width: number; height: number }[];
+    spreads: { pageIds: string[] }[];
+  };
+
+  it("duplicates and deletes pages, books and albums", async () => {
+    const { json } = await connect();
+    const book = await json<BookDetail>("create_book", { title: "Trip" });
+    const page = await json<{ id: string }>("create_page", { bookId: book.id, title: "Day 1" });
+    const copy = await json<{ id: string; title: string }>("duplicate_page", {
+      bookId: book.id,
+      pageId: page.id,
+    });
+
+    expect(copy.title).toBe("Day 1 copy");
+    expect(
+      (await json<BookDetail>("get_book", { bookId: book.id })).pages.map((p) => p.id),
+    ).toEqual([book.pages[0]?.id, page.id, copy.id, book.pages[1]?.id]);
+
+    await json("delete_page", { pageId: page.id });
+
+    expect((await json<BookDetail>("get_book", { bookId: book.id })).pages).toHaveLength(3);
+
+    const { photo } = await json<{ photo: { id: string } }>("upload_image", {
+      data: (await createPng()).toString("base64"),
+    });
+    const album = await json<{ id: string }>("create_album", {
+      photoIds: [photo.id],
+      title: "Beach",
+    });
+
+    await json("update_album", { albumId: album.id, title: "Shore" });
+
+    const details = await json<{ albums: { id: string; title: string }[] }>("get_photo", {
+      photoId: photo.id,
+    });
+
+    expect(details.albums).toEqual([{ id: album.id, title: "Shore" }]);
+    expect(
+      await json("remove_photos_from_album", { albumId: album.id, photoIds: [photo.id] }),
+    ).toMatchObject({ removed: [photo.id] });
+
+    await json("delete_album", { albumId: album.id });
+
+    const deleted = await json<{ remainingPageIds: string[] }>("delete_book", { bookId: book.id });
+
+    expect(deleted.remainingPageIds).toContain(copy.id);
+    expect((await json<{ books: unknown[] }>("list_books")).books).toEqual([]);
+  });
+
+  it("keeps layers that cross the fold on both pages of a spread", async () => {
+    const { json } = await connect();
+    const book = await json<BookDetail>("create_book", {
+      pageHeight: 1000,
+      pageWidth: 1000,
+      title: "Covers",
+    });
+    const [front, back] = book.pages.map((page) => page.id);
+
+    expect(book.spreads).toEqual([{ pageIds: [front, back] }]);
+
+    const added = await json<{ changedPageIds: string[]; layer: { id: string } }>("add_layer", {
+      kind: "text",
+      pageId: front,
+      properties: { height: 100, text: "Across", width: 200, x: 900, y: 100 },
+    });
+
+    expect(added.changedPageIds).toEqual(expect.arrayContaining([front, back]));
+
+    const backPage = await json<{ document: { layers: { id: string; x: number }[] } }>("get_page", {
+      pageId: back,
+    });
+
+    expect(backPage.document.layers).toEqual([
+      expect.objectContaining({ id: added.layer.id, x: -100 }),
+    ]);
+
+    await json("delete_layer", { layerId: added.layer.id, pageId: front });
+
+    const emptied = await json<{ document: { layers: unknown[] } }>("get_page", { pageId: back });
+
+    expect(emptied.document.layers).toEqual([]);
+
+    const resized = await json<BookDetail>("update_book", {
+      bookId: book.id,
+      coverSpreadEnabled: false,
+      pageHeight: 500,
+      pageWidth: 400,
+    });
+
+    expect(resized.coverSpreadEnabled).toBe(false);
+    expect(resized.spreads).toEqual([{ pageIds: [front] }, { pageIds: [back] }]);
+    expect(resized.pages.map(({ height, width }) => ({ height, width }))).toEqual([
+      { height: 500, width: 400 },
+      { height: 500, width: 400 },
+    ]);
+  });
+
+  it("arranges layers and applies page layouts", async () => {
+    const { call, json } = await connect();
+    const page = await json<{ id: string }>("create_page", {});
+    const layerIds: string[] = [];
+
+    for (const x of [300, 600]) {
+      const { layer } = await json<{ layer: { id: string } }>("add_layer", {
+        kind: "text",
+        pageId: page.id,
+        properties: { height: 100, text: "Hi", width: 200, x, y: x },
+      });
+
+      layerIds.push(layer.id);
+    }
+
+    const arranged = await json<{ layers: { x: number }[]; movedLayerIds: string[] }>(
+      "arrange_layers",
+      {
+        align: { horizontal: "left", relativeTo: "page" },
+        layerIds,
+        mode: "align",
+        pageId: page.id,
+      },
+    );
+
+    expect(arranged.movedLayerIds).toEqual(layerIds);
+    expect(arranged.layers.map((layer) => layer.x)).toEqual([0, 0]);
+
+    const layouts = await json<{ layouts: { id: string; fitsPage: boolean }[]; total: number }>(
+      "list_page_layouts",
+      { limit: 5, pageId: page.id, photoCount: 2 },
+    );
+
+    expect(layouts.total).toBeGreaterThan(0);
+
+    const applied = await json<{ document: { layers: { kind: string }[] } }>("apply_page_layout", {
+      layoutId: layouts.layouts[0]?.id,
+      pageId: page.id,
+    });
+    const missingLayout = await call("apply_page_layout", { layoutId: "nope", pageId: page.id });
+
+    expect(applied.document.layers.filter((layer) => layer.kind === "photo")).toHaveLength(2);
+    expect(missingLayout.isError).toBe(true);
+  });
+
+  it("exports a page as an embedded file", async () => {
+    const { call, json } = await connect();
+    const page = await json<{ id: string }>("create_page", { backgroundColor: "#ddeeff" });
+    const exported = await call("export_page", { dpi: 72, format: "png", pageId: page.id });
+    const summary = JSON.parse(exported.content[0]?.text ?? "{}") as {
+      id: string;
+      status: string;
+    };
+    const file = exported.content[1];
+
+    expect(exported.isError ?? false).toBe(false);
+    expect(summary.status).toBe("completed");
+    expect(file).toMatchObject({ resource: { mimeType: "image/png" }, type: "resource" });
+
+    const metadata = await sharp(Buffer.from(file?.resource?.blob ?? "", "base64")).metadata();
+
+    expect(metadata.format).toBe("png");
+
+    const summaryOnly = await json<{ id: string; status: string }>("get_export", {
+      exportId: summary.id,
+      includeFile: false,
+    });
+
+    expect(summaryOnly).toMatchObject({ id: summary.id, status: "completed" });
+  });
+
+  it("manages sticker packs and preferences", async () => {
+    const { json } = await connect();
+    const pack = await json<{ id: string }>("create_sticker_pack", { title: "Doodles" });
+    const sticker = await json<{ stickerId: string }>("upload_sticker", {
+      data: (await createPng(64, 64)).toString("base64"),
+      filename: "star.png",
+      packId: pack.id,
+    });
+    const packs = await json<{ packs: { id: string; stickers: { stickerId: string }[] }[] }>(
+      "list_sticker_packs",
+      { includeStickers: true },
+    );
+
+    expect(packs.packs).toEqual([
+      expect.objectContaining({
+        id: pack.id,
+        stickers: [expect.objectContaining({ stickerId: sticker.stickerId })],
+      }),
+    ]);
+    expect(await json("delete_sticker_pack", { packId: pack.id })).toMatchObject({
+      removedStickerCount: 1,
+    });
+    expect(await json("get_preferences")).toEqual({ uiTheme: "system" });
+    expect(await json("update_preferences", { uiTheme: "sakura" })).toEqual({ uiTheme: "sakura" });
   });
 });

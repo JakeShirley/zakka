@@ -1,4 +1,3 @@
-import { createPhotoLayer, createTextLayer, type PageLayer } from "@zakka/editor-core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,7 +7,8 @@ import {
   planAlign,
   planGrid,
   planSpread,
-} from "./arrange";
+} from "./arrange.js";
+import { createPhotoLayer, createTextLayer, type PageLayer } from "./index.js";
 
 const canvas = { backgroundColor: "#ffffff", height: 1000, width: 1000 } as const;
 

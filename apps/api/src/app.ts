@@ -4,14 +4,17 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import {
   type AccessTokenResponse,
+  type AccountPreferencesResponse,
+  type AccountResponse,
+  type AlbumResponse,
+  type AssetResponse,
+  type AuthSessionResponse,
   accessTokenCreateResponseSchema,
   accessTokenCreateRoute,
   accessTokenDeleteRoute,
   accessTokenListResponseSchema,
   accessTokenListRoute,
   accessTokenResponseSchema,
-  type AccountPreferencesResponse,
-  type AccountResponse,
   accountPreferencesPatchRoute,
   accountPreferencesResponseSchema,
   accountPreferencesRoute,
@@ -25,9 +28,6 @@ import {
   albumListRoute,
   albumPatchRoute,
   albumResponseSchema,
-  type AlbumResponse,
-  type AssetResponse,
-  type AuthSessionResponse,
   assetAlbumsListRoute,
   assetDetailRoute,
   assetListResponseSchema,
@@ -52,7 +52,31 @@ import {
   bookResponseSchema,
   bookSetPagesRoute,
   bookSummaryResponseSchema,
+  builtInBackgroundContentRoute,
+  builtInBackgroundThumbnailRoute,
+  type CustomBackgroundResponse,
+  type CustomStickerResponse,
+  type CustomWashiTapeResponse,
   currentSessionRoute,
+  customBackgroundContentRoute,
+  customBackgroundDeleteRoute,
+  customBackgroundListResponseSchema,
+  customBackgroundListRoute,
+  customBackgroundPatchRoute,
+  customBackgroundResponseSchema,
+  customBackgroundThumbnailRoute,
+  customBackgroundUploadRoute,
+  customStickerContentRoute,
+  customStickerFavoriteRoute,
+  customStickerListResponseSchema,
+  customStickerListRoute,
+  customStickerResponseSchema,
+  customWashiTapeCreateRoute,
+  customWashiTapeDeleteRoute,
+  customWashiTapeListResponseSchema,
+  customWashiTapeListRoute,
+  customWashiTapePatchRoute,
+  customWashiTapeResponseSchema,
   defaultBookPageSize,
   defaultUiThemePreference,
   type ErrorResponse,
@@ -66,6 +90,7 @@ import {
   isUiThemePreference,
   loginRoute,
   logoutRoute,
+  mapTileRoute,
   mcpEndpointPath,
   type PageResponse,
   type PageSummaryResponse,
@@ -82,17 +107,22 @@ import {
   type ServerLogEntryResponse,
   type ServerLogLevel,
   type SessionResponse,
+  type ShutterflyImportResponse,
+  type StickerPackResponse,
   serverLogEntryResponseSchema,
   serverLogListResponseSchema,
   serverLogListRoute,
-  systemInfoResponseSchema,
-  systemInfoRoute,
-  customStickerContentRoute,
-  customStickerFavoriteRoute,
-  customStickerListResponseSchema,
-  customStickerListRoute,
-  customStickerResponseSchema,
-  type CustomStickerResponse,
+  shutterflyConnectionResponseSchema,
+  shutterflyConnectionRoute,
+  shutterflyConnectRoute,
+  shutterflyDisconnectRoute,
+  shutterflyImportJobResponseSchema,
+  shutterflyImportJobRoute,
+  shutterflyImportResponseSchema,
+  shutterflyProjectImportJobRoute,
+  shutterflyProjectImportRoute,
+  shutterflyProjectListResponseSchema,
+  shutterflyProjectListRoute,
   stickerPackCreateRoute,
   stickerPackDeleteRoute,
   stickerPackDetailRoute,
@@ -103,44 +133,13 @@ import {
   stickerPackStickerListRoute,
   stickerPackStickerRemoveRoute,
   stickerPackStickerUploadRoute,
-  type StickerPackResponse,
-  type CustomWashiTapeResponse,
-  customWashiTapeCreateRoute,
-  customWashiTapeDeleteRoute,
-  customWashiTapeListResponseSchema,
-  customWashiTapeListRoute,
-  customWashiTapePatchRoute,
-  customWashiTapeResponseSchema,
-  shutterflyConnectionResponseSchema,
-  shutterflyConnectionRoute,
-  shutterflyConnectRoute,
-  shutterflyDisconnectRoute,
-  shutterflyImportJobResponseSchema,
-  shutterflyImportJobRoute,
-  type ShutterflyImportResponse,
-  shutterflyImportResponseSchema,
-  shutterflyProjectImportJobRoute,
-  shutterflyProjectImportRoute,
-  shutterflyProjectListResponseSchema,
-  shutterflyProjectListRoute,
-  mapTileRoute,
-  builtInBackgroundContentRoute,
-  builtInBackgroundThumbnailRoute,
-  customBackgroundContentRoute,
-  customBackgroundDeleteRoute,
-  customBackgroundListResponseSchema,
-  customBackgroundListRoute,
-  customBackgroundPatchRoute,
-  customBackgroundResponseSchema,
-  type CustomBackgroundResponse,
-  customBackgroundThumbnailRoute,
-  customBackgroundUploadRoute,
+  systemInfoResponseSchema,
+  systemInfoRoute,
 } from "@zakka/api-contract";
 import {
   createBookSpreads,
   createPageDocument,
   toCustomBackgroundId,
-  type WashiTapeDesign,
   washiTapeDesignSchema,
 } from "@zakka/editor-core";
 import type { Context } from "hono";
@@ -166,22 +165,47 @@ import {
   sessionCookieName,
   verifyPassword,
 } from "./auth.js";
-import { ExportRenderError, renderBookExport, renderPageExport } from "./exports.js";
+import {
+  CustomBackgroundUploadError,
+  createCustomBackgroundFromUpload,
+  deleteCustomBackground,
+  readBuiltInBackgroundTexture,
+} from "./custom-backgrounds.js";
+import { CustomStickerUploadError, createCustomStickerFromUpload } from "./custom-stickers.js";
+import {
+  ExportRenderError,
+  getExportContentType,
+  getExportDownloadFilename,
+  runExportJob,
+} from "./exports.js";
+import { CredentialDecryptError } from "./integrations/credential-cipher.js";
+import { ShutterflyAuthError, ShutterflyRequestError } from "./integrations/shutterfly/client.js";
+import {
+  createShutterflyImportJobs,
+  type ShutterflyImportJob,
+} from "./integrations/shutterfly/import-jobs.js";
+import {
+  type ShutterflyIntegration,
+  ShutterflyInvalidTokenError,
+  ShutterflyNotConnectedError,
+  ShutterflyProjectNotSupportedError,
+} from "./integrations/shutterfly/service.js";
 import {
   createBookWithCovers,
   parseStoredPageDocument,
   validatePageDocumentAssets,
 } from "./library.js";
 import { isMapTileInRange, type MapTileImage, type MapTileSource } from "./map-tiles.js";
+import type { McpShutterflyAccess } from "./mcp/integration-tools.js";
 import { createZakkaMcpServer, maxMcpRequestByteSize } from "./mcp/server.js";
+import type {
+  AlbumWithCountRecord,
+  StickerPackWithCountRecord,
+} from "./persistence/repositories.js";
 import {
   OwnershipError,
   type Repositories,
   type RepositoryClock,
-} from "./persistence/repositories.js";
-import type {
-  AlbumWithCountRecord,
-  StickerPackWithCountRecord,
 } from "./persistence/repositories.js";
 import type {
   AccessTokenRecord,
@@ -199,25 +223,7 @@ import type {
   SessionRecord,
 } from "./persistence/schema.js";
 import { readStaticAsset } from "./static.js";
-import { CredentialDecryptError } from "./integrations/credential-cipher.js";
-import { ShutterflyAuthError, ShutterflyRequestError } from "./integrations/shutterfly/client.js";
-import {
-  createShutterflyImportJobs,
-  type ShutterflyImportJob,
-} from "./integrations/shutterfly/import-jobs.js";
-import {
-  type ShutterflyIntegration,
-  ShutterflyInvalidTokenError,
-  ShutterflyNotConnectedError,
-  ShutterflyProjectNotSupportedError,
-} from "./integrations/shutterfly/service.js";
-import { CustomStickerUploadError, createCustomStickerFromUpload } from "./custom-stickers.js";
-import {
-  CustomBackgroundUploadError,
-  createCustomBackgroundFromUpload,
-  deleteCustomBackground,
-  readBuiltInBackgroundTexture,
-} from "./custom-backgrounds.js";
+import { validateWashiTapeDesign, washiTapeDesignErrorMessages } from "./washi-tapes.js";
 
 type ApiBindings = {
   Variables: {
@@ -576,47 +582,6 @@ const toBookResponse = (book: BookRecord, repositories: Repositories): BookRespo
 
 const buildExportContentUrl = (exportId: string): string => `/api/v1/exports/${exportId}/content`;
 
-const slugifyDownloadName = (value: string): string => {
-  const slug = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-  return slug.length > 0 ? slug.slice(0, 80) : "zakka-export";
-};
-
-const getExportContentType = (exportJob: ExportJobRecord): string => {
-  if (exportJob.format === "pdf") {
-    return "application/pdf";
-  }
-
-  if (exportJob.format === "jpeg") {
-    return "image/jpeg";
-  }
-
-  return exportJob.bookId ? "application/zip" : "image/png";
-};
-
-const getExportDownloadFilename = (
-  exportJob: ExportJobRecord,
-  repositories: Repositories,
-): string => {
-  if (exportJob.bookId) {
-    const book = repositories.books.findByIdForAccount(exportJob.accountId, exportJob.bookId);
-    const name = slugifyDownloadName(book?.title ?? "zakka-book");
-
-    return exportJob.format === "png" ? `${name}-png-pages.zip` : `${name}.${exportJob.format}`;
-  }
-
-  const page = exportJob.pageId
-    ? repositories.pages.findByIdForAccount(exportJob.accountId, exportJob.pageId)
-    : null;
-  const name = slugifyDownloadName(page?.title ?? "zakka-page");
-
-  return `${name}.${exportJob.format === "jpeg" ? "jpg" : exportJob.format}`;
-};
-
 const toExportJobResponse = (exportJob: ExportJobRecord): ExportJobResponse =>
   exportJobResponseSchema.parse({
     id: exportJob.id,
@@ -634,32 +599,6 @@ const toExportJobResponse = (exportJob: ExportJobRecord): ExportJobResponse =>
     createdAt: exportJob.createdAt,
     updatedAt: exportJob.updatedAt,
   });
-
-type WashiTapeDesignValidation = "ok" | "photo_required" | "asset_not_found";
-
-const validateWashiTapeDesign = (
-  accountId: string,
-  design: WashiTapeDesign,
-  repositories: Repositories,
-): WashiTapeDesignValidation => {
-  if (design.pattern.kind === "customPhoto" && !design.pattern.assetId) {
-    return "photo_required";
-  }
-
-  if (
-    design.pattern.assetId &&
-    !repositories.assets.findByIdForAccount(accountId, design.pattern.assetId)
-  ) {
-    return "asset_not_found";
-  }
-
-  return "ok";
-};
-
-const washiTapeDesignErrorMessages: Record<Exclude<WashiTapeDesignValidation, "ok">, string> = {
-  photo_required: "Custom photo washi tape needs a pattern photo",
-  asset_not_found: "Washi tape pattern photos must be assets owned by the account",
-};
 
 const readClientIp = (context: ApiContext): string | null => {
   const forwardedFor = context.req.header("x-forwarded-for");
@@ -745,6 +684,29 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
   };
   const startedAt = options.clock();
 
+  const listServerLogs = (level: ServerLogLevel, limit: number) => {
+    const minimumRank = serverLogLevelRank[level];
+
+    return serverLogEntries
+      .filter((entry) => serverLogLevelRank[entry.level] >= minimumRank)
+      .slice(-limit)
+      .reverse();
+  };
+
+  const getSystemInfo = () =>
+    systemInfoResponseSchema.parse({
+      service: "zakka-api",
+      version: packageVersion,
+      startedAt: startedAt.toISOString(),
+      uptimeSeconds: Math.max(
+        0,
+        Math.floor((options.clock().getTime() - startedAt.getTime()) / 1000),
+      ),
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+    });
+
   app.use("*", async (context, next) => {
     const requestId = context.req.header("x-request-id") ?? crypto.randomUUID();
     const startedAt = performance.now();
@@ -809,13 +771,11 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     }
 
     const { level, limit } = context.req.valid("query");
-    const minimumRank = serverLogLevelRank[level];
-    const logs = serverLogEntries
-      .filter((entry) => serverLogLevelRank[entry.level] >= minimumRank)
-      .slice(-limit)
-      .reverse();
 
-    return context.json(serverLogListResponseSchema.parse({ level, logs }), 200);
+    return context.json(
+      serverLogListResponseSchema.parse({ level, logs: listServerLogs(level, limit) }),
+      200,
+    );
   });
 
   app.openapi(systemInfoRoute, (context) => {
@@ -833,20 +793,7 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
       );
     }
 
-    const body = systemInfoResponseSchema.parse({
-      service: "zakka-api",
-      version: packageVersion,
-      startedAt: startedAt.toISOString(),
-      uptimeSeconds: Math.max(
-        0,
-        Math.floor((options.clock().getTime() - startedAt.getTime()) / 1000),
-      ),
-      nodeVersion: process.version,
-      platform: process.platform,
-      arch: process.arch,
-    });
-
-    return context.json(body, 200);
+    return context.json(getSystemInfo(), 200);
   });
 
   app.openapi(registerRoute, async (context) => {
@@ -3090,16 +3037,22 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     }
 
     const input = context.req.valid("json");
-    let exportJob: ExportJobRecord;
 
     try {
-      exportJob = options.repositories.exports.create({
+      const { job } = await runExportJob({
         accountId: authSession.account.id,
-        bookId: input.bookId ?? null,
+        bookId: input.bookId,
+        dpi: input.dpi,
         format: input.format,
-        pageId: input.pageId ?? null,
+        includeBackground: input.includeBackground,
+        mapTiles: options.mapTiles,
+        pageId: input.pageId,
         preset: input.preset,
+        repositories: options.repositories,
+        storage: options.storage,
       });
+
+      return context.json(toExportJobResponse(job), 201);
     } catch (error) {
       if (error instanceof OwnershipError) {
         return context.json(
@@ -3108,73 +3061,12 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
         );
       }
 
-      throw error;
-    }
-
-    options.repositories.exports.updateForAccount(authSession.account.id, exportJob.id, {
-      status: "running",
-    });
-
-    try {
-      const rendered = input.pageId
-        ? await renderPageExport({
-            accountId: authSession.account.id,
-            ...(input.dpi === undefined ? {} : { dpi: input.dpi }),
-            format: input.format,
-            includeBackground: input.includeBackground ?? true,
-            pageId: input.pageId,
-            ...(options.mapTiles ? { mapTiles: options.mapTiles } : {}),
-            preset: input.preset,
-            repositories: options.repositories,
-            storage: options.storage,
-          })
-        : await renderBookExport({
-            accountId: authSession.account.id,
-            bookId: input.bookId ?? "",
-            ...(input.dpi === undefined ? {} : { dpi: input.dpi }),
-            format: input.format,
-            includeBackground: input.includeBackground ?? true,
-            ...(options.mapTiles ? { mapTiles: options.mapTiles } : {}),
-            preset: input.preset,
-            repositories: options.repositories,
-            storage: options.storage,
-          });
-      const stored = await options.storage.write("exports", rendered.buffer, {
-        extension: rendered.extension,
-      });
-      const completedJob = options.repositories.exports.updateForAccount(
-        authSession.account.id,
-        exportJob.id,
-        {
-          outputStorageKey: stored.key,
-          status: "completed",
-        },
-      );
-
-      if (!completedJob) {
-        return context.json(
-          createErrorResponse(context, "export_not_found", "Export not found"),
-          404,
-        );
-      }
-
-      return context.json(toExportJobResponse(completedJob), 201);
-    } catch (error) {
-      const failedJob = options.repositories.exports.updateForAccount(
-        authSession.account.id,
-        exportJob.id,
-        {
-          errorMessage: error instanceof Error ? error.message : "Export failed",
-          status: "failed",
-        },
-      );
-
       if (error instanceof ExportRenderError) {
         return context.json(
           createErrorResponse(
             context,
-            failedJob?.errorMessage ? "export_failed" : error.code,
-            failedJob?.errorMessage ?? error.message,
+            error.code === "export_not_found" ? error.code : "export_failed",
+            error.message,
           ),
           error.status === 404 ? 404 : 400,
         );
@@ -3332,6 +3224,53 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
       result: job.result,
       error: job.error,
     });
+
+  const startShutterflyImport = (
+    shutterfly: ShutterflyIntegration,
+    repositories: Repositories,
+    accountId: string,
+    projectId: string,
+  ) =>
+    shutterflyImports.start(accountId, projectId, async (onProgress) => {
+      const result = await shutterfly.importProject(accountId, projectId, onProgress);
+
+      return shutterflyImportResponseSchema.parse({
+        book: toBookResponse(result.book, repositories),
+        warnings: result.warnings,
+      });
+    });
+
+  const createMcpShutterflyAccess = (
+    shutterfly: ShutterflyIntegration,
+    repositories: Repositories,
+  ): McpShutterflyAccess => ({
+    getStatus: (accountId) => shutterfly.getStatus(accountId),
+    listProjects: async (accountId) => {
+      try {
+        return await shutterfly.listProjects(accountId);
+      } catch (error) {
+        const described = describeShutterflyError(error);
+
+        throw described ? new Error(described.message) : error;
+      }
+    },
+    startImport: (accountId, projectId) => {
+      if (!shutterfly.getStatus(accountId).connected) {
+        throw new Error(
+          "Connect your Shutterfly account in the Zakka web app's Settings before importing.",
+        );
+      }
+
+      return toShutterflyImportJobResponse(
+        startShutterflyImport(shutterfly, repositories, accountId, projectId),
+      );
+    },
+    getImport: (accountId, importId) => {
+      const job = shutterflyImports.get(accountId, importId);
+
+      return job ? toShutterflyImportJobResponse(job) : null;
+    },
+  });
 
   const requireShutterfly = (context: ApiContext) => {
     if (!options.repositories) {
@@ -3523,18 +3462,12 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     }
 
     const projectId = context.req.valid("param").projectId;
-    const job = shutterflyImports.start(required.accountId, projectId, async (onProgress) => {
-      const result = await required.shutterfly.importProject(
-        required.accountId,
-        projectId,
-        onProgress,
-      );
-
-      return shutterflyImportResponseSchema.parse({
-        book: toBookResponse(result.book, repositories),
-        warnings: result.warnings,
-      });
-    });
+    const job = startShutterflyImport(
+      required.shutterfly,
+      repositories,
+      required.accountId,
+      projectId,
+    );
 
     return context.json(toShutterflyImportJobResponse(job), 202);
   });
@@ -3599,7 +3532,12 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
       accountId: account.id,
       ...(options.mapTiles ? { mapTiles: options.mapTiles } : {}),
       repositories: options.repositories,
+      serverLogs: listServerLogs,
+      ...(options.shutterfly
+        ? { shutterfly: createMcpShutterflyAccess(options.shutterfly, options.repositories) }
+        : {}),
       storage: options.storage,
+      systemInfo: getSystemInfo,
       version: packageVersion,
     });
     // Omitting sessionIdGenerator runs the transport in stateless mode. The transport refuses
