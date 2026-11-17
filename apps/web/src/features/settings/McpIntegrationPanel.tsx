@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 
 import { apiClient } from "../../apiClient";
 import { Panel } from "../../components/layout";
+import { copyToClipboard } from "../../lib/clipboard";
 import { getErrorMessage } from "../../lib/errors";
 
 const getMcpServerUrl = (): string =>
@@ -47,8 +48,7 @@ function CopyButton({ label, value }: { label: string; value: string }) {
         icon={status === "copied" ? <CheckmarkRegular /> : <CopyRegular />}
         onClick={async () => {
           try {
-            // navigator.clipboard is undefined outside secure contexts, e.g. LAN over HTTP.
-            await navigator.clipboard.writeText(value);
+            await copyToClipboard(value);
             setStatus("copied");
           } catch {
             setStatus("failed");

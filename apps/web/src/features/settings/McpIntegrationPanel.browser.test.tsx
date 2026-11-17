@@ -83,9 +83,38 @@ describe("McpIntegrationPanel", () => {
     await expect.element(page.getByPlaceholder("Claude Desktop")).toBeEnabled();
   });
 
+  test("copies the access token with the selection fallback when the clipboard API is denied", async () => {
+    vi.spyOn(apiClient, "listAccessTokens").mockResolvedValue({ tokens: [] });
+    vi.spyOn(apiClient, "createAccessToken").mockResolvedValue({
+      token: { ...existingToken, id: "access_token_new", name: "Claude Desktop" },
+      secret: "zakka_pat_secret-value",
+    });
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("Denied"));
+    let copiedText: string | null = null;
+    const execCommand = vi.spyOn(document, "execCommand").mockImplementation((command) => {
+      const target = document.activeElement;
+      copiedText =
+        command === "copy" && target instanceof HTMLTextAreaElement ? target.value : null;
+      return true;
+    });
+
+    await render(<McpIntegrationPanel />);
+    await page.getByPlaceholder("Claude Desktop").fill("Claude Desktop");
+    await page.getByRole("button", { name: "Create token" }).click();
+    await page.getByRole("button", { name: "Copy access token" }).click();
+
+    await expect
+      .element(page.getByRole("button", { name: "Copy access token" }))
+      .toHaveTextContent("Copied");
+    expect(execCommand).toHaveBeenCalledWith("copy");
+    expect(copiedText).toBe("zakka_pat_secret-value");
+    await expect.element(page.getByText(/copy it manually/)).not.toBeInTheDocument();
+  });
+
   test("explains how to copy manually when the clipboard is unavailable", async () => {
     vi.spyOn(apiClient, "listAccessTokens").mockResolvedValue({ tokens: [] });
     vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("Denied"));
+    vi.spyOn(document, "execCommand").mockReturnValue(false);
 
     await render(<McpIntegrationPanel />);
     await page.getByRole("button", { name: "Copy MCP server URL" }).click();
