@@ -14,8 +14,48 @@ export const shutterflyTokenListSchema = z.array(
 
 export const shutterflyIdTokenClaimsSchema = z.looseObject({
   sfly_uid: z.string().min(1),
+  // Photo library (ThisLife) user id; accounts created before the library migration only have sfly_uid.
+  sfly3_uid: z.string().nullish(),
   email: z.string().nullish(),
   exp: z.number(),
+});
+
+/** Envelope returned by the JSON-RPC style photo library endpoints on photos-api3 and cmd.thislife.com. */
+export const shutterflyLibraryRpcSchema = z.looseObject({
+  result: z
+    .looseObject({
+      success: z.boolean().nullish(),
+      message: z.string().nullish(),
+      payload: z.unknown(),
+    })
+    .nullish(),
+  error: z.unknown().nullish(),
+});
+
+export const shutterflyMomentSearchPayloadSchema = z.looseObject({
+  moments: z
+    .array(z.coerce.string())
+    .nullish()
+    .transform((value) => value ?? []),
+});
+
+export const shutterflyAlbumStorySchema = z.looseObject({
+  uid: z.coerce.string(),
+  name: z.string().nullish(),
+});
+
+export const shutterflyAlbumPayloadSchema = z.looseObject({
+  uid: z.coerce.string().nullish(),
+  name: z.string().nullish(),
+  moments: z.string().nullish(),
+});
+
+export const shutterflyCommercePageSchema = z.looseObject({
+  resources: z
+    .array(z.unknown())
+    .nullish()
+    .transform((value) => value ?? []),
+  nextRef: z.string().nullish(),
 });
 
 const metadataEntrySchema = z.looseObject({
@@ -44,6 +84,14 @@ export const shutterflyProjectSummarySchema = z.looseObject({
 export const shutterflyProjectListSchema = z.looseObject({
   resources: z
     .array(z.looseObject({ resource: shutterflyProjectSummarySchema }))
+    .nullish()
+    .transform((value) => value ?? []),
+});
+
+/** Project list entries kept verbatim for archiving; only the id is required. */
+export const shutterflyRawProjectListSchema = z.looseObject({
+  resources: z
+    .array(z.looseObject({ resource: z.looseObject({ _id: z.coerce.string().min(1) }) }))
     .nullish()
     .transform((value) => value ?? []),
 });

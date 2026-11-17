@@ -657,6 +657,43 @@ const shutterflyProjects = [
   },
 ];
 
+const shutterflyArchives = [
+  {
+    id: "shutterfly_archive_running",
+    status: "running",
+    progress: {
+      step: "photos",
+      photos: { completed: 3120, failed: 0, total: 8412 },
+      projects: { completed: 27, failed: 0, total: 27 },
+      albums: { completed: 46, failed: 0, total: 46 },
+      orders: 37,
+      bytes: 9_663_676_416,
+      errorCount: 0,
+    },
+    error: null,
+    createdAt: "2026-05-21T18:00:00.000Z",
+    updatedAt: "2026-05-21T19:42:00.000Z",
+    finishedAt: null,
+  },
+  {
+    id: "shutterfly_archive_completed",
+    status: "completed",
+    progress: {
+      step: "finishing",
+      photos: { completed: 8104, failed: 2, total: 8106 },
+      projects: { completed: 26, failed: 0, total: 26 },
+      albums: { completed: 44, failed: 0, total: 44 },
+      orders: 36,
+      bytes: 24_910_163_968,
+      errorCount: 2,
+    },
+    error: null,
+    createdAt: "2026-04-02T18:30:00.000Z",
+    updatedAt: "2026-04-03T02:10:00.000Z",
+    finishedAt: "2026-04-03T02:10:00.000Z",
+  },
+];
+
 // A flat 1x1 PNG keeps raster map styles deterministic without reaching tile servers.
 const mapTilePng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mPQ2rELAALkAZ6aXXkGAAAAAElFTkSuQmCC",
@@ -1091,6 +1128,23 @@ const scenarios: ScreenshotScenario[] = [
     },
   },
   {
+    name: "settings-integrations-shutterfly-archive",
+    path: "/settings?tab=integrations",
+    prepare: async (page) => {
+      const archiveSection = page.getByRole("region", { name: "Account archive" });
+
+      if (!(await isVisible(archiveSection))) {
+        return;
+      }
+
+      await expect(archiveSection.getByText("Downloading original photos")).toBeVisible();
+      await archiveSection.scrollIntoViewIfNeeded();
+    },
+    waitFor: async (page) => {
+      await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    },
+  },
+  {
     name: "settings-logs",
     path: "/settings",
     prepare: async (page) => {
@@ -1490,6 +1544,11 @@ async function installMockApi(
 
     if (pathName === "/api/v1/integrations/shutterfly/projects") {
       await route.fulfill({ json: { projects: shutterflyProjects } });
+      return;
+    }
+
+    if (pathName === "/api/v1/integrations/shutterfly/archives") {
+      await route.fulfill({ json: { archives: shutterflyArchives } });
       return;
     }
 

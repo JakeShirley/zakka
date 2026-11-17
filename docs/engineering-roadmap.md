@@ -393,6 +393,7 @@ Goal: let users bring existing projects from other photo book services into Zakk
 | ID | Task | Status | Depends on | Deliverable | Acceptance |
 | --- | --- | --- | --- | --- | --- |
 | E15.1 | Import Shutterfly photo books | `Needs review` | E11.3, E11.7 | Paste-token Shutterfly connection, encrypted credential storage, project list, and project-to-book import | A connected user can import a saved Shutterfly photo book as a Zakka book with page order, layflat spreads, photo crops, empty photo placeholders, text, solid backgrounds, and stickers; unsupported elements are reported. Uses unofficial Shutterfly endpoints; see `docs/configuration.md`. Updated 2026-11-10. |
+| E15.2 | Archive a Shutterfly account | `Needs review` | E15.1 | Resumable server-side archive of a connected Shutterfly account with a streamed ZIP download | A connected user can archive their photo library originals, albums, every project's raw data and assets, and order history, resume an interrupted archive without re-downloading saved files, and download it as one ZIP. Live photo, album, and order endpoints are not yet verified against a real account. Updated 2026-11-16. |
 
 ## Validation Matrix
 
