@@ -163,8 +163,18 @@ export const createShutterflyArchives = (options: {
         archive.status = "completed";
         archive.error = null;
       } catch (error) {
-        archive.status = controller.signal.aborted ? "interrupted" : "failed";
-        archive.error = options.describeError(error);
+        if (controller.signal.aborted) {
+          const reason: unknown = controller.signal.reason;
+
+          archive.status = "interrupted";
+          archive.error = {
+            code: "archive_stopped",
+            message: reason instanceof Error ? reason.message : "The archive was stopped",
+          };
+        } else {
+          archive.status = "failed";
+          archive.error = options.describeError(error);
+        }
       } finally {
         archive.finishedAt = now();
         archive.updatedAt = archive.finishedAt;

@@ -4,17 +4,29 @@ export const mapWithConcurrency = async <Input, Output>(
   worker: (input: Input) => Promise<Output>,
 ): Promise<Output[]> => {
   const results: Output[] = new Array(inputs.length);
+  const failures: unknown[] = [];
   let nextIndex = 0;
 
+  // After the first failure, stop starting new work but let in-flight work settle before
+  // rejecting, so callers never see a rejection while workers are still writing files.
   await Promise.all(
     Array.from({ length: Math.min(limit, inputs.length) }, async () => {
-      while (nextIndex < inputs.length) {
+      while (failures.length === 0 && nextIndex < inputs.length) {
         const index = nextIndex;
         nextIndex += 1;
-        results[index] = await worker(inputs[index] as Input);
+
+        try {
+          results[index] = await worker(inputs[index] as Input);
+        } catch (error) {
+          failures.push(error);
+        }
       }
     }),
   );
+
+  if (failures.length > 0) {
+    throw failures[0];
+  }
 
   return results;
 };
