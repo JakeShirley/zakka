@@ -1,13 +1,19 @@
 import {
-  getTextLayerRenderedBounds,
-  type PageLayer,
   type MapLayer,
-  panMapLayerView,
+  type PageLayer,
   type PhotoLayer,
+  panMapLayerView,
   type TextLayer,
 } from "@zakka/editor-core";
+import {
+  getLayerSelectionFrame,
+  type LayerTransformUpdate,
+  type SelectionFrame,
+} from "@zakka/editor-core/arrange";
 
 import type { CanvasPoint, ResizeHandle } from "./editorTypes";
+
+export { getLayerSelectionFrame, type LayerTransformUpdate, type SelectionFrame };
 
 export type MultiSelectionResizeHandle = "nw" | "ne" | "se" | "sw";
 
@@ -20,8 +26,6 @@ export const multiSelectionResizeHandles: Array<{
   { handle: "se", label: "Scale group from bottom right" },
   { handle: "sw", label: "Scale group from bottom left" },
 ];
-
-export type LayerTransformUpdate = { layerId: string; update: Partial<PageLayer> };
 
 export type GroupBoundingBox = { height: number; width: number; x: number; y: number };
 
@@ -44,10 +48,6 @@ const rotatePoint = (point: CanvasPoint, degrees: number): CanvasPoint => {
   const sin = Math.sin(radians);
 
   return { x: point.x * cos - point.y * sin, y: point.x * sin + point.y * cos };
-};
-
-export type SelectionFrame = Pick<PageLayer, "height" | "width" | "x" | "y"> & {
-  rotation: number;
 };
 
 export const getLayerCenter = (layer: PageLayer): CanvasPoint => ({
@@ -361,14 +361,6 @@ export const clampPhotoPanOffset = (
     offsetX: clamp(offset.offsetX, Math.max(-1, minOffsetX), Math.min(1, maxOffsetX)),
     offsetY: clamp(offset.offsetY, Math.max(-1, minOffsetY), Math.min(1, maxOffsetY)),
   };
-};
-
-export const getLayerSelectionFrame = (layer: PageLayer): SelectionFrame => {
-  if (layer.kind === "text") {
-    const bounds = getTextLayerRenderedBounds(layer);
-    return { ...bounds, rotation: 0 };
-  }
-  return { height: layer.height, rotation: 0, width: layer.width, x: layer.x, y: layer.y };
 };
 
 const getRotatedFrameCorners = (frame: SelectionFrame): CanvasPoint[] => {

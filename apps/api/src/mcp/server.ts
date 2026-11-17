@@ -1,10 +1,10 @@
 import { z } from "@hono/zod-openapi";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { defaultBookPageSize } from "@zakka/api-contract";
 import {
   addLayer,
   builtInBackgrounds,
+  createBookSpreads,
   createMapLayer,
   createPageDocument,
   createPhotoLayer,
@@ -17,11 +17,19 @@ import {
   type PageLayer,
   pageDocumentSchema,
   pageLayerSchema,
+  pageResizeAnchors,
+  pageResizeModes,
   reorderLayer,
+  resizePageDocument,
   setPageBackground,
   toCustomBackgroundId,
   updateCanvas,
 } from "@zakka/editor-core";
+import {
+  applySharedBackground,
+  getSpreadPages,
+  syncLayerAcrossSpread,
+} from "@zakka/editor-core/spreads";
 import { searchStickers } from "@zakka/editor-core/stickers";
 import sharp from "sharp";
 
@@ -31,30 +39,43 @@ import {
   createAssetFromUpload,
   maxUploadByteSize,
 } from "../assets.js";
-import { ExportRenderError, renderPageExport } from "../exports.js";
+import { renderPageExport } from "../exports.js";
 import {
   createBookWithCovers,
   parseStoredPageDocument,
   validatePageDocumentAssets,
 } from "../library.js";
 import type { MapTileSource } from "../map-tiles.js";
-import { OwnershipError, type Repositories } from "../persistence/repositories.js";
+import type { Repositories } from "../persistence/repositories.js";
 import type { AssetRecord, BookRecord, PageRecord } from "../persistence/schema.js";
+import { type McpAccountToolOptions, registerAccountTools } from "./account-tools.js";
+import { maxBackgroundByteSize, registerContentTools } from "./content-tools.js";
+import { registerEditorTools } from "./editor-tools.js";
+import { registerExportTools } from "./export-tools.js";
+import { type McpShutterflyAccess, registerIntegrationTools } from "./integration-tools.js";
+import { registerLibraryTools } from "./library-tools.js";
+import { findSpreadLayerCopyPageIds, jsonResult, type McpToolContext, runTool } from "./shared.js";
 
-export type ZakkaMcpServerOptions = {
+export type ZakkaMcpServerOptions = McpAccountToolOptions & {
   accountId: string;
   mapTiles?: MapTileSource;
   repositories: Repositories;
+  shutterfly?: McpShutterflyAccess | undefined;
   storage: AssetStorage;
   version: string;
 };
 
 const layerKinds = ["photo", "text", "sticker", "washiTape", "map"] as const;
 
+const layerGeometryKeys = new Set(["x", "y", "width", "height", "rotation"]);
+
 const maxUploadBase64Length = Math.ceil(maxUploadByteSize / 3) * 4;
 
-// Room for one base64 upload_image payload plus JSON-RPC framing and line-wrapped base64.
-export const maxMcpRequestByteSize = Math.ceil(maxUploadBase64Length * 1.1) + 64 * 1024;
+// Room for the largest base64 upload (an upload_background image; each tool keeps its own
+// limit) plus JSON-RPC framing and line-wrapped base64.
+export const maxMcpRequestByteSize =
+  Math.ceil(Math.ceil(Math.max(maxUploadByteSize, maxBackgroundByteSize) / 3) * 4 * 1.1) +
+  64 * 1024;
 type LayerKind = (typeof layerKinds)[number];
 
 const hexColorSchema = z
@@ -73,12 +94,11 @@ Page model:
 Workflow tips:
 - Use list_photos and view_photo to choose photos, upload_image to add a new image to the library, add_photos_to_book to collect photos for a book, search_stickers and list_fonts for decoration, and list_backgrounds for page backgrounds.
 - Prefer add_layer, update_layer and delete_layer for targeted edits. Use get_page to read the full document.
-- After editing, call render_page to check the result visually.
+- For quick page designs, list_page_layouts and apply_page_layout arrange photos and text into ready-made layouts; arrange_layers aligns, spreads or grids layers.
+- Facing pages in a book form a spread. Layers that cross the fold are stored on both pages under the same id; the layer tools keep those copies in sync.
+- After editing, call render_page to check the result visually, and get_print_warnings before printing. export_page and export_book return finished PDF, JPEG or PNG files.
+- Albums, custom sticker packs, washi tape designs and uploaded backgrounds can be managed with their own tools.
 - If the page is open in the browser editor, the editor may overwrite your edits when it autosaves. Ask the user to reload the page after you make changes.`;
-
-const jsonResult = (value: unknown): CallToolResult => ({
-  content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
-});
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -97,53 +117,6 @@ const mergeLayerChanges = (
   }
 
   return { ...merged, id: layer.id, kind: layer.kind };
-};
-
-type ValidationIssue = { message: string; path: PropertyKey[] };
-
-const formatValidationError = (error: unknown): string | null => {
-  if (!(error instanceof Error) || error.name !== "ZodError") {
-    return null;
-  }
-
-  const issues = (error as Error & { issues?: unknown }).issues;
-
-  if (!Array.isArray(issues)) {
-    return null;
-  }
-
-  return `Invalid page content: ${(issues as ValidationIssue[])
-    .map((issue) =>
-      issue.path.length > 0
-        ? `${issue.path.map(String).join(".")}: ${issue.message}`
-        : issue.message,
-    )
-    .join("; ")}`;
-};
-
-/** Runs a tool body, turning validation and ownership failures into readable tool errors. */
-const runTool = async (
-  body: () => CallToolResult | Promise<CallToolResult>,
-): Promise<CallToolResult> => {
-  try {
-    return await body();
-  } catch (error) {
-    const validationMessage = formatValidationError(error);
-
-    if (validationMessage) {
-      throw new Error(validationMessage);
-    }
-
-    if (
-      error instanceof OwnershipError ||
-      error instanceof ExportRenderError ||
-      error instanceof AssetUploadError
-    ) {
-      throw new Error(error.message);
-    }
-
-    throw error;
-  }
 };
 
 const readNumber = (value: unknown): number | undefined =>
@@ -176,7 +149,7 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
     return book;
   };
 
-  const savePageDocument = (page: PageRecord, document: PageDocument): PageRecord => {
+  const validatePageDocument = (pageId: string, document: PageDocument) => {
     const parsed = pageDocumentSchema.parse(document);
 
     if (!validatePageDocumentAssets(accountId, parsed, repositories)) {
@@ -185,17 +158,71 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
       );
     }
 
-    const updated = repositories.pages.updateForAccount(accountId, page.id, {
+    return { pageId, parsed };
+  };
+
+  const writePageDocument = (pageId: string, parsed: PageDocument): PageRecord => {
+    const updated = repositories.pages.updateForAccount(accountId, pageId, {
       documentJson: JSON.stringify(parsed),
       height: parsed.canvas.height,
       width: parsed.canvas.width,
     });
 
     if (!updated) {
-      throw new Error(`Page ${page.id} was not found`);
+      throw new Error(`Page ${pageId} was not found`);
     }
 
     return updated;
+  };
+
+  const savePageDocument = (page: PageRecord, document: PageDocument): PageRecord =>
+    writePageDocument(page.id, validatePageDocument(page.id, document).parsed);
+
+  const savePageDocuments = (documents: ReadonlyMap<string, PageDocument>) => {
+    const validated = [...documents].map(([pageId, document]) =>
+      validatePageDocument(pageId, document),
+    );
+
+    for (const { pageId, parsed } of validated) {
+      writePageDocument(pageId, parsed);
+    }
+  };
+
+  const loadPageDocuments = (pageIds: readonly string[]) =>
+    new Map(
+      pageIds.map((pageId) => [pageId, parseStoredPageDocument(requirePage(pageId))] as const),
+    );
+
+  const getBookSpreads = (book: BookRecord) =>
+    createBookSpreads(
+      repositories.books.listPagesForBook(accountId, book.id).map(({ bookPage }) => ({
+        pageId: bookPage.pageId,
+        sortOrder: bookPage.sortOrder,
+      })),
+      { coverSpreadEnabled: book.coverSpreadEnabled },
+    ).map((spread) => ({ pageIds: [...spread.pageIds] }));
+
+  const findBooksForPage = (pageId: string) =>
+    repositories.books
+      .listForAccount(accountId)
+      .filter((book) =>
+        repositories.books
+          .listPagesForBook(accountId, book.id)
+          .some(({ page }) => page.id === pageId),
+      );
+
+  const getSpreadPageIds = (pageId: string, bookId?: string) => {
+    const books = bookId ? [requireBook(bookId)] : findBooksForPage(pageId);
+
+    for (const book of books) {
+      const spread = getBookSpreads(book).find((candidate) => candidate.pageIds.includes(pageId));
+
+      if (spread && spread.pageIds.length > 1) {
+        return spread.pageIds;
+      }
+    }
+
+    return [pageId];
   };
 
   const toPageSummary = (page: PageRecord) => {
@@ -216,10 +243,12 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
     title: book.title,
     pageWidth: book.pageWidth,
     pageHeight: book.pageHeight,
+    coverSpreadEnabled: book.coverSpreadEnabled,
     updatedAt: book.updatedAt,
     pages: repositories.books
       .listPagesForBook(accountId, book.id)
       .map(({ page }, index) => ({ index, ...toPageSummary(page) })),
+    spreads: getBookSpreads(book),
   });
 
   const toPhotoSummary = (asset: AssetRecord) => {
@@ -735,9 +764,15 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
           .max(10000)
           .optional()
           .describe(`Page height in pixels at 300 dpi. Defaults to ${defaultBookPageSize.height}.`),
+        coverSpreadEnabled: z
+          .boolean()
+          .optional()
+          .describe(
+            "Show the back and front covers side by side as one wrap-around cover spread. Defaults to true.",
+          ),
       },
     },
-    ({ pageHeight, pageWidth, title }) =>
+    ({ coverSpreadEnabled, pageHeight, pageWidth, title }) =>
       runTool(() =>
         jsonResult(
           toBookDetail(
@@ -746,7 +781,7 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
               title,
               pageWidth: pageWidth ?? defaultBookPageSize.width,
               pageHeight: pageHeight ?? defaultBookPageSize.height,
-              coverSpreadEnabled: true,
+              coverSpreadEnabled: coverSpreadEnabled ?? true,
               repositories,
             }),
           ),
@@ -754,21 +789,75 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
       ),
   );
 
+  const pageSizeSchema = z.number().int().min(320).max(10000);
+
   server.registerTool(
     "update_book",
     {
       title: "Update book",
-      description: "Renames a book.",
+      description:
+        "Renames a book, turns its cover spread on or off, or changes its page size. Changing the page size resizes every page in the book, scaling existing content with resizeMode.",
       inputSchema: {
         bookId: z.string(),
-        title: z.string().trim().min(1).max(120),
+        title: z.string().trim().min(1).max(120).optional(),
+        coverSpreadEnabled: z.boolean().optional(),
+        pageWidth: pageSizeSchema.optional().describe("Set together with pageHeight."),
+        pageHeight: pageSizeSchema.optional().describe("Set together with pageWidth."),
+        resizeMode: z
+          .enum(pageResizeModes)
+          .optional()
+          .describe(
+            "How existing content follows a page size change: fit scales it to fit inside, fill scales it to cover, stretch scales each axis, keep leaves it unscaled. Defaults to fit.",
+          ),
+        resizeAnchor: z
+          .enum(pageResizeAnchors)
+          .optional()
+          .describe("Where content sits on the resized page. Defaults to center."),
       },
       annotations: { idempotentHint: true },
     },
-    ({ bookId, title }) =>
+    ({
+      bookId,
+      coverSpreadEnabled,
+      pageHeight,
+      pageWidth,
+      resizeAnchor = "center",
+      resizeMode = "fit",
+      title,
+    }) =>
       runTool(() => {
-        requireBook(bookId);
-        repositories.books.updateForAccount(accountId, bookId, { title });
+        const book = requireBook(bookId);
+
+        if ((pageWidth === undefined) !== (pageHeight === undefined)) {
+          throw new Error("Set pageWidth and pageHeight together");
+        }
+
+        const pageSizeChanged =
+          pageWidth !== undefined &&
+          pageHeight !== undefined &&
+          (pageWidth !== book.pageWidth || pageHeight !== book.pageHeight);
+
+        if (pageSizeChanged) {
+          const resized = new Map(
+            repositories.books
+              .listPagesForBook(accountId, bookId)
+              .map(({ page }) => [
+                page.id,
+                resizePageDocument(
+                  parseStoredPageDocument(page),
+                  { width: pageWidth, height: pageHeight },
+                  { anchor: resizeAnchor, mode: resizeMode },
+                ),
+              ]),
+          );
+          savePageDocuments(resized);
+        }
+
+        repositories.books.updateForAccount(accountId, bookId, {
+          ...(title === undefined ? {} : { title }),
+          ...(coverSpreadEnabled === undefined ? {} : { coverSpreadEnabled }),
+          ...(pageSizeChanged ? { pageWidth, pageHeight } : {}),
+        });
 
         return jsonResult(toBookDetail(requireBook(bookId)));
       }),
@@ -867,6 +956,12 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
               .optional()
               .describe("Tile size multiplier for repeating backgrounds. Defaults to 1."),
             rotation: z.number().min(-180).max(180).optional(),
+            spanSpread: z
+              .boolean()
+              .optional()
+              .describe(
+                "In a book, stretch one background across both facing pages of the spread, continuous across the fold.",
+              ),
           })
           .nullable()
           .optional()
@@ -884,6 +979,7 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
         let nextDocument = document
           ? pageDocumentSchema.parse(document)
           : parseStoredPageDocument(page);
+        const documents = new Map<string, PageDocument>();
 
         if (backgroundColor) {
           nextDocument = updateCanvas(nextDocument, { backgroundColor });
@@ -892,18 +988,42 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
         if (background === null) {
           nextDocument = setPageBackground(nextDocument, null);
         } else if (background) {
-          nextDocument = setPageBackground(nextDocument, {
-            backgroundId: background.backgroundId,
-            x: 0,
-            y: 0,
-            width: nextDocument.canvas.width,
-            height: nextDocument.canvas.height,
+          const tiling = {
             ...(background.scale === undefined ? {} : { scale: background.scale }),
             ...(background.rotation === undefined ? {} : { rotation: background.rotation }),
-          });
+          };
+          const spreadPageIds = background.spanSpread ? getSpreadPageIds(pageId) : [pageId];
+
+          if (spreadPageIds.length > 1) {
+            const spreadDocuments = loadPageDocuments(spreadPageIds).set(pageId, nextDocument);
+
+            for (const [spreadPageId, spreadDocument] of applySharedBackground(
+              getSpreadPages(spreadDocuments, spreadPageIds),
+              background.backgroundId,
+            )) {
+              const frame = spreadDocument.canvas.background;
+              documents.set(
+                spreadPageId,
+                frame ? setPageBackground(spreadDocument, { ...frame, ...tiling }) : spreadDocument,
+              );
+            }
+
+            nextDocument = documents.get(pageId) ?? nextDocument;
+          } else {
+            nextDocument = setPageBackground(nextDocument, {
+              backgroundId: background.backgroundId,
+              x: 0,
+              y: 0,
+              width: nextDocument.canvas.width,
+              height: nextDocument.canvas.height,
+              ...tiling,
+            });
+          }
         }
 
-        let updated = savePageDocument(page, nextDocument);
+        documents.set(pageId, nextDocument);
+        savePageDocuments(documents);
+        let updated = requirePage(pageId);
 
         if (title !== undefined) {
           updated =
@@ -914,6 +1034,7 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
 
         return jsonResult({
           ...toPageSummary(updated),
+          ...(documents.size > 1 ? { changedPageIds: [...documents.keys()] } : {}),
           document: parseStoredPageDocument(updated),
         });
       }),
@@ -922,14 +1043,58 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
   const layerPropertiesDescription =
     "Layer properties, in the shape get_page returns. Common: x, y, width, height, rotation (degrees), opacity (0-1), locked. photo: assetId, fit, border, shadow, mask, filter. text: text, fontFamily, fontSize (6-240), color, align, verticalAlign. sticker: stickerId. washiTape: outline, pattern {kind, primaryColor, secondaryColor}. map: style, markers [{id, label, latitude, longitude}], routes [{id, fromMarkerId, toMarkerId}]. Nested settings such as border or shadow are merged with the current values.";
 
-  const toLayerResult = (page: PageRecord, layerId: string) => {
-    const document = parseStoredPageDocument(page);
+  const toLayerResult = (pageId: string, layerId: string, changedPageIds: readonly string[]) => {
+    const document = parseStoredPageDocument(requirePage(pageId));
 
     return jsonResult({
+      pageId,
       layer: document.layers.find((candidate) => candidate.id === layerId),
       index: document.layers.findIndex((candidate) => candidate.id === layerId),
       layerCount: document.layers.length,
+      ...(changedPageIds.length > 1 || changedPageIds[0] !== pageId ? { changedPageIds } : {}),
     });
+  };
+
+  /**
+   * Saves a page whose layer was added or edited. In a book spread the layer is copied onto
+   * every facing page it overlaps and removed from pages it no longer reaches, as the editor does.
+   * `previousLayer` is the layer before an edit, so same-id layers on a facing page that are not
+   * copies of it (as on a duplicated page) are left alone.
+   */
+  const saveLayerEdit = (
+    pageId: string,
+    document: PageDocument,
+    layerId: string,
+    previousLayer?: PageLayer,
+  ) => {
+    const spreadPageIds = getSpreadPageIds(pageId);
+    const layer = document.layers.find((candidate) => candidate.id === layerId);
+
+    if (spreadPageIds.length < 2 || !layer) {
+      savePageDocuments(new Map([[pageId, document]]));
+      return { containingPageId: pageId, changedPageIds: [pageId] };
+    }
+
+    const synced = syncLayerAcrossSpread({
+      documents: loadPageDocuments(spreadPageIds).set(pageId, document),
+      previousSourceLayer: previousLayer,
+      removeNonOverlappingSource: true,
+      sourceLayer: layer,
+      sourcePageId: pageId,
+      spreadPageIds,
+    });
+    const changedPageIds = [...new Set([pageId, ...synced.changedPageIds])];
+
+    savePageDocuments(
+      new Map(
+        changedPageIds.flatMap((changedPageId) => {
+          const changed = synced.documents.get(changedPageId);
+          return changed ? [[changedPageId, changed] as const] : [];
+        }),
+      ),
+    );
+
+    return { containingPageId: synced.containingPageId ?? pageId, changedPageIds };
   };
 
   server.registerTool(
@@ -937,7 +1102,7 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
     {
       title: "Add layer",
       description:
-        "Adds a layer to a page. Unset properties use the editor defaults. A photo keeps its aspect ratio unless you set both width and height.",
+        "Adds a layer to a page. Unset properties use the editor defaults. A photo keeps its aspect ratio unless you set both width and height. In a book, a layer placed across the fold also appears on the facing page; the result's pageId is the page the layer's center is on.",
       inputSchema: {
         pageId: z.string(),
         kind: z.enum(layerKinds),
@@ -960,8 +1125,13 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
         const layer = pageLayerSchema.parse(
           mergeLayerChanges(createDefaultLayer(kind, properties), properties),
         );
+        const { changedPageIds, containingPageId } = saveLayerEdit(
+          pageId,
+          addLayer(document, layer, index),
+          layer.id,
+        );
 
-        return toLayerResult(savePageDocument(page, addLayer(document, layer, index)), layer.id);
+        return toLayerResult(containingPageId, layer.id, changedPageIds);
       }),
   );
 
@@ -969,7 +1139,8 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
     "update_layer",
     {
       title: "Update layer",
-      description: "Changes a layer's properties, its position in the layer stack, or both.",
+      description:
+        "Changes a layer's properties, its position in the layer stack, or both. In a book, copies of a layer that crosses the fold are kept in sync, and a layer moved fully onto the facing page moves to that page.",
       inputSchema: {
         pageId: z.string(),
         layerId: z.string(),
@@ -993,6 +1164,50 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
           throw new Error(`Layer ${layerId} was not found on page ${pageId}`);
         }
 
+        if (
+          changes &&
+          index === undefined &&
+          !Object.keys(changes).some((key) => layerGeometryKeys.has(key))
+        ) {
+          // Content and style changes are applied to the layer and its spread copies in place,
+          // keeping each copy's own geometry and stack position. Reprojecting would drop copies
+          // placed from rotated bounds that do not overlap their page unrotated.
+          const spreadPageIds = getSpreadPageIds(pageId);
+          const spreadDocuments =
+            spreadPageIds.length > 1
+              ? loadPageDocuments(spreadPageIds)
+              : new Map([[pageId, document]]);
+          const changedPageIds = [
+            pageId,
+            ...findSpreadLayerCopyPageIds(spreadDocuments, spreadPageIds, pageId, layer),
+          ];
+
+          savePageDocuments(
+            new Map(
+              changedPageIds.flatMap((changedPageId) => {
+                const changed = spreadDocuments.get(changedPageId);
+                return changed
+                  ? [
+                      [
+                        changedPageId,
+                        {
+                          ...changed,
+                          layers: changed.layers.map((candidate) =>
+                            candidate.id === layerId
+                              ? pageLayerSchema.parse(mergeLayerChanges(candidate, changes))
+                              : candidate,
+                          ),
+                        },
+                      ] as const,
+                    ]
+                  : [];
+              }),
+            ),
+          );
+
+          return toLayerResult(pageId, layerId, changedPageIds);
+        }
+
         if (changes) {
           const updatedLayer = pageLayerSchema.parse(mergeLayerChanges(layer, changes));
           document = {
@@ -1007,7 +1222,14 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
           document = reorderLayer(document, layerId, index);
         }
 
-        return toLayerResult(savePageDocument(page, document), layerId);
+        const { changedPageIds, containingPageId } = saveLayerEdit(
+          pageId,
+          document,
+          layerId,
+          layer,
+        );
+
+        return toLayerResult(containingPageId, layerId, changedPageIds);
       }),
   );
 
@@ -1015,7 +1237,8 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
     "delete_layer",
     {
       title: "Delete layer",
-      description: "Removes a layer from a page.",
+      description:
+        "Removes a layer from a page. In a book, its copies on facing pages (for a layer crossing the fold) are removed too.",
       inputSchema: { pageId: z.string(), layerId: z.string() },
       annotations: { destructiveHint: true, idempotentHint: true },
     },
@@ -1023,19 +1246,63 @@ export const createZakkaMcpServer = (options: ZakkaMcpServerOptions): McpServer 
       runTool(() => {
         const page = requirePage(pageId);
         const document = parseStoredPageDocument(page);
+        const layer = document.layers.find((candidate) => candidate.id === layerId);
 
-        if (!document.layers.some((layer) => layer.id === layerId)) {
+        if (!layer) {
           throw new Error(`Layer ${layerId} was not found on page ${pageId}`);
         }
 
-        const saved = savePageDocument(page, deleteLayer(document, layerId));
+        const spreadPageIds = getSpreadPageIds(pageId);
+        const spreadDocuments =
+          spreadPageIds.length > 1
+            ? loadPageDocuments(spreadPageIds)
+            : new Map([[pageId, document]]);
+        const changedPageIds = [
+          pageId,
+          ...findSpreadLayerCopyPageIds(spreadDocuments, spreadPageIds, pageId, layer),
+        ];
+
+        savePageDocuments(
+          new Map(
+            changedPageIds.flatMap((changedPageId) => {
+              const changed = spreadDocuments.get(changedPageId);
+              return changed ? [[changedPageId, deleteLayer(changed, layerId)] as const] : [];
+            }),
+          ),
+        );
 
         return jsonResult({
           deletedLayerId: layerId,
-          layerCount: parseStoredPageDocument(saved).layers.length,
+          layerCount: parseStoredPageDocument(requirePage(pageId)).layers.length,
+          ...(changedPageIds.length > 1 ? { changedPageIds } : {}),
         });
       }),
   );
+
+  const ctx: McpToolContext = {
+    accountId,
+    mapTiles: options.mapTiles,
+    repositories,
+    storage,
+    server,
+    requirePage,
+    requireBook,
+    findBooksForPage,
+    savePageDocument,
+    savePageDocuments,
+    getSpreadPageIds,
+    loadPageDocuments,
+    getBookSpreads,
+    toPageSummary,
+    toPhotoSummary,
+  };
+
+  registerLibraryTools(ctx);
+  registerContentTools(ctx);
+  registerEditorTools(ctx);
+  registerExportTools(ctx);
+  registerAccountTools(ctx, { serverLogs: options.serverLogs, systemInfo: options.systemInfo });
+  registerIntegrationTools(ctx, options.shutterfly);
 
   return server;
 };

@@ -1,14 +1,15 @@
+import type { PageDocument, PageLayer } from "@zakka/editor-core";
 import {
-  addLayer,
-  deleteLayer,
-  fillPhotoLayerUpdate,
-  type PageDocument,
-  type PageLayer,
-  reorderLayer,
-  updateLayer,
-} from "@zakka/editor-core";
+  fillPhotoAcrossSpread as fillPhotoAcrossSpreadDocuments,
+  getSpreadPages,
+  reconcileSpreadPageEdit as reconcileSpreadPageEditDocuments,
+  type SpreadSyncResult,
+  syncLayerAcrossSpread as syncLayerAcrossSpreadDocuments,
+} from "@zakka/editor-core/spreads";
 
 import type { PageDetail } from "../../types";
+
+export { layerOverlapsPageCanvas } from "@zakka/editor-core/spreads";
 
 export type SpreadPageContext = {
   offsetX: number;
@@ -30,308 +31,81 @@ export const replacePageDocument = (page: PageDetail, document: PageDocument): P
   width: document.canvas.width,
 });
 
+const toDocuments = (details: ReadonlyMap<string, PageDetail>): Map<string, PageDocument> =>
+  new Map([...details].map(([pageId, page]) => [pageId, page.document]));
+
+const toDetailsResult = (
+  details: Map<string, PageDetail>,
+  { changedPageIds, containingPageId, documents }: SpreadSyncResult,
+): SpreadLayerSyncResult => {
+  const nextDetails = new Map(details);
+
+  for (const pageId of changedPageIds) {
+    const page = details.get(pageId);
+    const document = documents.get(pageId);
+
+    if (page && document) {
+      nextDetails.set(pageId, replacePageDocument(page, document));
+    }
+  }
+
+  return { changedPageIds, containingPageId, details: nextDetails };
+};
+
 export const getSpreadPageContexts = (
   details: Map<string, PageDetail>,
   pageIds: string[],
-): SpreadPageContext[] => {
-  let offsetX = 0;
-  const pages: SpreadPageContext[] = [];
-
-  for (const pageId of pageIds) {
+): SpreadPageContext[] =>
+  getSpreadPages(toDocuments(details), pageIds).flatMap(({ offsetX, pageId }) => {
     const page = details.get(pageId);
-
-    if (!page) {
-      continue;
-    }
-
-    pages.push({ offsetX, page, pageId });
-    offsetX += page.document.canvas.width;
-  }
-
-  return pages;
-};
-
-export const layerOverlapsPageCanvas = (layer: PageLayer, document: PageDocument): boolean =>
-  layer.x < document.canvas.width &&
-  layer.x + layer.width > 0 &&
-  layer.y < document.canvas.height &&
-  layer.y + layer.height > 0;
+    return page ? [{ offsetX, page, pageId }] : [];
+  });
 
 /**
  * Puts a photo into a photo frame (an empty placeholder or a photo being replaced) on every spread
- * page that carries a copy of it. Only the photo content changes, so the frame's position and
- * styling are kept and existing copies are updated in place rather than re-projected; this keeps
- * copies the importer placed from rotated bounds that geometry-based syncing would prune.
+ * page that carries a copy of it. See `fillPhotoAcrossSpread` in `@zakka/editor-core/spreads`.
  */
 export const fillPhotoAcrossSpread = ({
-  assetId,
   details,
-  layerId,
-  sourcePageId,
-  spreadPageIds,
+  ...input
 }: {
   assetId: string;
   details: Map<string, PageDetail>;
   layerId: string;
   sourcePageId: string;
   spreadPageIds: string[];
-}): SpreadLayerSyncResult => {
-  const nextDetails = new Map(details);
-  const changedPageIds: string[] = [];
-  const pageIds = spreadPageIds.includes(sourcePageId) ? spreadPageIds : [sourcePageId];
-
-  for (const pageId of pageIds) {
-    const page = details.get(pageId);
-    const layer = page?.document.layers.find((item) => item.id === layerId);
-
-    if (!page || layer?.kind !== "photo") {
-      continue;
-    }
-
-    nextDetails.set(
-      pageId,
-      replacePageDocument(
-        page,
-        updateLayer(page.document, layerId, fillPhotoLayerUpdate(assetId) as Partial<PageLayer>),
-      ),
-    );
-    changedPageIds.push(pageId);
-  }
-
-  return {
-    changedPageIds,
-    containingPageId: changedPageIds.includes(sourcePageId) ? sourcePageId : null,
-    details: nextDetails,
-  };
-};
+}): SpreadLayerSyncResult =>
+  toDetailsResult(
+    details,
+    fillPhotoAcrossSpreadDocuments({ ...input, documents: toDocuments(details) }),
+  );
 
 /**
- * After a whole-page edit (such as applying a page layout) on one spread page, updates the facing
- * pages' copies of any shared layer the edit moved or removed. Moved layers keep a facing copy
- * only while they still overlap that page; unchanged shared layers are left alone. Returns the
- * documents to write, including the edited page.
+ * After a whole-page edit on one spread page, updates the facing pages' copies of any shared layer
+ * the edit moved or removed. Returns the documents to write, including the edited page.
  */
 export const reconcileSpreadPageEdit = ({
   details,
-  nextDocument,
-  sourcePageId,
-  spreadPageIds,
+  ...input
 }: {
   details: Map<string, PageDetail>;
   nextDocument: PageDocument;
   sourcePageId: string;
   spreadPageIds: string[];
-}): Map<string, PageDocument> => {
-  const documents = new Map<string, PageDocument>([[sourcePageId, nextDocument]]);
-  const spreadPages = getSpreadPageContexts(details, spreadPageIds);
-  const sourceContext = spreadPages.find((spreadPage) => spreadPage.pageId === sourcePageId);
-
-  if (!sourceContext) {
-    return documents;
-  }
-
-  const previousLayers = new Map(
-    sourceContext.page.document.layers.map((layer) => [layer.id, layer]),
-  );
-  const nextLayers = new Map(nextDocument.layers.map((layer) => [layer.id, layer]));
-
-  for (const spreadPage of spreadPages) {
-    if (spreadPage.pageId === sourcePageId) {
-      continue;
-    }
-
-    let facingDocument = spreadPage.page.document;
-
-    for (const facingLayer of spreadPage.page.document.layers) {
-      const previousLayer = previousLayers.get(facingLayer.id);
-
-      if (!previousLayer || previousLayer.kind !== facingLayer.kind) {
-        continue;
-      }
-
-      const nextLayer = nextLayers.get(facingLayer.id);
-
-      if (nextLayer && JSON.stringify(nextLayer) === JSON.stringify(previousLayer)) {
-        continue;
-      }
-
-      const localLayer = nextLayer
-        ? { ...nextLayer, x: sourceContext.offsetX + nextLayer.x - spreadPage.offsetX }
-        : null;
-
-      facingDocument =
-        localLayer && layerOverlapsPageCanvas(localLayer, facingDocument)
-          ? updateLayer(facingDocument, facingLayer.id, localLayer)
-          : deleteLayer(facingDocument, facingLayer.id);
-    }
-
-    if (facingDocument !== spreadPage.page.document) {
-      documents.set(spreadPage.pageId, facingDocument);
-    }
-  }
-
-  return documents;
-};
-
-type SpreadLayerStackPlacement =
-  | { kind: "bottom" }
-  | { index: number; kind: "index" }
-  | { kind: "top" };
-
-const getLayerStackPlacement = (
-  document: PageDocument,
-  layerId: string,
-): SpreadLayerStackPlacement => {
-  const layerIndex = document.layers.findIndex((layer) => layer.id === layerId);
-
-  if (layerIndex <= 0) {
-    return { kind: "bottom" };
-  }
-
-  if (layerIndex >= document.layers.length - 1) {
-    return { kind: "top" };
-  }
-
-  return { index: layerIndex, kind: "index" };
-};
-
-const getLayerStackIndex = (
-  document: PageDocument,
-  placement: SpreadLayerStackPlacement,
-): number => {
-  if (placement.kind === "bottom") {
-    return 0;
-  }
-
-  if (placement.kind === "top") {
-    return Math.max(0, document.layers.length - 1);
-  }
-
-  return Math.max(0, Math.min(placement.index, document.layers.length - 1));
-};
+}): Map<string, PageDocument> =>
+  reconcileSpreadPageEditDocuments({ ...input, documents: toDocuments(details) });
 
 export const syncLayerAcrossSpread = ({
   details,
-  removeNonOverlappingSource,
-  sourceLayer,
-  sourcePageId,
-  spreadPageIds,
+  ...input
 }: {
   details: Map<string, PageDetail>;
   removeNonOverlappingSource: boolean;
   sourceLayer: PageLayer;
   sourcePageId: string;
   spreadPageIds: string[];
-}): SpreadLayerSyncResult => {
-  const spreadPages = getSpreadPageContexts(details, spreadPageIds);
-  const sourceContext = spreadPages.find((spreadPage) => spreadPage.pageId === sourcePageId);
-
-  if (!sourceContext || spreadPages.length < 2) {
-    const sourcePage = details.get(sourcePageId);
-
-    if (!sourcePage) {
-      return { changedPageIds: [], containingPageId: null, details };
-    }
-
-    return {
-      changedPageIds: [sourcePageId],
-      containingPageId: sourcePageId,
-      details: new Map(details).set(
-        sourcePageId,
-        replacePageDocument(
-          sourcePage,
-          updateLayer(sourcePage.document, sourceLayer.id, sourceLayer),
-        ),
-      ),
-    };
-  }
-
-  const nextDetails = new Map(details);
-  const changedPageIds = new Set<string>();
-  const sourceLayerIndex = sourceContext.page.document.layers.findIndex(
-    (layer) => layer.id === sourceLayer.id,
+}): SpreadLayerSyncResult =>
+  toDetailsResult(
+    details,
+    syncLayerAcrossSpreadDocuments({ ...input, documents: toDocuments(details) }),
   );
-  const sourceLayerStackIndex =
-    sourceLayerIndex >= 0 ? sourceLayerIndex : sourceContext.page.document.layers.length;
-  const sourceLayerStackPlacement = getLayerStackPlacement(
-    sourceContext.page.document,
-    sourceLayer.id,
-  );
-  const spreadX = sourceContext.offsetX + sourceLayer.x;
-  const spreadCenterX = spreadX + sourceLayer.width / 2;
-  const containingPage = spreadPages.find(
-    (spreadPage) =>
-      spreadCenterX >= spreadPage.offsetX &&
-      spreadCenterX < spreadPage.offsetX + spreadPage.page.document.canvas.width,
-  );
-  const ownerPage =
-    containingPage ??
-    spreadPages.reduce((closestPage, spreadPage) => {
-      const closestDistance = Math.min(
-        Math.abs(spreadCenterX - closestPage.offsetX),
-        Math.abs(spreadCenterX - (closestPage.offsetX + closestPage.page.document.canvas.width)),
-      );
-      const spreadPageDistance = Math.min(
-        Math.abs(spreadCenterX - spreadPage.offsetX),
-        Math.abs(spreadCenterX - (spreadPage.offsetX + spreadPage.page.document.canvas.width)),
-      );
-
-      return spreadPageDistance < closestDistance ? spreadPage : closestPage;
-    }, sourceContext);
-  const projectedLayers = spreadPages.map((spreadPage) => {
-    const currentPage = nextDetails.get(spreadPage.pageId) ?? spreadPage.page;
-    const localLayer = { ...sourceLayer, x: spreadX - spreadPage.offsetX };
-
-    return {
-      currentPage,
-      localLayer,
-      overlapsPage: layerOverlapsPageCanvas(localLayer, currentPage.document),
-      spreadPage,
-    };
-  });
-  const overlapsAnyPage = projectedLayers.some((projectedLayer) => projectedLayer.overlapsPage);
-
-  for (const { currentPage, localLayer, overlapsPage, spreadPage } of projectedLayers) {
-    const existingLayer = currentPage.document.layers.find((layer) => layer.id === sourceLayer.id);
-
-    if (existingLayer && existingLayer.kind !== sourceLayer.kind) {
-      continue;
-    }
-
-    const shouldKeepLayer =
-      overlapsPage ||
-      (!removeNonOverlappingSource && spreadPage.pageId === sourcePageId) ||
-      (!overlapsAnyPage && spreadPage.pageId === ownerPage.pageId);
-    let nextDocument = currentPage.document;
-
-    if (shouldKeepLayer) {
-      if (existingLayer) {
-        nextDocument = updateLayer(currentPage.document, sourceLayer.id, localLayer);
-      } else {
-        nextDocument = addLayer(
-          currentPage.document,
-          localLayer,
-          Math.max(0, Math.min(sourceLayerStackIndex, currentPage.document.layers.length)),
-        );
-        nextDocument = reorderLayer(
-          nextDocument,
-          sourceLayer.id,
-          getLayerStackIndex(nextDocument, sourceLayerStackPlacement),
-        );
-      }
-    } else if (existingLayer) {
-      nextDocument = deleteLayer(currentPage.document, sourceLayer.id);
-    }
-
-    if (nextDocument !== currentPage.document) {
-      nextDetails.set(spreadPage.pageId, replacePageDocument(currentPage, nextDocument));
-      changedPageIds.add(spreadPage.pageId);
-    }
-  }
-
-  return {
-    changedPageIds: [...changedPageIds],
-    containingPageId: ownerPage.pageId,
-    details: nextDetails,
-  };
-};

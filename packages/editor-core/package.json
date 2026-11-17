@@ -39,6 +39,21 @@
       "import": "./dist/page-layouts-shutterfly.js",
       "default": "./dist/page-layouts-shutterfly.js"
     },
+    "./arrange": {
+      "types": "./dist/arrange.d.ts",
+      "import": "./dist/arrange.js",
+      "default": "./dist/arrange.js"
+    },
+    "./spreads": {
+      "types": "./dist/spreads.d.ts",
+      "import": "./dist/spreads.js",
+      "default": "./dist/spreads.js"
+    },
+    "./photo-quality": {
+      "types": "./dist/photo-quality.d.ts",
+      "import": "./dist/photo-quality.js",
+      "default": "./dist/photo-quality.js"
+    },
     "./font-licenses.txt": "./dist/font-licenses.txt",
     "./backgrounds/*": "./dist/backgrounds/*"
   },
