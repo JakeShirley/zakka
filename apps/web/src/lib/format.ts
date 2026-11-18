@@ -9,7 +9,11 @@ export const formatBytes = (byteSize: number): string => {
     return `${(byteSize / 1024).toFixed(1)} KB`;
   }
 
-  return `${(byteSize / (1024 * 1024)).toFixed(1)} MB`;
+  if (byteSize < 1024 * 1024 * 1024) {
+    return `${(byteSize / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  return `${(byteSize / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 };
 
 export const formatDimensions = (asset: Asset): string => {

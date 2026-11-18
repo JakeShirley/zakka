@@ -1,12 +1,23 @@
+import { createWriteStream } from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
+
 import {
   type ShutterflyDesignAsset,
   type ShutterflyProject,
   type ShutterflyProjectSummary,
+  shutterflyAlbumPayloadSchema,
+  shutterflyAlbumStorySchema,
+  shutterflyCommercePageSchema,
   shutterflyDesignAssetListSchema,
   shutterflyIdTokenClaimsSchema,
+  shutterflyLibraryRpcSchema,
   shutterflyMediaDetailsSchema,
+  shutterflyMomentSearchPayloadSchema,
   shutterflyProjectListSchema,
   shutterflyProjectSchema,
+  shutterflyRawProjectListSchema,
   shutterflyTokenListSchema,
 } from "./schemas.js";
 
@@ -17,13 +28,29 @@ const projectsBaseUrl = "https://projects-api3.shutterfly.com/projects/v2/projec
 const designAssetsUrl =
   "https://catalog-api3.shutterfly.com/catalogdesign/v1/design-asset-by-ids?context=/sfly/shutterfly/shutterfly-us/default&channel=web";
 const designFileBaseUrl = "https://sfly3-catalog-design.sf-cdn.com";
+const photosRpcUrl = "https://photos-api3.shutterfly.com/photos/json";
+const photosOrigin = "https://photos3.shutterfly.com";
+const thislifeRpcUrl = "https://cmd.thislife.com/json";
+const thislifeOrigin = "https://photos.shutterfly.com";
+const originalDownloadUrl = "https://io.thislife.com/download";
+const commerceBaseUrl = "https://commerce-api3.shutterfly.com/commerce/v1";
+const surfaceRenderUrl =
+  "https://rendering-api3.shutterfly.com/rendering/renderer/v1/surfacesvg/preview";
 const projectPageSize = 25;
 const maxProjectPages = 20;
+// Archiving walks every page; this only stops a misbehaving API from looping forever.
+const maxArchiveListPages = 2_000;
+const commercePageSize = 20;
 const mediaBatchSize = 50;
 const designAssetBatchSize = 100;
 const maxDownloadBytes = 40 * 1024 * 1024;
 const requestTimeoutMs = 30_000;
+// Originals include full-length videos, so they get far longer than ordinary API calls.
+const originalDownloadTimeoutMs = 60 * 60 * 1000;
+const surfaceRenderTimeoutMs = 2 * 60 * 1000;
+const albumMomentRecordLength = 277;
 const allowedDownloadHostSuffixes = [".shutterfly.com", ".sf-cdn.com"];
+const libraryAuthFailurePattern = /auth|token|expired|session|log ?in|sign ?in/i;
 
 export class ShutterflyAuthError extends Error {
   constructor(
@@ -49,8 +76,27 @@ export type ShutterflySession = {
   email: string | null;
   expiresAt: number;
   idToken: string;
+  /** Photo library user id, which differs from the commerce account id for migrated accounts. */
+  libraryId: string;
   refreshToken: string;
 };
+
+export type ShutterflyAlbumSummary = {
+  id: string;
+  name: string;
+  /** False for albums other people shared with this account. */
+  owned: boolean;
+  raw: unknown;
+};
+
+export type ShutterflyAlbumContents = {
+  id: string;
+  name: string | null;
+  momentIds: string[];
+  raw: unknown;
+};
+
+export type ShutterflyRawProject = Record<string, unknown> & { _id: string };
 
 export type ShutterflyMediaDetails = {
   fileName: string | null;
@@ -105,6 +151,52 @@ export const parseShutterflyDate = (value: string | null | undefined): string | 
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
+/**
+ * Album contents list their moments as one long string of fixed-width records; the moment id is the
+ * zero-padded number at characters 9-25 of each record.
+ */
+export const parseShutterflyAlbumMomentIds = (encoded: string): string[] => {
+  const ids = new Set<string>();
+
+  for (let index = 0; index < encoded.length; index += albumMomentRecordLength) {
+    const record = encoded.slice(index, index + albumMomentRecordLength);
+
+    if (record.length < 25) {
+      continue;
+    }
+
+    const id = record.slice(9, 25).replace(/^0+/, "");
+
+    if (id) {
+      ids.add(id);
+    }
+  }
+
+  return [...ids];
+};
+
+/** Reads the file name from a Content-Disposition header, preferring the RFC 5987 UTF-8 form. */
+export const readContentDispositionFileName = (header: string | null): string | null => {
+  if (!header) {
+    return null;
+  }
+
+  const extended = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(header);
+
+  if (extended?.[1]) {
+    try {
+      return decodeURIComponent(extended[1].trim());
+    } catch {
+      // Fall through to the plain filename parameter.
+    }
+  }
+
+  const plain = /filename\s*=\s*("([^"]*)"|[^;]+)/i.exec(header);
+  const value = (plain?.[2] ?? plain?.[1] ?? "").trim();
+
+  return value.length > 0 ? value : null;
+};
+
 export const isAllowedShutterflyDownloadUrl = (url: string): boolean => {
   try {
     const parsed = new URL(url);
@@ -121,10 +213,23 @@ export const isAllowedShutterflyDownloadUrl = (url: string): boolean => {
 export const createShutterflyClient = (options: { apiKey: string; fetch?: typeof fetch }) => {
   const fetchImpl = options.fetch ?? globalThis.fetch;
 
-  const send = async (url: string, init: RequestInit = {}): Promise<Response> => {
+  const send = async (
+    url: string,
+    init: RequestInit = {},
+    timing: { timeoutMs?: number; signal?: AbortSignal | undefined } = {},
+  ): Promise<Response> => {
+    const timeout = AbortSignal.timeout(timing.timeoutMs ?? requestTimeoutMs);
+
     try {
-      return await fetchImpl(url, { ...init, signal: AbortSignal.timeout(requestTimeoutMs) });
+      return await fetchImpl(url, {
+        ...init,
+        signal: timing.signal ? AbortSignal.any([timeout, timing.signal]) : timeout,
+      });
     } catch (error) {
+      if (timing.signal?.aborted) {
+        throw timing.signal.reason;
+      }
+
       throw new ShutterflyRequestError(
         `Shutterfly could not be reached: ${error instanceof Error ? error.message : "network error"}`,
       );
@@ -165,6 +270,39 @@ export const createShutterflyClient = (options: { apiKey: string; fetch?: typeof
     }
   };
 
+  const readLimitedBody = async (response: Response): Promise<Buffer> => {
+    const declaredLength = Number(response.headers.get("content-length"));
+
+    if (Number.isFinite(declaredLength) && declaredLength > maxDownloadBytes) {
+      await response.body?.cancel();
+      throw new ShutterflyRequestError("Shutterfly download is too large");
+    }
+
+    // Read incrementally so a response without Content-Length cannot exceed the cap in memory.
+    const chunks: Uint8Array[] = [];
+    let byteLength = 0;
+    const reader = response.body?.getReader();
+
+    while (reader) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      byteLength += value.byteLength;
+
+      if (byteLength > maxDownloadBytes) {
+        await reader.cancel();
+        throw new ShutterflyRequestError("Shutterfly download is too large");
+      }
+
+      chunks.push(value);
+    }
+
+    return Buffer.concat(chunks, byteLength);
+  };
+
   const parseOrThrow = <Output>(
     schema: { safeParse: (value: unknown) => { success: true; data: Output } | { success: false } },
     value: unknown,
@@ -177,6 +315,96 @@ export const createShutterflyClient = (options: { apiKey: string; fetch?: typeof
     }
 
     return parsed.data;
+  };
+
+  /** Calls a JSON-RPC style photo library endpoint and returns its payload. */
+  const libraryRpc = async (
+    session: ShutterflySession,
+    target: { url: string; origin: string; authenticated: boolean },
+    method: string,
+    params: unknown[],
+    subSource: string,
+  ): Promise<unknown> => {
+    const response = await send(`${target.url}?method=${encodeURIComponent(method)}`, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        // The library endpoints expect a form content type even though the body is JSON.
+        "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+        origin: target.origin,
+        referer: `${target.origin}/`,
+        ...(target.authenticated
+          ? { authorization: `Bearer ${session.idToken}`, "x-api-key": options.apiKey }
+          : {}),
+      },
+      body: JSON.stringify({
+        method,
+        params,
+        headers: { "X-SFLY-SubSource": subSource },
+        id: null,
+      }),
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      throw new ShutterflyAuthError();
+    }
+
+    if (!response.ok) {
+      throw new ShutterflyRequestError(
+        `Shutterfly photo library request failed with status ${response.status}`,
+        response.status,
+      );
+    }
+
+    const body = parseOrThrow(
+      shutterflyLibraryRpcSchema,
+      await response.json().catch(() => null),
+      "photo library",
+    );
+
+    if (!body.result || body.result.success === false) {
+      const message = body.result?.message ?? (body.error ? JSON.stringify(body.error) : "");
+
+      if (libraryAuthFailurePattern.test(message)) {
+        throw new ShutterflyAuthError();
+      }
+
+      throw new ShutterflyRequestError(
+        `Shutterfly photo library ${method} failed${message ? `: ${message}` : ""}`,
+      );
+    }
+
+    return body.result.payload;
+  };
+
+  const listRawProjects = async (
+    session: ShutterflySession,
+    filters: Record<string, string>,
+  ): Promise<ShutterflyRawProject[]> => {
+    const projects: ShutterflyRawProject[] = [];
+
+    for (let page = 0; page < maxArchiveListPages; page += 1) {
+      const query = new URLSearchParams({
+        ...filters,
+        querySortKeys: "updateDate-",
+        queryLimit: String(projectPageSize),
+        queryStart: String(page * projectPageSize + 1),
+        accountId: session.accountId,
+      });
+      const body = parseOrThrow(
+        shutterflyRawProjectListSchema,
+        await apiJson(session, `${projectsBaseUrl}?${query}`),
+        "project list",
+      );
+
+      projects.push(...body.resources.map(({ resource }) => resource as ShutterflyRawProject));
+
+      if (body.resources.length < projectPageSize) {
+        break;
+      }
+    }
+
+    return projects;
   };
 
   return {
@@ -224,6 +452,7 @@ export const createShutterflyClient = (options: { apiKey: string; fetch?: typeof
         email: claims.data.email ?? null,
         expiresAt: claims.data.exp * 1000,
         idToken,
+        libraryId: claims.data.sfly3_uid || claims.data.sfly_uid,
         refreshToken: rotatedRefreshToken || refreshToken,
       };
     },
@@ -357,44 +586,337 @@ export const createShutterflyClient = (options: { apiKey: string; fetch?: typeof
       const response = await send(url, { redirect: "error" });
 
       if (!response.ok) {
+        await response.body?.cancel();
         throw new ShutterflyRequestError(
           `Shutterfly download failed with status ${response.status}`,
           response.status,
         );
       }
 
-      const declaredLength = Number(response.headers.get("content-length"));
+      return readLimitedBody(response);
+    },
 
-      if (Number.isFinite(declaredLength) && declaredLength > maxDownloadBytes) {
+    /**
+     * Renders one project surface (a page, cover, or spread) the way Shutterfly's builder previews it.
+     * Returns SVG markup that still links to its photos, artwork, and fonts on Shutterfly's servers.
+     */
+    renderSurfaceSvg: async (
+      session: ShutterflySession,
+      input: { surface: unknown; height: number; skuId: string | null },
+      signal?: AbortSignal,
+    ): Promise<string> => {
+      const query = new URLSearchParams({
+        height: String(Math.round(input.height)),
+        context: "/sfly/shutterfly/shutterfly-us/default",
+        locale: "en_US",
+        ...(input.skuId ? { skuId: input.skuId } : {}),
+      });
+      const response = await send(
+        `${surfaceRenderUrl}?${query}`,
+        {
+          method: "POST",
+          headers: {
+            accept: "image/svg+xml, application/xml",
+            authorization: `Bearer ${session.idToken}`,
+            "content-type": "application/json",
+            "x-api-key": options.apiKey,
+          },
+          body: JSON.stringify({ surfaces: [input.surface] }),
+        },
+        { timeoutMs: surfaceRenderTimeoutMs, signal },
+      );
+
+      if (response.status === 401 || response.status === 403) {
         await response.body?.cancel();
-        throw new ShutterflyRequestError("Shutterfly download is too large");
+        throw new ShutterflyAuthError();
       }
 
-      // Read incrementally so a response without Content-Length cannot exceed the cap in memory.
-      const chunks: Uint8Array[] = [];
-      let byteLength = 0;
-      const reader = response.body?.getReader();
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new ShutterflyRequestError(
+          `Shutterfly page render failed with status ${response.status}`,
+          response.status,
+        );
+      }
 
-      while (reader) {
-        const { done, value } = await reader.read();
+      const svg = (await readLimitedBody(response)).toString("utf8");
 
-        if (done) {
+      if (!/<svg[\s>]/.test(svg)) {
+        throw new ShutterflyRequestError("Shutterfly returned a page render that is not an SVG");
+      }
+
+      return svg;
+    },
+
+    /**
+     * Lists every saved and purchased project of any product type. The broad query catches products the
+     * book importer's filtered query skips; it is best effort because its filters are not documented.
+     */
+    listAllProjects: async (session: ShutterflySession): Promise<ShutterflyRawProject[]> => {
+      const baseFilters = {
+        state: "saved,purchased",
+        includePortable: "true",
+        includeMigrationStates: "true",
+      };
+      const known = await listRawProjects(session, {
+        ...baseFilters,
+        filter: "savedNoPhotowell",
+        excludeTypes: "archive",
+      });
+      const broad = await listRawProjects(session, baseFilters).catch((error: unknown) => {
+        if (error instanceof ShutterflyAuthError) {
+          throw error;
+        }
+
+        return [];
+      });
+      const projects = new Map<string, ShutterflyRawProject>();
+
+      for (const project of [...known, ...broad]) {
+        if (!projects.has(project._id)) {
+          projects.set(project._id, project);
+        }
+      }
+
+      return [...projects.values()];
+    },
+
+    /** Returns a project exactly as Shutterfly stores it. */
+    getRawProject: (session: ShutterflySession, projectId: string): Promise<unknown> => {
+      const query = new URLSearchParams({
+        origin: "web_builder",
+        convert: "true",
+        accountId: session.accountId,
+      });
+
+      return apiJson(session, `${projectsBaseUrl}/${encodeURIComponent(projectId)}?${query}`);
+    },
+
+    /** Lists the id of every photo and video in the account's photo library. */
+    listLibraryMomentIds: async (session: ShutterflySession): Promise<string[]> => {
+      const payload = parseOrThrow(
+        shutterflyMomentSearchPayloadSchema,
+        await libraryRpc(
+          session,
+          { url: photosRpcUrl, origin: photosOrigin, authenticated: true },
+          "searchMoments",
+          [
+            session.idToken,
+            session.libraryId,
+            true,
+            [],
+            [],
+            [],
+            [],
+            [],
+            false,
+            [],
+            [],
+            null,
+            "",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            true,
+          ],
+          "library",
+        ),
+        "photo library",
+      );
+
+      return [...new Set(payload.moments)];
+    },
+
+    listAlbums: async (session: ShutterflySession): Promise<ShutterflyAlbumSummary[]> => {
+      const payload = await libraryRpc(
+        session,
+        { url: thislifeRpcUrl, origin: thislifeOrigin, authenticated: false },
+        "album.getAlbums",
+        [session.idToken, session.libraryId, null, null, true],
+        "library",
+      );
+      const albums = new Map<string, ShutterflyAlbumSummary>();
+      // The payload groups albums into lists: the account's own albums first, then shared ones.
+      const groups = Array.isArray(payload) ? payload : [];
+
+      groups.forEach((group, groupIndex) => {
+        for (const entry of Array.isArray(group) ? group : []) {
+          const story = shutterflyAlbumStorySchema.safeParse(
+            (entry as { story?: unknown } | null)?.story,
+          );
+
+          if (story.success && !albums.has(story.data.uid)) {
+            albums.set(story.data.uid, {
+              id: story.data.uid,
+              name: story.data.name?.trim() || "Untitled album",
+              owned: groupIndex === 0,
+              raw: entry,
+            });
+          }
+        }
+      });
+
+      return [...albums.values()];
+    },
+
+    getAlbum: async (
+      session: ShutterflySession,
+      albumId: string,
+    ): Promise<ShutterflyAlbumContents> => {
+      const payload = await libraryRpc(
+        session,
+        { url: thislifeRpcUrl, origin: thislifeOrigin, authenticated: false },
+        "album.getAlbum",
+        [session.idToken, albumId, "startupItem", null, false, true, true],
+        "albums",
+      );
+      const album = parseOrThrow(shutterflyAlbumPayloadSchema, payload, "album");
+      const { moments, ...raw } = album;
+
+      return {
+        id: album.uid ?? albumId,
+        name: album.name ?? null,
+        momentIds: parseShutterflyAlbumMomentIds(moments ?? ""),
+        raw,
+      };
+    },
+
+    /**
+     * Streams the original upload of a photo or video to `destinationPath`. Returns the original file
+     * name Shutterfly reports, when it reports one.
+     */
+    downloadOriginal: async (
+      session: ShutterflySession,
+      momentId: string,
+      destinationPath: string,
+      signal?: AbortSignal,
+    ): Promise<{ fileName: string | null; contentType: string | null }> => {
+      const query = new URLSearchParams({
+        accessToken: session.idToken,
+        momentId,
+        source: "library",
+      });
+      const response = await send(
+        `${originalDownloadUrl}?${query}`,
+        { headers: { referer: `${thislifeOrigin}/` } },
+        { timeoutMs: originalDownloadTimeoutMs, signal },
+      );
+
+      if (response.status === 401 || response.status === 403) {
+        await response.body?.cancel();
+        throw new ShutterflyAuthError();
+      }
+
+      if (!response.ok || !response.body) {
+        await response.body?.cancel();
+        throw new ShutterflyRequestError(
+          `Shutterfly original download failed with status ${response.status}`,
+          response.status,
+        );
+      }
+
+      const contentType = response.headers.get("content-type");
+
+      // A JSON body here is an error envelope rather than the file itself.
+      if (contentType?.includes("json")) {
+        const message = await response.text().catch(() => "");
+
+        if (libraryAuthFailurePattern.test(message)) {
+          throw new ShutterflyAuthError();
+        }
+
+        throw new ShutterflyRequestError("Shutterfly did not return the original file");
+      }
+
+      // The fetch signal also covers the body, so cancelling the archive aborts this stream too.
+      await pipeline(
+        Readable.fromWeb(response.body as WebReadableStream<Uint8Array>),
+        createWriteStream(destinationPath),
+      );
+
+      return {
+        fileName: readContentDispositionFileName(response.headers.get("content-disposition")),
+        contentType,
+      };
+    },
+
+    /** Lists every order placed since Shutterfly's current order system launched, newest first. */
+    listOrders: async (session: ShutterflySession): Promise<unknown[]> => {
+      const orders: unknown[] = [];
+      let query = new URLSearchParams({
+        accountId: `shutterfly.com-${session.accountId}`,
+        querySortKeys: "invoicedDate-",
+        queryLimit: String(commercePageSize),
+        latestStatus: "true",
+      }).toString();
+
+      for (let page = 0; page < maxArchiveListPages; page += 1) {
+        const body = parseOrThrow(
+          shutterflyCommercePageSchema,
+          await apiJson(session, `${commerceBaseUrl}/order?${query}`),
+          "order list",
+        );
+
+        orders.push(...body.resources);
+
+        const nextQuery = body.nextRef?.split("?")[1];
+
+        if (!nextQuery || nextQuery === query || body.resources.length === 0) {
           break;
         }
 
-        byteLength += value.byteLength;
-
-        if (byteLength > maxDownloadBytes) {
-          await reader.cancel();
-          throw new ShutterflyRequestError("Shutterfly download is too large");
-        }
-
-        chunks.push(value);
+        query = nextQuery;
       }
 
-      const buffer = Buffer.concat(chunks, byteLength);
+      return orders;
+    },
 
-      return buffer;
+    /** Lists orders from Shutterfly's previous order system. */
+    listLegacyOrders: async (session: ShutterflySession): Promise<unknown[]> => {
+      const orders: unknown[] = [];
+      let queryStart = 1;
+
+      for (let page = 0; page < maxArchiveListPages; page += 1) {
+        const query = new URLSearchParams({
+          accountId: `shutterfly.com-${session.accountId}`,
+          querySortKeys: "orderDate-",
+          queryLimit: String(commercePageSize),
+          queryStart: String(queryStart),
+        });
+        const body = parseOrThrow(
+          shutterflyCommercePageSchema,
+          await apiJson(session, `${commerceBaseUrl}/legacy/orders?${query}`),
+          "legacy order list",
+        );
+
+        orders.push(...body.resources);
+
+        let nextStart = Number.NaN;
+
+        try {
+          nextStart = Number(
+            new URL(body.nextRef ?? "", commerceBaseUrl).searchParams.get("queryStart"),
+          );
+        } catch {
+          // No next page.
+        }
+
+        if (
+          !Number.isInteger(nextStart) ||
+          nextStart <= queryStart ||
+          body.resources.length === 0
+        ) {
+          break;
+        }
+
+        queryStart = nextStart;
+      }
+
+      return orders;
     },
   };
 };

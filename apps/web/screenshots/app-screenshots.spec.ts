@@ -657,6 +657,45 @@ const shutterflyProjects = [
   },
 ];
 
+const shutterflyArchives = [
+  {
+    id: "shutterfly_archive_recent",
+    parts: ["photos", "albums", "books", "calendars", "cards", "prints", "otherProjects", "orders"],
+    status: "completed",
+    progress: {
+      step: "finishing",
+      photos: { completed: 8410, failed: 2, total: 8412 },
+      projects: { completed: 27, failed: 0, total: 27 },
+      albums: { completed: 46, failed: 0, total: 46 },
+      orders: 37,
+      bytes: 24_910_163_968,
+      errorCount: 2,
+    },
+    error: null,
+    createdAt: "2026-05-21T18:00:00.000Z",
+    updatedAt: "2026-05-22T02:42:00.000Z",
+    finishedAt: "2026-05-22T02:42:00.000Z",
+  },
+  {
+    id: "shutterfly_archive_completed",
+    parts: ["books", "cards"],
+    status: "completed",
+    progress: {
+      step: "finishing",
+      photos: { completed: 0, failed: 0, total: 0 },
+      projects: { completed: 26, failed: 0, total: 26 },
+      albums: { completed: 0, failed: 0, total: 0 },
+      orders: 0,
+      bytes: 1_288_490_189,
+      errorCount: 0,
+    },
+    error: null,
+    createdAt: "2026-04-02T18:30:00.000Z",
+    updatedAt: "2026-04-03T02:10:00.000Z",
+    finishedAt: "2026-04-03T02:10:00.000Z",
+  },
+];
+
 // A flat 1x1 PNG keeps raster map styles deterministic without reaching tile servers.
 const mapTilePng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mPQ2rELAALkAZ6aXXkGAAAAAElFTkSuQmCC",
@@ -1091,6 +1130,25 @@ const scenarios: ScreenshotScenario[] = [
     },
   },
   {
+    name: "settings-integrations-shutterfly-archive",
+    path: "/settings?tab=integrations",
+    prepare: async (page) => {
+      const archiveSection = page.getByRole("region", { name: "Account archive" });
+
+      if (!(await isVisible(archiveSection))) {
+        return;
+      }
+
+      await expect(
+        archiveSection.getByRole("link", { name: "Download ZIP" }).first(),
+      ).toBeVisible();
+      await archiveSection.scrollIntoViewIfNeeded();
+    },
+    waitFor: async (page) => {
+      await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    },
+  },
+  {
     name: "settings-logs",
     path: "/settings",
     prepare: async (page) => {
@@ -1490,6 +1548,11 @@ async function installMockApi(
 
     if (pathName === "/api/v1/integrations/shutterfly/projects") {
       await route.fulfill({ json: { projects: shutterflyProjects } });
+      return;
+    }
+
+    if (pathName === "/api/v1/integrations/shutterfly/archives") {
+      await route.fulfill({ json: { archives: shutterflyArchives } });
       return;
     }
 

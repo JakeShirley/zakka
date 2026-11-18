@@ -61,10 +61,15 @@ import {
   type RegisterRequest,
   type ServerLogLevel,
   type ServerLogListResponse,
+  type ShutterflyArchiveListResponse,
+  type ShutterflyArchivePart,
+  type ShutterflyArchiveResponse,
   type ShutterflyConnectionResponse,
   type ShutterflyImportJobResponse,
   type ShutterflyProjectListResponse,
   serverLogListResponseSchema,
+  shutterflyArchiveListResponseSchema,
+  shutterflyArchiveResponseSchema,
   shutterflyConnectionResponseSchema,
   shutterflyImportJobResponseSchema,
   shutterflyProjectListResponseSchema,
@@ -493,6 +498,56 @@ export const createApiClient = (baseUrl = defaultBaseUrl) => ({
       baseUrl,
       shutterflyImportJobResponseSchema,
       `/api/v1/integrations/shutterfly/imports/${encodeURIComponent(importId)}`,
+    ),
+
+  listShutterflyArchives: (): Promise<ShutterflyArchiveListResponse> =>
+    requestJson(
+      baseUrl,
+      shutterflyArchiveListResponseSchema,
+      "/api/v1/integrations/shutterfly/archives",
+    ),
+
+  startShutterflyArchive: (parts: ShutterflyArchivePart[]): Promise<ShutterflyArchiveResponse> =>
+    requestJson(
+      baseUrl,
+      shutterflyArchiveResponseSchema,
+      "/api/v1/integrations/shutterfly/archives",
+      { body: JSON.stringify({ parts }), method: "POST" },
+    ),
+
+  getShutterflyArchive: (archiveId: string): Promise<ShutterflyArchiveResponse> =>
+    requestJson(
+      baseUrl,
+      shutterflyArchiveResponseSchema,
+      `/api/v1/integrations/shutterfly/archives/${encodeURIComponent(archiveId)}`,
+    ),
+
+  resumeShutterflyArchive: (archiveId: string): Promise<ShutterflyArchiveResponse> =>
+    requestJson(
+      baseUrl,
+      shutterflyArchiveResponseSchema,
+      `/api/v1/integrations/shutterfly/archives/${encodeURIComponent(archiveId)}/resume`,
+      { method: "POST" },
+    ),
+
+  deleteShutterflyArchive: async (archiveId: string): Promise<void> => {
+    const response = await fetch(
+      buildUrl(
+        baseUrl,
+        `/api/v1/integrations/shutterfly/archives/${encodeURIComponent(archiveId)}`,
+      ),
+      { credentials: "include", method: "DELETE" },
+    );
+
+    if (!response.ok) {
+      throw await parseError(response);
+    }
+  },
+
+  shutterflyArchiveDownloadUrl: (archiveId: string): string =>
+    buildUrl(
+      baseUrl,
+      `/api/v1/integrations/shutterfly/archives/${encodeURIComponent(archiveId)}/download`,
     ),
 
   createBook: (input: BookCreateRequest): Promise<BookResponse> =>

@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { Readable } from "node:stream";
 
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -112,6 +113,14 @@ import {
   serverLogEntryResponseSchema,
   serverLogListResponseSchema,
   serverLogListRoute,
+  shutterflyArchiveDeleteRoute,
+  shutterflyArchiveDownloadRoute,
+  shutterflyArchiveListResponseSchema,
+  shutterflyArchiveListRoute,
+  shutterflyArchiveResponseSchema,
+  shutterflyArchiveResumeRoute,
+  shutterflyArchiveRoute,
+  shutterflyArchiveStartRoute,
   shutterflyConnectionResponseSchema,
   shutterflyConnectionRoute,
   shutterflyConnectRoute,
@@ -179,6 +188,11 @@ import {
   runExportJob,
 } from "./exports.js";
 import { CredentialDecryptError } from "./integrations/credential-cipher.js";
+import {
+  createShutterflyArchives,
+  ShutterflyArchiveBusyError,
+  ShutterflyArchiveNotFoundError,
+} from "./integrations/shutterfly/archive-jobs.js";
 import { ShutterflyAuthError, ShutterflyRequestError } from "./integrations/shutterfly/client.js";
 import {
   createShutterflyImportJobs,
@@ -224,6 +238,7 @@ import type {
 } from "./persistence/schema.js";
 import { readStaticAsset } from "./static.js";
 import { validateWashiTapeDesign, washiTapeDesignErrorMessages } from "./washi-tapes.js";
+import { createZipStream } from "./zip-stream.js";
 
 type ApiBindings = {
   Variables: {
@@ -257,6 +272,8 @@ export type CreateAppOptions = {
   staticAssetsDir?: string;
   /** Present only when SHUTTERFLY_API_KEY is configured. */
   shutterfly?: ShutterflyIntegration;
+  /** Where Shutterfly account archives are built; archiving is unavailable without it. */
+  shutterflyArchiveDir?: string;
   /** Proxies and caches raster tiles for tile-style map layers. */
   mapTiles?: MapTileSource;
 };
@@ -679,6 +696,7 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     sessionCookieSecure: createOptions.sessionCookieSecure,
     sessionTtlMs: createOptions.sessionTtlMs ?? defaultSessionTtlMs,
     shutterfly: createOptions.shutterfly,
+    shutterflyArchiveDir: createOptions.shutterflyArchiveDir,
     staticAssetsDir: createOptions.staticAssetsDir,
     storage: createOptions.storage,
   };
@@ -3489,6 +3507,213 @@ export const createApp = (createOptions: CreateAppOptions = {}) => {
     }
 
     return context.json(toShutterflyImportJobResponse(job), 200);
+  });
+
+  const shutterflyArchives =
+    options.shutterfly && options.shutterflyArchiveDir
+      ? createShutterflyArchives({
+          rootDir: options.shutterflyArchiveDir,
+          clock: options.clock,
+          describeError: (error) => {
+            const described = describeShutterflyError(error);
+
+            if (described) {
+              return { code: described.code, message: described.message };
+            }
+
+            if ((error as NodeJS.ErrnoException).code === "ENOSPC") {
+              return {
+                code: "disk_full",
+                message:
+                  "The server ran out of disk space. Free up space, then resume the archive.",
+              };
+            }
+
+            console.error(error);
+
+            return {
+              code: "archive_stopped",
+              message: error instanceof Error ? error.message : "Unexpected server error",
+            };
+          },
+          run: (accountId, runOptions) =>
+            (options.shutterfly as ShutterflyIntegration).archiveAccount(accountId, runOptions),
+        })
+      : null;
+
+  const requireShutterflyArchives = (context: ApiContext) => {
+    const required = requireShutterfly(context);
+
+    if ("response" in required) {
+      return { response: required.response } as const;
+    }
+
+    if (!shutterflyArchives) {
+      return {
+        response: context.json(
+          createErrorResponse(
+            context,
+            "shutterfly_not_configured",
+            "Shutterfly archiving is not configured on this server",
+          ),
+          503,
+        ),
+      } as const;
+    }
+
+    return { ...required, archives: shutterflyArchives } as const;
+  };
+
+  const toShutterflyArchiveErrorResponse = (context: ApiContext, error: unknown) => {
+    if (error instanceof ShutterflyArchiveNotFoundError) {
+      return context.json(
+        createErrorResponse(context, "shutterfly_archive_not_found", error.message),
+        404,
+      );
+    }
+
+    if (error instanceof ShutterflyArchiveBusyError) {
+      return context.json(
+        createErrorResponse(context, "shutterfly_archive_busy", error.message),
+        409,
+      );
+    }
+
+    throw error;
+  };
+
+  app.openapi(shutterflyArchiveListRoute, async (context) => {
+    const required = requireShutterflyArchives(context);
+
+    if ("response" in required) {
+      return required.response;
+    }
+
+    return context.json(
+      shutterflyArchiveListResponseSchema.parse({
+        archives: await required.archives.list(required.accountId),
+      }),
+      200,
+    );
+  });
+
+  app.openapi(shutterflyArchiveStartRoute, async (context) => {
+    const required = requireShutterflyArchives(context);
+
+    if ("response" in required) {
+      return required.response;
+    }
+
+    if (!required.shutterfly.getStatus(required.accountId).connected) {
+      return context.json(
+        createErrorResponse(
+          context,
+          "shutterfly_not_connected",
+          "Connect your Shutterfly account before archiving it.",
+        ),
+        409,
+      );
+    }
+
+    return context.json(
+      shutterflyArchiveResponseSchema.parse(
+        await required.archives.start(required.accountId, context.req.valid("json")?.parts),
+      ),
+      202,
+    );
+  });
+
+  app.openapi(shutterflyArchiveRoute, async (context) => {
+    const required = requireShutterflyArchives(context);
+
+    if ("response" in required) {
+      return required.response;
+    }
+
+    const archive = await required.archives.get(
+      required.accountId,
+      context.req.valid("param").archiveId,
+    );
+
+    if (!archive) {
+      return toShutterflyArchiveErrorResponse(context, new ShutterflyArchiveNotFoundError());
+    }
+
+    return context.json(shutterflyArchiveResponseSchema.parse(archive), 200);
+  });
+
+  app.openapi(shutterflyArchiveResumeRoute, async (context) => {
+    const required = requireShutterflyArchives(context);
+
+    if ("response" in required) {
+      return required.response;
+    }
+
+    if (!required.shutterfly.getStatus(required.accountId).connected) {
+      return context.json(
+        createErrorResponse(
+          context,
+          "shutterfly_not_connected",
+          "Connect your Shutterfly account before resuming the archive.",
+        ),
+        409,
+      );
+    }
+
+    try {
+      const archive = await required.archives.resume(
+        required.accountId,
+        context.req.valid("param").archiveId,
+      );
+
+      return context.json(shutterflyArchiveResponseSchema.parse(archive), 202);
+    } catch (error) {
+      return toShutterflyArchiveErrorResponse(context, error);
+    }
+  });
+
+  app.openapi(shutterflyArchiveDeleteRoute, async (context) => {
+    const required = requireShutterflyArchives(context);
+
+    if ("response" in required) {
+      return required.response;
+    }
+
+    try {
+      await required.archives.remove(required.accountId, context.req.valid("param").archiveId);
+
+      return context.body(null, 204);
+    } catch (error) {
+      return toShutterflyArchiveErrorResponse(context, error);
+    }
+  });
+
+  app.openapi(shutterflyArchiveDownloadRoute, async (context) => {
+    const required = requireShutterflyArchives(context);
+
+    if ("response" in required) {
+      return required.response;
+    }
+
+    try {
+      const download = await required.archives.download(
+        required.accountId,
+        context.req.valid("param").archiveId,
+      );
+
+      return context.body(
+        Readable.toWeb(createZipStream(download.entries)) as ReadableStream<Uint8Array>,
+        200,
+        {
+          "cache-control": "private, no-store",
+          "content-disposition": `attachment; filename="${download.fileName}"`,
+          "content-length": String(download.size),
+          "content-type": "application/zip",
+        },
+      );
+    } catch (error) {
+      return toShutterflyArchiveErrorResponse(context, error);
+    }
   });
 
   app.all(mcpEndpointPath, async (context) => {

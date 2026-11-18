@@ -823,6 +823,92 @@ textarea:focus-visible {
   gap: 8px;
 }
 
+.shutterfly-archive {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--sb-border);
+}
+
+.shutterfly-archive .integration-actions {
+  flex-wrap: wrap;
+}
+
+.shutterfly-archive h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.shutterfly-archive-item {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--sb-border);
+  border-radius: 8px;
+}
+
+.shutterfly-archive-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.shutterfly-archive-status {
+  color: var(--sb-text-muted);
+  font-size: 0.85rem;
+}
+
+.shutterfly-archive-status.is-completed {
+  color: var(--sb-success-foreground);
+}
+
+.shutterfly-archive-status.is-failed,
+.shutterfly-archive-status.is-interrupted {
+  color: var(--sb-danger-foreground);
+}
+
+.shutterfly-archive-progress {
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.shutterfly-archive-counts,
+.shutterfly-archive-confirm {
+  color: var(--sb-text-muted);
+  font-size: 0.85rem;
+}
+
+.shutterfly-archive-confirm {
+  align-self: center;
+  margin-right: auto;
+}
+
+.shutterfly-archive-parts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.shutterfly-archive-parts legend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.shutterfly-archive-parts > label {
+  display: grid;
+  font-size: 0.9rem;
+}
+
 .mcp-copy-row,
 .mcp-token-form {
   display: grid;

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { apiClient } from "../../apiClient";
 import { Panel } from "../../components/layout";
 import { getErrorMessage } from "../../lib/errors";
+import { ShutterflyArchiveSection } from "./ShutterflyArchiveSection";
 
 export function ShutterflyIntegrationPanel() {
   const [connection, setConnection] = useState<ShutterflyConnectionResponse | null>(null);
@@ -69,7 +70,7 @@ export function ShutterflyIntegrationPanel() {
       <div className="integration-panel">
         <p className="integration-intro">
           Import your saved Shutterfly photo books as Zakka books, including pages, photos, text,
-          and stickers.
+          and stickers, or archive everything in your Shutterfly account.
         </p>
 
         {connection === null && !error ? (
@@ -180,6 +181,10 @@ export function ShutterflyIntegrationPanel() {
           <p className="panel-alert" role="alert">
             {error}
           </p>
+        ) : null}
+
+        {connection?.configured ? (
+          <ShutterflyArchiveSection connected={connection.connected} />
         ) : null}
       </div>
     </Panel>

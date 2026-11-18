@@ -48,7 +48,9 @@ const staticAssetsDir = process.env.WEB_ASSETS_DIR;
 const app = createApp({
   mapTiles: createMapTileSource({ cacheDir: join(config.ZAKKA_DATA_DIR, "map-tiles") }),
   repositories,
-  ...(shutterfly ? { shutterfly } : {}),
+  ...(shutterfly
+    ? { shutterfly, shutterflyArchiveDir: join(config.ZAKKA_DATA_DIR, "shutterfly-archives") }
+    : {}),
   ...(config.SESSION_COOKIE_SECURE === undefined
     ? {}
     : { sessionCookieSecure: config.SESSION_COOKIE_SECURE }),

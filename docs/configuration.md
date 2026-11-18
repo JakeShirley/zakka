@@ -10,7 +10,7 @@ Runtime configuration is parsed by `@zakka/config` at process startup. Local def
 | `WEB_ORIGIN` | `http://localhost:5173` | No | No | Public browser origin for the deployed app. |
 | `SESSION_COOKIE_SECURE` | Auto-detected per request | No | No | Whether browser session cookies require HTTPS. By default, HTTPS requests and requests with `X-Forwarded-Proto: https` receive `Secure` cookies; local HTTP requests do not. Override only for unusual proxy setups. |
 | `ZAKKA_DATA_DIR` | `./storage/dev`; `/data/zakka` when `NODE_ENV=production` | No | No | Root for local SQLite files, page document JSON files, uploads, variants, previews, exports, and the integration credential key (`secrets/credentials.key`). |
-| `SHUTTERFLY_API_KEY` | Unset | No | Yes | Enables the Shutterfly project importer. See [Shutterfly import](#shutterfly-import). |
+| `SHUTTERFLY_API_KEY` | Unset | No | Yes | Enables the Shutterfly project importer and account archive. See [Shutterfly import](#shutterfly-import). |
 
 When `NODE_ENV=development`, the API seeds a development account (`dev@zakka.local` / `zakka-dev-password`) on startup if it is missing. See [Development Workflow](development.md) for details. No account is seeded for `test` or `production`.
 
@@ -33,6 +33,20 @@ To enable it, set `SHUTTERFLY_API_KEY` to the `X-API-Key` value that Shutterfly'
 Each Zakka user then connects their own Shutterfly account under **Settings > Integrations** by pasting their Shutterfly refresh token. The settings page explains where to find it. Zakka exchanges the refresh token for short-lived access tokens and stores it encrypted with AES-256-GCM. The key is generated on first use at `ZAKKA_DATA_DIR/secrets/credentials.key`. Back up that file with your data directory: if it is lost, users must reconnect. Refresh tokens expire about 30 days after the user last signed in to Shutterfly.
 
 Imported photos are downloaded at the largest size Shutterfly's renderer provides (up to 2600 px on the long edge). Empty photo wells, and photos that could not be downloaded, come across as photo placeholders that keep the frame's size, rotation, and shape. Fill one in the editor by dropping a photo onto it or by choosing **Add photo**. Exports leave unfilled placeholders blank. Shutterfly's licensed fonts are replaced with the closest bundled Zakka font. Text larger than Zakka's maximum size is reduced to fit, and spine text is skipped because Zakka books have no spine. Each import reports anything it could not bring across.
+
+### Shutterfly account archive
+
+A connected user can also archive everything in their Shutterfly account from **Settings > Integrations > Account archive**, for example before Shutterfly deletes older data. It uses the same `SHUTTERFLY_API_KEY` and saves:
+
+- every photo and video in the Shutterfly photo library, as the original file Shutterfly stores
+- every album, as an `album.json` listing its photos and where each one is in the archive
+- every saved project of any type (books, cards, calendars, and so on), as Shutterfly's raw project JSON plus the photos, design assets, and thumbnail it uses
+- a full-size render of every project page in its `pages/` folder, made by Shutterfly's page renderer and saved as a self-contained SVG with its photos (up to 3600 px) and fonts built in, so it opens in any browser after Shutterfly deletes the originals; `pages.json` maps each render to its surface in the project JSON
+- order history, including legacy orders, as raw JSON
+
+Under **What to archive**, the user can pick only some of these parts, for example just their cards to try it out first: the photo library, albums (with their photos), photo books, calendars, cards and stationery, prints, other projects, and order history. Projects are sorted into those groups by the product category Shutterfly reports; anything that doesn't match a known group counts as an other project. Everything is selected by default. **Resume** and **Update** keep the parts the archive was started with. `POST /api/v1/integrations/shutterfly/archives` takes an optional `{ "parts": [...] }` body; without one, it archives everything.
+
+The archive is built on the server under `ZAKKA_DATA_DIR/shutterfly-archives` and kept until the user deletes it. It needs about as much free disk space as the user's photo library, and a large library can take hours. The archive keeps running if the user leaves the page. If the server restarts, the archive is marked interrupted, and **Resume** continues where it left off without downloading saved files again. Items that fail are listed in the archive's `errors.json` and retried on resume. **Update** on a finished archive downloads anything added since, and adds page renders to projects archived before they existed. When an archive is not running, **Download ZIP** streams it as an uncompressed ZIP (ZIP64, so archives over 4 GB work), with a `README.txt` describing the layout.
 
 ## AI assistants (MCP)
 

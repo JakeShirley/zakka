@@ -234,3 +234,201 @@ export const shutterflyImportJobRoute = createRoute({
     ...shutterflyErrorResponses,
   },
 });
+
+const archiveCountSchema = z.object({
+  completed: z.number().int().nonnegative().openapi({ example: 1200 }),
+  failed: z.number().int().nonnegative().openapi({ example: 0 }),
+  total: z.number().int().nonnegative().openapi({ example: 4800 }),
+});
+
+export const shutterflyArchiveStepSchema = z
+  .enum(["starting", "orders", "projects", "albums", "photos", "finishing"])
+  .openapi("ShutterflyArchiveStep", {
+    description:
+      "The step an archive is on: signing in, saving order history, saving projects, reading albums, downloading original photos, or writing the archive's index files.",
+  });
+
+export const shutterflyArchiveParts = [
+  "photos",
+  "albums",
+  "books",
+  "calendars",
+  "cards",
+  "prints",
+  "otherProjects",
+  "orders",
+] as const;
+
+export const shutterflyArchivePartSchema = z
+  .enum(shutterflyArchiveParts)
+  .openapi("ShutterflyArchivePart", {
+    description:
+      "A part of the Shutterfly account to archive: the photo library, albums (with their photos), photo books, calendars, cards and stationery, prints, every other project type, or order history.",
+  });
+
+export const shutterflyArchiveStartRequestSchema = z
+  .object({
+    parts: z
+      .array(shutterflyArchivePartSchema)
+      .min(1)
+      .optional()
+      .openapi({
+        description: "What to archive. Defaults to everything.",
+        example: ["books", "calendars"],
+      }),
+  })
+  .openapi("ShutterflyArchiveStartRequest");
+
+export const shutterflyArchiveResponseSchema = z
+  .object({
+    id: z.string().openapi({ example: "shutterfly_archive_6f1c2d9e-5b1a-4c55-9a9f-2f1d4b7e8c01" }),
+    parts: z.array(shutterflyArchivePartSchema).openapi({
+      description: "What this archive includes. Resuming or updating it keeps the same parts.",
+      example: [...shutterflyArchiveParts],
+    }),
+    status: z.enum(["running", "completed", "failed", "interrupted"]).openapi({
+      description:
+        "`interrupted` archives were stopped by a server restart or shutdown; resume them to continue where they left off.",
+      example: "running",
+    }),
+    progress: z.object({
+      step: shutterflyArchiveStepSchema,
+      photos: archiveCountSchema,
+      projects: archiveCountSchema,
+      albums: archiveCountSchema,
+      orders: z.number().int().nonnegative().openapi({ example: 37 }),
+      bytes: z.number().int().nonnegative().openapi({
+        description: "Bytes saved to the archive so far.",
+        example: 5368709120,
+      }),
+      errorCount: z.number().int().nonnegative().openapi({
+        description: "Items that could not be archived. Resuming the archive retries them.",
+        example: 0,
+      }),
+    }),
+    error: z
+      .object({ code: z.string(), message: z.string() })
+      .nullable()
+      .openapi({ description: "Why the archive stopped, when it failed or was interrupted." }),
+    createdAt: z.string().openapi({ example: "2026-05-01T17:04:00.000Z" }),
+    updatedAt: z.string().openapi({ example: "2026-05-01T17:34:00.000Z" }),
+    finishedAt: z.string().nullable().openapi({ example: null }),
+  })
+  .openapi("ShutterflyArchiveResponse");
+
+export const shutterflyArchiveListResponseSchema = z
+  .object({ archives: z.array(shutterflyArchiveResponseSchema) })
+  .openapi("ShutterflyArchiveListResponse");
+
+export type ShutterflyArchiveStep = z.infer<typeof shutterflyArchiveStepSchema>;
+export type ShutterflyArchivePart = z.infer<typeof shutterflyArchivePartSchema>;
+export type ShutterflyArchiveStartRequest = z.infer<typeof shutterflyArchiveStartRequestSchema>;
+export type ShutterflyArchiveResponse = z.infer<typeof shutterflyArchiveResponseSchema>;
+export type ShutterflyArchiveListResponse = z.infer<typeof shutterflyArchiveListResponseSchema>;
+
+const archiveParamsSchema = z.object({
+  archiveId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,128}$/)
+    .openapi({ param: { name: "archiveId", in: "path" } }),
+});
+
+const shutterflyArchiveErrorResponses = {
+  ...shutterflyErrorResponses,
+  404: { description: "The Shutterfly archive was not found.", ...errorContent },
+  409: {
+    description:
+      "The Shutterfly account is not connected, or another archive is running for this account.",
+    ...errorContent,
+  },
+};
+
+export const shutterflyArchiveListRoute = createRoute({
+  method: "get",
+  path: "/api/v1/integrations/shutterfly/archives",
+  tags: ["Integrations"],
+  responses: {
+    200: {
+      description: "Lists Shutterfly account archives for the current account, newest first.",
+      content: { "application/json": { schema: shutterflyArchiveListResponseSchema } },
+    },
+    ...shutterflyArchiveErrorResponses,
+  },
+});
+
+export const shutterflyArchiveStartRoute = createRoute({
+  method: "post",
+  path: "/api/v1/integrations/shutterfly/archives",
+  tags: ["Integrations"],
+  request: {
+    body: {
+      content: { "application/json": { schema: shutterflyArchiveStartRequestSchema } },
+      required: false,
+    },
+  },
+  responses: {
+    202: {
+      description:
+        "Starts archiving the connected Shutterfly account in the background: original photos and videos, albums, projects with their photos and artwork, and order history, or only the chosen `parts`. Starting while an archive is already running returns the running archive.",
+      content: { "application/json": { schema: shutterflyArchiveResponseSchema } },
+    },
+    ...shutterflyArchiveErrorResponses,
+  },
+});
+
+export const shutterflyArchiveRoute = createRoute({
+  method: "get",
+  path: "/api/v1/integrations/shutterfly/archives/{archiveId}",
+  tags: ["Integrations"],
+  request: { params: archiveParamsSchema },
+  responses: {
+    200: {
+      description: "Returns a Shutterfly archive and its progress.",
+      content: { "application/json": { schema: shutterflyArchiveResponseSchema } },
+    },
+    ...shutterflyArchiveErrorResponses,
+  },
+});
+
+export const shutterflyArchiveResumeRoute = createRoute({
+  method: "post",
+  path: "/api/v1/integrations/shutterfly/archives/{archiveId}/resume",
+  tags: ["Integrations"],
+  request: { params: archiveParamsSchema },
+  responses: {
+    202: {
+      description:
+        "Continues a stopped archive, keeping what it already downloaded and retrying anything that failed. Also picks up photos and projects added since the archive ran.",
+      content: { "application/json": { schema: shutterflyArchiveResponseSchema } },
+    },
+    ...shutterflyArchiveErrorResponses,
+  },
+});
+
+export const shutterflyArchiveDeleteRoute = createRoute({
+  method: "delete",
+  path: "/api/v1/integrations/shutterfly/archives/{archiveId}",
+  tags: ["Integrations"],
+  request: { params: archiveParamsSchema },
+  responses: {
+    204: { description: "Stops the archive if it is running and deletes its files." },
+    ...shutterflyArchiveErrorResponses,
+  },
+});
+
+export const shutterflyArchiveDownloadRoute = createRoute({
+  method: "get",
+  path: "/api/v1/integrations/shutterfly/archives/{archiveId}/download",
+  tags: ["Integrations"],
+  request: { params: archiveParamsSchema },
+  responses: {
+    200: {
+      description:
+        "Streams the archive as an uncompressed ZIP file. Available once the archive is no longer running.",
+      content: {
+        "application/zip": { schema: z.string().openapi({ type: "string", format: "binary" }) },
+      },
+    },
+    ...shutterflyArchiveErrorResponses,
+  },
+});

@@ -11,7 +11,12 @@ import { createCustomBackground } from "../../custom-backgrounds.js";
 import { createCustomStickerFromUpload } from "../../custom-stickers.js";
 import type { Repositories } from "../../persistence/repositories.js";
 import type { BookRecord, IntegrationConnectionRecord } from "../../persistence/schema.js";
-import type { CredentialCipher } from "../credential-cipher.js";
+import { CredentialDecryptError, type CredentialCipher } from "../credential-cipher.js";
+import {
+  runShutterflyArchive,
+  type ShutterflyArchiveProgress,
+  type ShutterflyArchiveRunOptions,
+} from "./archive.js";
 import {
   createShutterflyClient,
   normalizeShutterflyRefreshToken,
@@ -31,6 +36,7 @@ import {
   type ShutterflyDesignAsset,
   type ShutterflyProjectSummary,
 } from "./schemas.js";
+import { mapWithConcurrency, safeFileName } from "./util.js";
 
 const provider = "shutterfly";
 const stickerPackTitle = "Shutterfly";
@@ -174,27 +180,6 @@ export const matchShutterflyFontAsset = (
   return null;
 };
 
-const mapWithConcurrency = async <Input, Output>(
-  inputs: readonly Input[],
-  limit: number,
-  worker: (input: Input) => Promise<Output>,
-): Promise<Output[]> => {
-  const results: Output[] = new Array(inputs.length);
-  let nextIndex = 0;
-
-  await Promise.all(
-    Array.from({ length: Math.min(limit, inputs.length) }, async () => {
-      while (nextIndex < inputs.length) {
-        const index = nextIndex;
-        nextIndex += 1;
-        results[index] = await worker(inputs[index] as Input);
-      }
-    }),
-  );
-
-  return results;
-};
-
 const isBookProject = (project: ShutterflyProjectSummary): boolean =>
   project.projectType?.group?.toLowerCase() === "books" ||
   project.productCategory?.toLowerCase() === "books";
@@ -210,16 +195,6 @@ const toProjectListItem = (project: ShutterflyProjectSummary): ShutterflyProject
     pageCount: Number.isInteger(pageCount) && pageCount > 0 ? pageCount : null,
     updatedAt: parseShutterflyDate(project.updateDate ?? project.createDate),
   };
-};
-
-const safeFileName = (value: string | null | undefined, fallback: string): string => {
-  const cleaned = Array.from(value ?? "", (character) =>
-    character.charCodeAt(0) < 32 || '\\/:*?"<>|'.includes(character) ? "_" : character,
-  )
-    .join("")
-    .trim();
-
-  return cleaned.length > 0 ? cleaned.slice(0, 180) : fallback;
 };
 
 /** The signed render URL returns slightly upscaled images; shrink them back to Shutterfly's stored size. */
@@ -648,6 +623,34 @@ export const createShutterflyIntegration = (options: {
       (await withSession(accountId, (session) => client.listProjects(session)))
         .filter(isBookProject)
         .map(toProjectListItem),
+
+    /** Downloads everything in the connected Shutterfly account; see `runShutterflyArchive`. */
+    archiveAccount: (
+      accountId: string,
+      runOptions: Omit<ShutterflyArchiveRunOptions, "clock">,
+    ): Promise<ShutterflyArchiveProgress> =>
+      runShutterflyArchive(
+        {
+          client,
+          withSession: async (action) => {
+            try {
+              return await withSession(accountId, action);
+            } catch (error) {
+              // Parallel downloads can race the one-time refresh in withSession; retry once more.
+              if (error instanceof ShutterflyAuthError) {
+                return withSession(accountId, action);
+              }
+
+              throw error;
+            }
+          },
+          isFatal: (error) =>
+            error instanceof ShutterflyAuthError ||
+            error instanceof ShutterflyNotConnectedError ||
+            error instanceof CredentialDecryptError,
+        },
+        { ...runOptions, clock },
+      ),
 
     importProject: async (
       accountId: string,
