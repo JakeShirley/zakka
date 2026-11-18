@@ -118,6 +118,8 @@ const createFakeShutterfly = async () => {
     downloads: [] as string[],
     failingMoments: new Set<string>(["103"]),
     expired: false,
+    pageRenders: [] as { height: string | null; surfaceNumber: unknown; apiKey: string | null }[],
+    photoRenders: [] as string[],
     fetch: (async () => new Response(null, { status: 500 })) as typeof fetch,
   };
 
@@ -191,7 +193,49 @@ const createFakeShutterfly = async () => {
     }
 
     if (url.startsWith("https://uniim-cp.shutterfly.com/")) {
+      fake.photoRenders.push(url);
+
       return new Response("rendered-photo", { headers: { "content-type": "image/jpeg" } });
+    }
+
+    if (
+      url.startsWith(
+        "https://rendering-api3.shutterfly.com/rendering/renderer/v1/surfacesvg/preview?",
+      )
+    ) {
+      const [surface] = JSON.parse(String(init?.body)).surfaces;
+
+      fake.pageRenders.push({
+        height: new URL(url).searchParams.get("height"),
+        surfaceNumber: surface.surfaceNumber,
+        apiKey: new Headers(init?.headers).get("x-api-key"),
+      });
+
+      const fontStyle = `<style>@font-face { font-family: "Page"; src: url("https://sfly3-design-portal.internal.shutterfly.com/704/fonts/page.woff?_t=1") format("woff"); }</style>`;
+
+      const mockup = `<image width="1401" height="1343" xlink:href="https://sfly3-catalog-stepassets.shutterfly.com/mockup.png"/>`;
+
+      return new Response(
+        [
+          `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3647 3499"><g transform="scale(2.6)">`,
+          `<svg viewBox="0 0 1401 1343"><g id="Underlay">${mockup}</g>`,
+          `<g id="Surface"><g clip-path="url(#slot)"><g transform="translate(52.4, 996.1) scale(0.38)">`,
+          `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="2385" height="2910" viewBox="0 0 2385 2910">`,
+          fontStyle,
+          `<image width="2385" height="1200" xlink:href="https://uniim-cp.shutterfly.com/procsimple?imageID=page&amp;rendersize=fit1600x1600"/>`,
+          fontStyle,
+          `<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>`,
+          `<image href="https://example.com/elsewhere.png"/>`,
+          `</svg>`,
+          `</g></g></g><g id="ClipMask"><clipPath id="slot"><path d="M0,0h1401v1343H0z"/></clipPath></g>`,
+          `<g id="Overlay">${mockup}</g></svg></g></svg>`,
+        ].join(""),
+        { headers: { "content-type": "application/xml" } },
+      );
+    }
+
+    if (url.startsWith("https://sfly3-catalog-design.sf-cdn.com/externalabc/704/fonts/page.woff")) {
+      return new Response("wOFF-font", { headers: { "content-type": "font/woff" } });
     }
 
     if (
@@ -200,7 +244,18 @@ const createFakeShutterfly = async () => {
       return Response.json({
         entities: {
           designAssets: [
-            { id: "DA_46646", name: "Helvetica Neue", assetType: "font" },
+            {
+              id: "DA_46646",
+              name: "Helvetica Neue",
+              assetType: "font",
+              files: {
+                WOFF: {
+                  location:
+                    "https://sfly3-catalog-design.sf-cdn.com/externalabc/704/fonts/page.woff?_t=1",
+                  fileType: "WOFF",
+                },
+              },
+            },
             {
               id: "DA_22741",
               name: "round-frame",
@@ -496,6 +551,48 @@ describe("Shutterfly archive routes", () => {
     expect(files.get(`${book}/design-assets/round-frame (DA_22741).svg`)?.toString()).toBe(
       "<svg/>",
     );
+    expect(readJson(files, `${book}/pages.json`)).toEqual([
+      { file: "pages/coverSpread-01.svg", category: "coverSpread", surfaceNumber: "0" },
+      ...[0, "1", "3", "19", "29"].map((surfaceNumber, index) => ({
+        file: `pages/inside-0${index + 1}.svg`,
+        category: "inside",
+        surfaceNumber,
+      })),
+      { file: "pages/logo-01.svg", category: "logo", surfaceNumber: "-7" },
+    ]);
+    expect(fake.pageRenders).toContainEqual({
+      height: "2910",
+      surfaceNumber: "0",
+      apiKey: "test-shutterfly-api-key",
+    });
+
+    const pageSvg = files.get(`${book}/pages/inside-02.svg`)?.toString() ?? "";
+
+    // The page is saved on its own at print size, without the product mockup around it.
+    expect(pageSvg).toMatch(/^<\?xml[^>]*>\s*<svg [^>]*viewBox="0 0 2385 2910">/);
+    expect(pageSvg).toContain(`<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>`);
+    expect(pageSvg.trimEnd()).toMatch(
+      /<image href="https:\/\/example\.com\/elsewhere\.png"\/><\/svg>$/,
+    );
+    expect(pageSvg).not.toMatch(/Underlay|Overlay|mockup/);
+
+    // Photos and fonts are built in so the page still opens after Shutterfly deletes them. Fonts on
+    // Shutterfly's internal host come from the public copy listed in the design assets.
+    expect(pageSvg).toContain(
+      `xlink:href="data:application/octet-stream;base64,${Buffer.from("rendered-photo").toString("base64")}"`,
+    );
+    expect(pageSvg).toContain(
+      `url("data:font/woff;base64,${Buffer.from("wOFF-font").toString("base64")}")`,
+    );
+    // Shutterfly repeats each font's style for every text box; one copy is kept.
+    expect(pageSvg.match(/@font-face/g)).toHaveLength(1);
+    expect(pageSvg).toContain(`href="https://example.com/elsewhere.png"`);
+    expect(pageSvg).not.toContain("shutterfly.com");
+    expect(pageSvg).not.toContain("sf-cdn.com");
+    // Page photos are fetched at the next size Shutterfly allows above how large they are placed.
+    expect(fake.photoRenders).toContain(
+      "https://uniim-cp.shutterfly.com/procsimple?imageID=page&rendersize=fit3000x3000",
+    );
     expect(readJson(files, "projects/Cards/Holiday card (2000000000002)/project.json")).toEqual({
       _id: "2000000000002",
       projectName: "Holiday card",
@@ -529,6 +626,25 @@ describe("Shutterfly archive routes", () => {
     expect(files.get("photos/IMG_0001 (103).jpg")?.toString()).toBe("photo-103");
     expect(files.get(photo101)?.toString()).toBe("photo-101");
     expect(readJson(files, "errors.json")).toEqual([]);
+
+    // Projects are archived side by side; each records only the bytes in its own folder.
+    const [projectsState] = (await readdir(archiveDir, { recursive: true })).filter(
+      (entry) => entry.includes(id) && entry.endsWith("projects.jsonl"),
+    );
+    const projectEntries = (await readFile(join(archiveDir, projectsState as string), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { folder: string; bytes: number });
+
+    expect(projectEntries.length).toBeGreaterThan(1);
+
+    for (const { folder, bytes } of projectEntries) {
+      expect(bytes).toBe(
+        [...files]
+          .filter(([name]) => name.startsWith(`${folder}/`))
+          .reduce((total, [, data]) => total + data.length, 0),
+      );
+    }
 
     const list = await app.request("/api/v1/integrations/shutterfly/archives", {
       headers: { cookie },
@@ -595,6 +711,65 @@ describe("Shutterfly archive routes", () => {
     expect(names).toContain("projects/Cards/Holiday card (2000000000002)/project.json");
     expect(names).toContain("albums/albums.json");
     expect(readJson(files, "account.json")).toMatchObject({ parts: ["albums", "cards"] });
+  });
+
+  it("adds page renders to projects archived before they existed", async () => {
+    const testApp = await createTestApp();
+    const { app, archiveDir, cookie, fake } = testApp;
+
+    await connect(testApp);
+
+    const started = await app.request("/api/v1/integrations/shutterfly/archives", {
+      body: JSON.stringify({ parts: ["books"] }),
+      headers: { "content-type": "application/json", cookie },
+      method: "POST",
+    });
+    const { id } = shutterflyArchiveResponseSchema.parse(await started.json());
+
+    await waitForArchive(testApp, id);
+
+    // Rewind the archive to how an earlier version left it: no pages, and no pages flag.
+    const [stateFile] = (await readdir(archiveDir, { recursive: true }))
+      .filter((entry) => entry.includes(id) && entry.endsWith("projects.jsonl"))
+      .map((entry) => join(archiveDir, entry));
+    const book = "projects/Books/Fixture Layflat Book (1000000000001)";
+    const bookDir = join(stateFile as string, "..", "..", "files", ...book.split("/"));
+    const entry = JSON.parse(await readFile(stateFile as string, "utf8"));
+
+    delete entry.pages;
+    await writeFile(stateFile as string, `${JSON.stringify(entry)}\n`);
+    await rm(join(bookDir, "pages"), { recursive: true });
+    await rm(join(bookDir, "pages.json"));
+    fake.pageRenders.length = 0;
+
+    const projectRequests: string[] = [];
+    const fetchProjects = fake.fetch;
+
+    fake.fetch = async (input, init) => {
+      if (String(input).includes("/projects/v2/project/")) {
+        projectRequests.push(String(input));
+      }
+
+      return fetchProjects(input, init);
+    };
+
+    await app.request(`/api/v1/integrations/shutterfly/archives/${id}/resume`, {
+      headers: { cookie },
+      method: "POST",
+    });
+
+    expect(await waitForArchive(testApp, id)).toMatchObject({
+      status: "completed",
+      progress: { projects: { completed: 1, failed: 0, total: 1 }, errorCount: 0 },
+    });
+    expect(fake.pageRenders).toHaveLength(7);
+    // The saved project.json is rendered rather than downloading the project again.
+    expect(projectRequests).toEqual([]);
+
+    const files = await download(testApp, id);
+
+    expect(files.get(`${book}/pages/logo-01.svg`)?.toString()).toContain("data:font/woff;base64,");
+    expect(files.get(`${book}/photos/beach.jpg`)?.toString()).toBe("rendered-photo");
   });
 
   it("rejects an empty list of parts", async () => {

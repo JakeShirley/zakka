@@ -11,6 +11,11 @@ import {
   type ShutterflySession,
 } from "./client.js";
 import { collectShutterflyProjectReferences } from "./map-project.js";
+import {
+  createShutterflyDesignUrlResolver,
+  inlineShutterflySvgResources,
+  listShutterflyProjectPages,
+} from "./page-render.js";
 import { type ShutterflyDesignAsset, shutterflyProjectSchema } from "./schemas.js";
 import { mapWithConcurrency, safeFileName } from "./util.js";
 
@@ -80,11 +85,13 @@ export type ShutterflyArchiveRunOptions = {
 };
 
 type CompletedPhoto = { momentId: string; file: string; bytes: number };
-type CompletedProject = { id: string; folder: string; bytes: number };
+/** `pages` is missing for projects archived before page renders existed, which renders them on update. */
+type CompletedProject = { id: string; folder: string; bytes: number; pages?: boolean };
 
 const photoConcurrency = 4;
 const projectConcurrency = 2;
 const projectDownloadConcurrency = 4;
+const pageRenderConcurrency = 2;
 const albumConcurrency = 4;
 
 const contentTypeExtensions: Record<string, string> = {
@@ -241,6 +248,9 @@ projects/projects.json  Every archived saved and purchased project (books, cards
 projects/<type>/<project>/
   project.json          The complete project exactly as Shutterfly stores it.
   thumbnail.*           Shutterfly's preview of the project, when available.
+  pages/                A full-size render of every page as a self-contained SVG, with its
+                        photos, artwork, and fonts built in. Open one in any web browser.
+  pages.json            Maps each page render to its surface in project.json.
   photos/               The photos placed in the project, as Shutterfly renders them.
   photos.json           Maps each photo in project.json to its file.
   design-assets.json    Catalog details for the project's stickers, backgrounds, and fonts.
@@ -293,18 +303,28 @@ export const runShutterflyArchive = async (
     progress.errorCount = errors.length;
   };
 
-  const writeArchiveFile = async (relativePath: string, data: string | Buffer) => {
+  /** Writes a file into the archive. `tally` also collects the bytes for one item, such as a project. */
+  const writeArchiveFile = async (
+    relativePath: string,
+    data: string | Buffer,
+    tally?: { bytes: number },
+  ) => {
     const path = join(filesDir, relativePath);
+    const bytes = Buffer.byteLength(data);
 
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, data);
-    progress.bytes += Buffer.byteLength(data);
+    progress.bytes += bytes;
 
-    return Buffer.byteLength(data);
+    if (tally) {
+      tally.bytes += bytes;
+    }
+
+    return bytes;
   };
 
-  const writeArchiveJson = (relativePath: string, value: unknown) =>
-    writeArchiveFile(relativePath, `${JSON.stringify(value, null, 2)}\n`);
+  const writeArchiveJson = (relativePath: string, value: unknown, tally?: { bytes: number }) =>
+    writeArchiveFile(relativePath, `${JSON.stringify(value, null, 2)}\n`, tally);
 
   const setStep = (step: ShutterflyArchiveStep) => {
     signal.throwIfAborted();
@@ -379,8 +399,11 @@ export const runShutterflyArchive = async (
 
     if (done) {
       projectFolders.set(project._id, done.folder);
-      progress.projects.completed += 1;
       progress.bytes += done.bytes;
+
+      if (done.pages) {
+        progress.projects.completed += 1;
+      }
     } else {
       const name = safeFileName(readString(project, "projectName"), "Untitled project");
 
@@ -393,9 +416,105 @@ export const runShutterflyArchive = async (
 
   report();
 
+  /** Renders every page of a project into `<folder>/pages/`, replacing any earlier attempt. */
+  const archiveProjectPages = async (
+    project: ShutterflyRawProject,
+    folder: string,
+    raw: unknown,
+    designAssets: unknown,
+    fail: (what: string, error: unknown) => void,
+    tally: { bytes: number },
+  ) => {
+    const pages = listShutterflyProjectPages(raw);
+    const resolveUrl = createShutterflyDesignUrlResolver(designAssets);
+
+    await rm(join(filesDir, folder, "pages"), { force: true, recursive: true });
+    await rm(join(filesDir, folder, "pages.json"), { force: true });
+
+    if (pages.length === 0) {
+      return;
+    }
+
+    const skuId = readString(raw, "commerceSku") ?? readString(project, "commerceSku");
+    const rendered = await mapWithConcurrency(pages, pageRenderConcurrency, async (page) => {
+      signal.throwIfAborted();
+
+      try {
+        const svg = await withSession((current) =>
+          client.renderSurfaceSvg(
+            current,
+            { surface: page.surface, height: page.height, skuId },
+            signal,
+          ),
+        );
+        const inlined = await inlineShutterflySvgResources(
+          svg,
+          (url) => client.download(url),
+          signal,
+          resolveUrl,
+        );
+
+        for (const failure of inlined.failures) {
+          fail(`${page.file} resource ${failure.url}`, failure.error);
+        }
+
+        await writeArchiveFile(`${folder}/${page.file}`, inlined.svg, tally);
+
+        return { file: page.file, category: page.category, surfaceNumber: page.surfaceNumber };
+      } catch (error) {
+        fail(page.file, error);
+
+        return { file: null, category: page.category, surfaceNumber: page.surfaceNumber };
+      }
+    });
+
+    await writeArchiveJson(`${folder}/pages.json`, rendered, tally);
+  };
+
+  const finishProject = async (entry: CompletedProject, failed: boolean) => {
+    if (failed) {
+      progress.projects.failed += 1;
+    } else {
+      progress.projects.completed += 1;
+      await appendFile(completedProjectsPath, `${JSON.stringify(entry)}\n`);
+    }
+
+    report();
+  };
+
+  /** Adds page renders to a project archived before they existed, keeping its other files. */
+  const addProjectPages = async (project: ShutterflyRawProject, done: CompletedProject) => {
+    const tally = { bytes: 0 };
+    let failed = false;
+
+    const fail = (what: string, error: unknown) => {
+      failed = true;
+      recordError("projects", `${project._id} ${what}`, error);
+    };
+
+    try {
+      const raw: unknown = JSON.parse(
+        await readFile(join(filesDir, done.folder, "project.json"), "utf8"),
+      );
+      const designAssets: unknown = await readFile(
+        join(filesDir, done.folder, "design-assets.json"),
+        "utf8",
+      ).then(
+        (text) => JSON.parse(text),
+        () => null,
+      );
+
+      await archiveProjectPages(project, done.folder, raw, designAssets, fail, tally);
+    } catch (error) {
+      fail("pages", error);
+    }
+
+    await finishProject({ ...done, bytes: done.bytes + tally.bytes, pages: true }, failed);
+  };
+
   const archiveProject = async (project: ShutterflyRawProject) => {
     const folder = projectFolders.get(project._id) as string;
-    const bytesBefore = progress.bytes;
+    const tally = { bytes: 0 };
     let failed = false;
 
     const fail = (what: string, error: unknown) => {
@@ -409,7 +528,7 @@ export const runShutterflyArchive = async (
 
     try {
       raw = await withSession((current) => client.getRawProject(current, project._id));
-      await writeArchiveJson(`${folder}/project.json`, raw);
+      await writeArchiveJson(`${folder}/project.json`, raw, tally);
     } catch (error) {
       fail("project", error);
       progress.projects.failed += 1;
@@ -425,6 +544,7 @@ export const runShutterflyArchive = async (
         await writeArchiveFile(
           `${folder}/thumbnail${urlExtension(thumbnailUrl, ".jpg")}`,
           await client.download(thumbnailUrl),
+          tally,
         );
       } catch (error) {
         fail("thumbnail", error);
@@ -432,6 +552,7 @@ export const runShutterflyArchive = async (
     }
 
     const parsed = shutterflyProjectSchema.safeParse(raw);
+    let designAssets: ShutterflyDesignAsset[] = [];
 
     if (parsed.success) {
       const references = collectShutterflyProjectReferences(parsed.data);
@@ -464,7 +585,7 @@ export const runShutterflyArchive = async (
                   photo.mediaId,
                 )}`;
 
-                await writeArchiveFile(`${folder}/${file}`, data);
+                await writeArchiveFile(`${folder}/${file}`, data, tally);
 
                 return {
                   ...photo,
@@ -481,7 +602,7 @@ export const runShutterflyArchive = async (
             },
           );
 
-          await writeArchiveJson(`${folder}/photos.json`, photoFiles);
+          await writeArchiveJson(`${folder}/photos.json`, photoFiles, tally);
         } catch (error) {
           fail("photos", error);
         }
@@ -503,7 +624,8 @@ export const runShutterflyArchive = async (
             .filter((asset): asset is ShutterflyDesignAsset => asset !== undefined);
           const reserveAssetName = createNameReserver();
 
-          await writeArchiveJson(`${folder}/design-assets.json`, [...assets.values()]);
+          designAssets = [...assets.values()];
+          await writeArchiveJson(`${folder}/design-assets.json`, designAssets, tally);
           await mapWithConcurrency(artwork, projectDownloadConcurrency, async (asset) => {
             signal.throwIfAborted();
 
@@ -527,6 +649,7 @@ export const runShutterflyArchive = async (
                   asset.id,
                 )}`,
                 await client.download(url),
+                tally,
               );
             } catch (error) {
               fail(`design asset ${asset.id}`, error);
@@ -538,27 +661,21 @@ export const runShutterflyArchive = async (
       }
     }
 
-    if (failed) {
-      progress.projects.failed += 1;
-    } else {
-      progress.projects.completed += 1;
-      await appendFile(
-        completedProjectsPath,
-        `${JSON.stringify({ id: project._id, folder, bytes: progress.bytes - bytesBefore } satisfies CompletedProject)}\n`,
-      );
-    }
+    await archiveProjectPages(project, folder, raw, designAssets, fail, tally);
 
-    report();
+    await finishProject({ id: project._id, folder, bytes: tally.bytes, pages: true }, failed);
   };
 
   await mapWithConcurrency(
-    projects.filter((project) => !completedProjects.has(project._id)),
+    projects.filter((project) => completedProjects.get(project._id)?.pages !== true),
     projectConcurrency,
     async (project) => {
       signal.throwIfAborted();
 
       try {
-        await archiveProject(project);
+        const done = completedProjects.get(project._id);
+
+        await (done ? addProjectPages(project, done) : archiveProject(project));
       } catch (error) {
         recordError("projects", project._id, error);
         progress.projects.failed += 1;

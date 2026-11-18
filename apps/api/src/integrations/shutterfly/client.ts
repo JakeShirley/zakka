@@ -34,6 +34,8 @@ const thislifeRpcUrl = "https://cmd.thislife.com/json";
 const thislifeOrigin = "https://photos.shutterfly.com";
 const originalDownloadUrl = "https://io.thislife.com/download";
 const commerceBaseUrl = "https://commerce-api3.shutterfly.com/commerce/v1";
+const surfaceRenderUrl =
+  "https://rendering-api3.shutterfly.com/rendering/renderer/v1/surfacesvg/preview";
 const projectPageSize = 25;
 const maxProjectPages = 20;
 // Archiving walks every page; this only stops a misbehaving API from looping forever.
@@ -45,6 +47,7 @@ const maxDownloadBytes = 40 * 1024 * 1024;
 const requestTimeoutMs = 30_000;
 // Originals include full-length videos, so they get far longer than ordinary API calls.
 const originalDownloadTimeoutMs = 60 * 60 * 1000;
+const surfaceRenderTimeoutMs = 2 * 60 * 1000;
 const albumMomentRecordLength = 277;
 const allowedDownloadHostSuffixes = [".shutterfly.com", ".sf-cdn.com"];
 const libraryAuthFailurePattern = /auth|token|expired|session|log ?in|sign ?in/i;
@@ -265,6 +268,39 @@ export const createShutterflyClient = (options: { apiKey: string; fetch?: typeof
     } catch {
       throw new ShutterflyRequestError("Shutterfly returned an unreadable response");
     }
+  };
+
+  const readLimitedBody = async (response: Response): Promise<Buffer> => {
+    const declaredLength = Number(response.headers.get("content-length"));
+
+    if (Number.isFinite(declaredLength) && declaredLength > maxDownloadBytes) {
+      await response.body?.cancel();
+      throw new ShutterflyRequestError("Shutterfly download is too large");
+    }
+
+    // Read incrementally so a response without Content-Length cannot exceed the cap in memory.
+    const chunks: Uint8Array[] = [];
+    let byteLength = 0;
+    const reader = response.body?.getReader();
+
+    while (reader) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      byteLength += value.byteLength;
+
+      if (byteLength > maxDownloadBytes) {
+        await reader.cancel();
+        throw new ShutterflyRequestError("Shutterfly download is too large");
+      }
+
+      chunks.push(value);
+    }
+
+    return Buffer.concat(chunks, byteLength);
   };
 
   const parseOrThrow = <Output>(
@@ -550,44 +586,66 @@ export const createShutterflyClient = (options: { apiKey: string; fetch?: typeof
       const response = await send(url, { redirect: "error" });
 
       if (!response.ok) {
+        await response.body?.cancel();
         throw new ShutterflyRequestError(
           `Shutterfly download failed with status ${response.status}`,
           response.status,
         );
       }
 
-      const declaredLength = Number(response.headers.get("content-length"));
+      return readLimitedBody(response);
+    },
 
-      if (Number.isFinite(declaredLength) && declaredLength > maxDownloadBytes) {
+    /**
+     * Renders one project surface (a page, cover, or spread) the way Shutterfly's builder previews it.
+     * Returns SVG markup that still links to its photos, artwork, and fonts on Shutterfly's servers.
+     */
+    renderSurfaceSvg: async (
+      session: ShutterflySession,
+      input: { surface: unknown; height: number; skuId: string | null },
+      signal?: AbortSignal,
+    ): Promise<string> => {
+      const query = new URLSearchParams({
+        height: String(Math.round(input.height)),
+        context: "/sfly/shutterfly/shutterfly-us/default",
+        locale: "en_US",
+        ...(input.skuId ? { skuId: input.skuId } : {}),
+      });
+      const response = await send(
+        `${surfaceRenderUrl}?${query}`,
+        {
+          method: "POST",
+          headers: {
+            accept: "image/svg+xml, application/xml",
+            authorization: `Bearer ${session.idToken}`,
+            "content-type": "application/json",
+            "x-api-key": options.apiKey,
+          },
+          body: JSON.stringify({ surfaces: [input.surface] }),
+        },
+        { timeoutMs: surfaceRenderTimeoutMs, signal },
+      );
+
+      if (response.status === 401 || response.status === 403) {
         await response.body?.cancel();
-        throw new ShutterflyRequestError("Shutterfly download is too large");
+        throw new ShutterflyAuthError();
       }
 
-      // Read incrementally so a response without Content-Length cannot exceed the cap in memory.
-      const chunks: Uint8Array[] = [];
-      let byteLength = 0;
-      const reader = response.body?.getReader();
-
-      while (reader) {
-        const { done, value } = await reader.read();
-
-        if (done) {
-          break;
-        }
-
-        byteLength += value.byteLength;
-
-        if (byteLength > maxDownloadBytes) {
-          await reader.cancel();
-          throw new ShutterflyRequestError("Shutterfly download is too large");
-        }
-
-        chunks.push(value);
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new ShutterflyRequestError(
+          `Shutterfly page render failed with status ${response.status}`,
+          response.status,
+        );
       }
 
-      const buffer = Buffer.concat(chunks, byteLength);
+      const svg = (await readLimitedBody(response)).toString("utf8");
 
-      return buffer;
+      if (!/<svg[\s>]/.test(svg)) {
+        throw new ShutterflyRequestError("Shutterfly returned a page render that is not an SVG");
+      }
+
+      return svg;
     },
 
     /**
