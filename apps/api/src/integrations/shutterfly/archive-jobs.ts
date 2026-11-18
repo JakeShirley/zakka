@@ -99,7 +99,7 @@ export const createShutterflyArchives = (options: {
     const active = running.get(archiveId);
 
     if (active) {
-      return structuredClone(active.archive);
+      return active.accountId === accountId ? structuredClone(active.archive) : null;
     }
 
     try {

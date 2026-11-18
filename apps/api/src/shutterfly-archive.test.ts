@@ -772,6 +772,115 @@ describe("Shutterfly archive routes", () => {
     expect(files.get(`${book}/photos/beach.jpg`)?.toString()).toBe("rendered-photo");
   });
 
+  it("hides a running archive from other Zakka accounts", async () => {
+    const testApp = await createTestApp();
+    const { app, cookie, fake } = testApp;
+    let release = () => {};
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetchShutterfly = fake.fetch;
+
+    await connect(testApp);
+    fake.fetch = async (input, init) => {
+      if (String(input).includes("/commerce/v1/order?")) {
+        await blocked;
+      }
+
+      return fetchShutterfly(input, init);
+    };
+
+    const started = await app.request("/api/v1/integrations/shutterfly/archives", {
+      headers: { cookie },
+      method: "POST",
+    });
+    const { id } = shutterflyArchiveResponseSchema.parse(await started.json());
+    const registration = await app.request("/api/v1/auth/register", {
+      body: JSON.stringify({
+        displayName: "Other",
+        email: "other@example.com",
+        password: "correct horse battery staple",
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+    const otherCookie = registration.headers.get("set-cookie")?.split(";")[0] ?? "";
+
+    await connect({ ...testApp, cookie: otherCookie });
+
+    const archivePath = `/api/v1/integrations/shutterfly/archives/${id}`;
+
+    expect((await app.request(archivePath, { headers: { cookie: otherCookie } })).status).toBe(404);
+    expect(
+      (await app.request(archivePath, { headers: { cookie: otherCookie }, method: "DELETE" }))
+        .status,
+    ).toBe(404);
+
+    release();
+    expect((await waitForArchive(testApp, id)).status).toBe("completed");
+  });
+
+  it("repairs a journal left with a partial last line", async () => {
+    const testApp = await createTestApp();
+    const { app, archiveDir, cookie } = testApp;
+
+    await connect(testApp);
+
+    const started = await app.request("/api/v1/integrations/shutterfly/archives", {
+      body: JSON.stringify({ parts: ["books"] }),
+      headers: { "content-type": "application/json", cookie },
+      method: "POST",
+    });
+    const { id } = shutterflyArchiveResponseSchema.parse(await started.json());
+
+    await waitForArchive(testApp, id);
+
+    const [stateFile] = (await readdir(archiveDir, { recursive: true }))
+      .filter((entry) => entry.includes(id) && entry.endsWith("projects.jsonl"))
+      .map((entry) => join(archiveDir, entry));
+    const journal = await readFile(stateFile as string, "utf8");
+
+    await writeFile(stateFile as string, `${journal}{"id":"cut-off`);
+    await app.request(`/api/v1/integrations/shutterfly/archives/${id}/resume`, {
+      headers: { cookie },
+      method: "POST",
+    });
+    await waitForArchive(testApp, id);
+
+    expect(await readFile(stateFile as string, "utf8")).toBe(journal);
+  });
+
+  it("refuses to update an archive from a different Shutterfly account", async () => {
+    const testApp = await createTestApp();
+    const { app, archiveDir, cookie } = testApp;
+
+    await connect(testApp);
+
+    const started = await app.request("/api/v1/integrations/shutterfly/archives", {
+      body: JSON.stringify({ parts: ["cards"] }),
+      headers: { "content-type": "application/json", cookie },
+      method: "POST",
+    });
+    const { id } = shutterflyArchiveResponseSchema.parse(await started.json());
+
+    await waitForArchive(testApp, id);
+
+    const [ownerFile] = (await readdir(archiveDir, { recursive: true }))
+      .filter((entry) => entry.includes(id) && entry.endsWith("shutterfly-account.json"))
+      .map((entry) => join(archiveDir, entry));
+
+    await writeFile(ownerFile as string, `${JSON.stringify({ shutterflyAccountId: "other" })}\n`);
+    await app.request(`/api/v1/integrations/shutterfly/archives/${id}/resume`, {
+      headers: { cookie },
+      method: "POST",
+    });
+
+    const archive = await waitForArchive(testApp, id);
+
+    expect(archive.status).toBe("failed");
+    expect(archive.error?.message).toContain("different Shutterfly account");
+  });
+
   it("rejects an empty list of parts", async () => {
     const testApp = await createTestApp();
 

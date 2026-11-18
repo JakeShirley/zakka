@@ -131,6 +131,7 @@ const readJsonLines = async <Entry>(path: string): Promise<Entry[]> => {
   }
 
   const entries: Entry[] = [];
+  let damaged = false;
 
   for (const line of text.split("\n")) {
     try {
@@ -139,7 +140,16 @@ const readJsonLines = async <Entry>(path: string): Promise<Entry[]> => {
       }
     } catch {
       // A crash can leave a partial last line; that item is simply archived again.
+      damaged = true;
     }
+  }
+
+  if (damaged || (text.length > 0 && !text.endsWith("\n"))) {
+    // Rewrite the journal so the next appended entry starts on a clean line.
+    const temporaryPath = `${path}.${process.pid}.tmp`;
+
+    await writeFile(temporaryPath, entries.map((entry) => `${JSON.stringify(entry)}\n`).join(""));
+    await rename(temporaryPath, path);
   }
 
   return entries;
@@ -338,6 +348,22 @@ export const runShutterflyArchive = async (
   report();
 
   const session = await withSession(async (current) => current);
+  const ownerPath = join(stateDir, "shutterfly-account.json");
+  const readOwner = (path: string) =>
+    readFile(path, "utf8").then(
+      (text) => JSON.parse(text) as { shutterflyAccountId?: unknown },
+      () => null,
+    );
+  const previousOwner =
+    (await readOwner(ownerPath)) ?? (await readOwner(join(filesDir, "account.json")));
+
+  if (previousOwner && previousOwner.shutterflyAccountId !== session.accountId) {
+    throw new Error(
+      "This archive belongs to a different Shutterfly account. Reconnect that account to update it, or start a new archive.",
+    );
+  }
+
+  await writeFile(ownerPath, `${JSON.stringify({ shutterflyAccountId: session.accountId })}\n`);
 
   // Orders -----------------------------------------------------------------------------------------
   const orderLists = parts.has("orders")
