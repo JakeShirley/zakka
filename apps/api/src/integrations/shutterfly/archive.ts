@@ -347,15 +347,18 @@ export const runShutterflyArchive = async (
   await mkdir(tempDir, { recursive: true });
   report();
 
-  const session = await withSession(async (current) => current);
-  const ownerPath = join(stateDir, "shutterfly-account.json");
-  const readOwner = (path: string) =>
+  const readJsonFile = <Value>(path: string) =>
     readFile(path, "utf8").then(
-      (text) => JSON.parse(text) as { shutterflyAccountId?: unknown },
+      (text) => JSON.parse(text) as Value,
       () => null,
     );
+
+  const session = await withSession(async (current) => current);
+  const ownerPath = join(stateDir, "shutterfly-account.json");
+  type Owner = { shutterflyAccountId?: unknown };
   const previousOwner =
-    (await readOwner(ownerPath)) ?? (await readOwner(join(filesDir, "account.json")));
+    (await readJsonFile<Owner>(ownerPath)) ??
+    (await readJsonFile<Owner>(join(filesDir, "account.json")));
 
   if (previousOwner && previousOwner.shutterflyAccountId !== session.accountId) {
     throw new Error(
@@ -712,6 +715,7 @@ export const runShutterflyArchive = async (
 
   // Albums -----------------------------------------------------------------------------------------
   let albums: ShutterflyAlbumSummary[] = [];
+  let albumsListed = false;
   const albumContents = new Map<string, ShutterflyAlbumContents>();
 
   if (parts.has("albums")) {
@@ -719,6 +723,7 @@ export const runShutterflyArchive = async (
 
     try {
       albums = await withSession((current) => client.listAlbums(current));
+      albumsListed = true;
     } catch (error) {
       recordError("albums", null, error);
     }
@@ -833,22 +838,45 @@ export const runShutterflyArchive = async (
   const photoFile = (momentId: string) => completedPhotos.get(momentId)?.file ?? null;
 
   if (includePhotos) {
+    // Keep photos Shutterfly no longer lists: their originals are still in the archive.
     await writeArchiveJson(
       "photos/index.json",
-      [...completedPhotos.values()]
-        .filter((entry) => momentIds.has(entry.momentId))
-        .sort((left, right) => left.file.localeCompare(right.file)),
+      [...completedPhotos.values()].sort((left, right) => left.file.localeCompare(right.file)),
     );
   }
 
-  const reserveAlbumFolder = createNameReserver();
+  // Album folders stay assigned to their album, even after it is removed from Shutterfly, so a
+  // later album with the same name can't overwrite a saved one.
+  const albumFoldersPath = join(stateDir, "album-folders.json");
+  const albumFolders = new Map<string, string>(
+    Object.entries((await readJsonFile<Record<string, string>>(albumFoldersPath)) ?? {}),
+  );
+
+  if (albumFolders.size === 0) {
+    const previousIndex = await readJsonFile<{ id?: unknown; folder?: unknown }[]>(
+      join(filesDir, "albums", "albums.json"),
+    );
+
+    for (const entry of Array.isArray(previousIndex) ? previousIndex : []) {
+      if (typeof entry.id === "string" && typeof entry.folder === "string") {
+        albumFolders.set(entry.id, entry.folder);
+      }
+    }
+  }
+
+  const reserveAlbumFolder = createNameReserver(
+    [...albumFolders.values()].map((folder) => folder.replace(/^albums\//, "")),
+  );
   const albumIndex = [];
 
   for (const album of albums) {
     const contents = albumContents.get(album.id);
-    const folder = `albums/${reserveAlbumFolder(safeFileName(album.name, album.id), album.id)}`;
+    const folder =
+      albumFolders.get(album.id) ??
+      `albums/${reserveAlbumFolder(safeFileName(album.name, album.id), album.id)}`;
 
     if (contents) {
+      albumFolders.set(album.id, folder);
       await writeArchiveJson(`${folder}/album.json`, {
         id: album.id,
         name: contents.name ?? album.name,
@@ -868,8 +896,9 @@ export const runShutterflyArchive = async (
     });
   }
 
-  if (parts.has("albums")) {
+  if (albumsListed) {
     await writeArchiveJson("albums/albums.json", albumIndex);
+    await writeFile(albumFoldersPath, `${JSON.stringify(Object.fromEntries(albumFolders))}\n`);
   }
 
   const archivedAt = options.clock().toISOString();

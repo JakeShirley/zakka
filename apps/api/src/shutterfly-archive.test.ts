@@ -120,6 +120,11 @@ const createFakeShutterfly = async () => {
     expired: false,
     pageRenders: [] as { height: string | null; surfaceNumber: unknown; apiKey: string | null }[],
     photoRenders: [] as string[],
+    libraryMoments: ["101", "102", "103"],
+    albums: [
+      { uid: "a1", name: "Summer" },
+      { uid: "a2", name: "From Grandma" },
+    ],
     fetch: (async () => new Response(null, { status: 500 })) as typeof fetch,
   };
 
@@ -272,18 +277,19 @@ const createFakeShutterfly = async () => {
     }
 
     if (url.startsWith("https://photos-api3.shutterfly.com/photos/json?method=searchMoments")) {
-      return rpc({ moments: ["101", "102", "103"] });
+      return rpc({ moments: fake.libraryMoments });
     }
 
     if (url.startsWith("https://cmd.thislife.com/json?method=album.getAlbums")) {
-      return rpc([
-        [{ story: { uid: "a1", name: "Summer" } }],
-        [{ story: { uid: "a2", name: "From Grandma" } }],
-      ]);
+      return rpc(fake.albums.map((story) => [{ story }]));
     }
 
     if (url.startsWith("https://cmd.thislife.com/json?method=album.getAlbum")) {
       const albumId = JSON.parse(String(init?.body)).params[1];
+
+      if (albumId === "a3") {
+        return rpc({ uid: "a3", name: "Summer", moments: albumMoments("101") });
+      }
 
       return albumId === "a1"
         ? rpc({ uid: "a1", name: "Summer", moments: albumMoments("102", "104") })
@@ -879,6 +885,48 @@ describe("Shutterfly archive routes", () => {
 
     expect(archive.status).toBe("failed");
     expect(archive.error?.message).toContain("different Shutterfly account");
+  });
+
+  it("keeps photos and album folders that Shutterfly no longer lists", async () => {
+    const testApp = await createTestApp();
+    const { app, cookie, fake } = testApp;
+
+    fake.albums = [
+      { uid: "a1", name: "Summer" },
+      { uid: "a3", name: "Summer" },
+    ];
+    await connect(testApp);
+
+    const started = await app.request("/api/v1/integrations/shutterfly/archives", {
+      body: JSON.stringify({ parts: ["photos", "albums"] }),
+      headers: { "content-type": "application/json", cookie },
+      method: "POST",
+    });
+    const { id } = shutterflyArchiveResponseSchema.parse(await started.json());
+
+    await waitForArchive(testApp, id);
+
+    // Shutterfly deletes album a1 and photo 101 before the next update.
+    fake.albums = [{ uid: "a3", name: "Summer" }];
+    fake.libraryMoments = ["102"];
+    await app.request(`/api/v1/integrations/shutterfly/archives/${id}/resume`, {
+      headers: { cookie },
+      method: "POST",
+    });
+    expect((await waitForArchive(testApp, id)).status).toBe("completed");
+
+    const files = await download(testApp, id);
+
+    expect(readJson(files, "albums/Summer/album.json")).toMatchObject({ id: "a1" });
+    expect(readJson(files, "albums/Summer (a3)/album.json")).toMatchObject({ id: "a3" });
+    expect(readJson(files, "albums/albums.json")).toMatchObject([
+      { id: "a3", folder: "albums/Summer (a3)" },
+    ]);
+    expect(
+      (readJson(files, "photos/index.json") as { momentId: string }[]).map(
+        (entry) => entry.momentId,
+      ),
+    ).toEqual(expect.arrayContaining(["101", "102", "104"]));
   });
 
   it("rejects an empty list of parts", async () => {
