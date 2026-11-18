@@ -887,6 +887,37 @@ describe("Shutterfly archive routes", () => {
     expect(archive.error?.message).toContain("different Shutterfly account");
   });
 
+  it("resumes when the ownership record was cut off", async () => {
+    const testApp = await createTestApp();
+    const { app, archiveDir, cookie } = testApp;
+
+    await connect(testApp);
+
+    const started = await app.request("/api/v1/integrations/shutterfly/archives", {
+      body: JSON.stringify({ parts: ["cards"] }),
+      headers: { "content-type": "application/json", cookie },
+      method: "POST",
+    });
+    const { id } = shutterflyArchiveResponseSchema.parse(await started.json());
+
+    await waitForArchive(testApp, id);
+
+    const [ownerFile] = (await readdir(archiveDir, { recursive: true }))
+      .filter((entry) => entry.includes(id) && entry.endsWith("shutterfly-account.json"))
+      .map((entry) => join(archiveDir, entry));
+
+    await writeFile(ownerFile as string, `{"shutterflyAcc`);
+    await app.request(`/api/v1/integrations/shutterfly/archives/${id}/resume`, {
+      headers: { cookie },
+      method: "POST",
+    });
+
+    expect((await waitForArchive(testApp, id)).status).toBe("completed");
+    expect(JSON.parse(await readFile(ownerFile as string, "utf8"))).toHaveProperty(
+      "shutterflyAccountId",
+    );
+  });
+
   it("keeps photos and album folders that Shutterfly no longer lists", async () => {
     const testApp = await createTestApp();
     const { app, cookie, fake } = testApp;

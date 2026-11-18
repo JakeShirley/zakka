@@ -348,10 +348,17 @@ export const runShutterflyArchive = async (
   report();
 
   const readJsonFile = <Value>(path: string) =>
-    readFile(path, "utf8").then(
-      (text) => JSON.parse(text) as Value,
-      () => null,
-    );
+    readFile(path, "utf8")
+      .then((text) => JSON.parse(text) as Value)
+      .catch(() => null);
+
+  /** Replaces a state file atomically so an interruption can't leave it truncated. */
+  const writeStateJson = async (path: string, value: unknown) => {
+    const temporaryPath = `${path}.${process.pid}.tmp`;
+
+    await writeFile(temporaryPath, `${JSON.stringify(value)}\n`);
+    await rename(temporaryPath, path);
+  };
 
   const session = await withSession(async (current) => current);
   const ownerPath = join(stateDir, "shutterfly-account.json");
@@ -366,7 +373,7 @@ export const runShutterflyArchive = async (
     );
   }
 
-  await writeFile(ownerPath, `${JSON.stringify({ shutterflyAccountId: session.accountId })}\n`);
+  await writeStateJson(ownerPath, { shutterflyAccountId: session.accountId });
 
   // Orders -----------------------------------------------------------------------------------------
   const orderLists = parts.has("orders")
@@ -898,7 +905,7 @@ export const runShutterflyArchive = async (
 
   if (albumsListed) {
     await writeArchiveJson("albums/albums.json", albumIndex);
-    await writeFile(albumFoldersPath, `${JSON.stringify(Object.fromEntries(albumFolders))}\n`);
+    await writeStateJson(albumFoldersPath, Object.fromEntries(albumFolders));
   }
 
   const archivedAt = options.clock().toISOString();
